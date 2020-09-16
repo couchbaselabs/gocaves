@@ -1,3 +1,3 @@
-package mock
+package mocktime
 
 // This file should contain tests for MockTime.

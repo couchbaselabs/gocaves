@@ -1,4 +1,4 @@
-package mock
+package mocktime
 
 import (
 	"sync"
@@ -11,23 +11,23 @@ type mockTimer struct {
 	triggerTime time.Time
 }
 
-// MockTime represents special time handling, allowing the
+// Chrono represents special time handling, allowing the
 // acceleration or alteration of time.
-type MockTime struct {
+type Chrono struct {
 	timeShiftNs uint64
 	timersLock  sync.Mutex
 	timers      []*mockTimer
 }
 
 // Now returns the current timestamp from the mock time.
-func (t *MockTime) Now() time.Time {
+func (t *Chrono) Now() time.Time {
 	timeShiftNs := atomic.LoadUint64(&t.timeShiftNs)
 	timeShift := time.Duration(timeShiftNs) * time.Nanosecond
 	return time.Now().Add(timeShift)
 }
 
 // TimeTravel adjusts the current time by a set amount
-func (t *MockTime) TimeTravel(d time.Duration) {
+func (t *Chrono) TimeTravel(d time.Duration) {
 	if d < 0 {
 		d = 0
 	}
@@ -38,19 +38,19 @@ func (t *MockTime) TimeTravel(d time.Duration) {
 	t.checkTimers()
 }
 
-func (t *MockTime) addTimer(mtmr *mockTimer) {
+func (t *Chrono) addTimer(mtmr *mockTimer) {
 	t.timersLock.Lock()
 	defer t.timersLock.Unlock()
 
 	t.timers = append(t.timers, mtmr)
 }
 
-func (t *MockTime) removeTimer(tmr *mockTimer) {
+func (t *Chrono) removeTimer(tmr *mockTimer) {
 	t.timersLock.Lock()
 	defer t.timersLock.Unlock()
 }
 
-func (t *MockTime) findExpiredTimers() []*mockTimer {
+func (t *Chrono) findExpiredTimers() []*mockTimer {
 	curTime := t.Now()
 
 	t.timersLock.Lock()
@@ -68,7 +68,7 @@ func (t *MockTime) findExpiredTimers() []*mockTimer {
 	return expiredTimers
 }
 
-func (t *MockTime) checkTimers() {
+func (t *Chrono) checkTimers() {
 	// We intentionally split this method into two pieces, one which scans
 	// for the expired timers, and the second stage which actually resets them
 	// for immediately which causes them to trigger.  This is important as the
@@ -87,7 +87,7 @@ func (t *MockTime) checkTimers() {
 }
 
 // AfterFunc calls a callback function after a duration has passed.
-func (t *MockTime) AfterFunc(d time.Duration, f func()) {
+func (t *Chrono) AfterFunc(d time.Duration, f func()) {
 	triggerTime := time.Now().Add(d)
 
 	mtmr := &mockTimer{
@@ -101,7 +101,7 @@ func (t *MockTime) AfterFunc(d time.Duration, f func()) {
 }
 
 // After returns a channel which signals when the duration has passed.
-func (t *MockTime) After(d time.Duration) <-chan time.Time {
+func (t *Chrono) After(d time.Duration) <-chan time.Time {
 	tmrCh := make(chan time.Time)
 	t.AfterFunc(d, func() {
 		tmrCh <- t.Now()
