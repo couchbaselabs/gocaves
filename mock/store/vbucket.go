@@ -98,7 +98,7 @@ func (s *Vbucket) GetAllWithin(startSeqNo, endSeqNo uint64) ([]*Document, error)
 		endSeqNo = maxSeqNo
 	}
 
-	if startSeqNo > endSeqNo {
+	if startSeqNo >= endSeqNo {
 		return nil, errors.New("start seqno must come before the end seqno")
 	}
 	if endSeqNo > maxSeqNo {
@@ -107,7 +107,7 @@ func (s *Vbucket) GetAllWithin(startSeqNo, endSeqNo uint64) ([]*Document, error)
 
 	var docsOut []*Document
 	for _, doc := range s.documents {
-		if doc.SeqNo >= startSeqNo && doc.SeqNo < endSeqNo {
+		if doc.SeqNo > startSeqNo && doc.SeqNo <= endSeqNo {
 			docsOut = append(docsOut, copyDocument(doc))
 		}
 	}

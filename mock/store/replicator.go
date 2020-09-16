@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"log"
 	"sync"
 	"time"
 
@@ -87,6 +88,7 @@ func (r *replicator) checkVbucketsLocked() {
 		docs, err := srcVbucket.GetAllWithin(replicatedSeqNo, srcMaxSeqNo)
 		if err != nil || len(docs) == 0 {
 			// This would be extremely strange, but let's proceed.
+			log.Printf("unexpected empty document list during replication")
 			continue
 		}
 
