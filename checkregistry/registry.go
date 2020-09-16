@@ -20,6 +20,6 @@ func (t *T) Cluster() {
 }
 
 // Register registers a check suite check
-func Register(group, name string, fn func(), desc string) {
+func Register(group, name string, fn func(t *T), desc string) {
 
 }
