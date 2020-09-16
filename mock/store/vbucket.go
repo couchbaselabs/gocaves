@@ -188,6 +188,15 @@ func (s *Vbucket) set(doc *Document) (*Document, error) {
 	return s.pushDocMutationLocked(doc), nil
 }
 
+func (s *Vbucket) remove(key []byte) (*Document, error) {
+	// Removing a document is explicitly not supported.  Instead a document should be
+	// modified such that its IsDeleted field is true.  This is part of the overall
+	// archicture of the storage system, and IsDeleted items will be compacted away
+	// at some future point in time if appropirate.
+
+	return nil, errors.New("not supported")
+}
+
 // addRepDocMutation directly pushes a particular document state to this vbucket.
 // It is used by the replicator to push the data directly, ensuring that seqnos
 // match between the primary and replica vbuckets.

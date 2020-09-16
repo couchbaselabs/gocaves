@@ -52,6 +52,30 @@ func NewBucket(config BucketConfig) (*Bucket, error) {
 	return bucket, nil
 }
 
+// Get fetches a document from a particular replica and vbucket index.
+func (b *Bucket) Get(repIdx, vbIdx uint, key []byte) (*Document, error) {
+	vbucket := b.GetVbucket(repIdx, vbIdx)
+	return vbucket.Get(key)
+}
+
+// Insert inserts a document into the master replica of a vbucket.
+func (b *Bucket) Insert(doc *Document) (*Document, error) {
+	vbucket := b.GetVbucket(0, doc.VbID)
+	return vbucket.insert(doc)
+}
+
+// Set stores a document into the master replica of a vbucket.
+func (b *Bucket) Set(doc *Document) (*Document, error) {
+	vbucket := b.GetVbucket(0, doc.VbID)
+	return vbucket.set(doc)
+}
+
+// Remove removes a document from the master replica of a vbucket.
+func (b *Bucket) Remove(vbIdx uint, key []byte) (*Document, error) {
+	// Removing a document is explicitly not supported.  See Vbucket::remove
+	return nil, errors.New("not supported")
+}
+
 // GetVbucket will return the Vbucket object for a particular replica and
 // vbucket index within this particular bucket store.
 func (b *Bucket) GetVbucket(repIdx, vbIdx uint) *Vbucket {
