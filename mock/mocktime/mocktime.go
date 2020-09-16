@@ -6,6 +6,18 @@ import (
 	"time"
 )
 
+/*
+TODO(brett19): Solve the race condition that exists in the timers.
+There exists a race condition when it comes to time-travelling here.  Technically
+time-travelling is expected by consumers to be a synchronous thing.  IE: If you set
+a timer, and then time travel past its execution time, that it will have executed.
+Unfortunately timers are executed asynchronously, so it's possible that they will
+not have been invoked synchronously, for instance if they were triggered on the
+very precipice of the time travel call, they might still be pending...
+This has been worked around currently by waiting for 5ms after a time travel to
+allow any pending timers to wake up and execute.
+*/
+
 type mockTimer struct {
 	timer       *time.Timer
 	triggerTime time.Time
@@ -84,6 +96,10 @@ func (t *Chrono) checkTimers() {
 			mtmr.timer.Reset(0)
 		}
 	}
+
+	// We sleep for 5ms here to allow any pending timers to be executed.  Hopefully
+	// thats enough time to allow them all to execute, but who knows...
+	time.Sleep(5 * time.Millisecond)
 }
 
 // AfterFunc calls a callback function after a duration has passed.
