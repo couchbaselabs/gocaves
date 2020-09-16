@@ -9,7 +9,21 @@ import (
 )
 
 /**
-	TODO(brett19): Describe the implementation below.
+	The implementation of this replicator is intended to be relatively trivial.  Each
+	time it wakes up it checks the src vbuckets seqno's and if there are new changes it
+	fetches them and checks their modification time to decide whether they should be
+	replicated yet.  If so, they are immediately pushed to the destination vbucket.  In
+	the case that there are pending changes but they have not reached the replication
+	latency yet, it keeps track of the oldest item which will need to be replicated and
+	sets a timer for that time, when it will reawake and check again.  If the replicator
+	is paused, we simply mark the replicator as disabled so any previously scheduled
+	timers don't try and perform replication.  Upon resumption, and any time that the
+	replicator is signaled by its parent that there was a change, the main logic is run
+	again to replicate anything that needs to be and potentially schedule a new timer.
+	This all assumes that the last modified times and seqno's are always ascending and
+	takes advantage of the fact that the latency is the same for all documents, meaning
+	newer documents are guarenteed to replicate after newer documents, meaning that
+	the running timer never needs to be reconfigured.
 **/
 
 // replicator defines a replication system which copies data between vbuckets
