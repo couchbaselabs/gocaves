@@ -27,10 +27,11 @@ type Document struct {
 
 // Vbucket represents a single Vbucket worth of documents
 type Vbucket struct {
-	chrono    *mocktime.Chrono
-	lock      sync.Mutex
-	documents []*Document
-	maxSeqNo  uint64
+	chrono        *mocktime.Chrono
+	lock          sync.Mutex
+	documents     []*Document
+	maxSeqNo      uint64
+	compactionRev uint64
 }
 
 type vbucketConfig struct {
@@ -219,11 +220,15 @@ func (s *Vbucket) addRepDocMutation(doc *Document) {
 	s.documents = append(s.documents, newDoc)
 }
 
-// compact will compact all of the mutations within a vbucket such that no two
+// Compact will compact all of the mutations within a vbucket such that no two
 // sequence numbers exist which are for the same document key.
-func (s *Vbucket) compact() error {
+func (s *Vbucket) Compact() error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+
+	// Increment the compaction revision to avoid having people use snapshots from
+	// before the compaction, which will likely lead to problems...
+	s.compactionRev++
 
 	// We take advantage of the fact that strings and []byte's are equivalent in Go.
 	// It is specifically allowed by their spec to convert between them, and non-UTF8
@@ -252,6 +257,59 @@ func (s *Vbucket) compact() error {
 	// of this swap (but the minseqno might change), since we always take the newest
 	// versions of the documents.
 	s.documents = docs
+
+	return nil
+}
+
+type vbucketSnapshot struct {
+	CompactionRev uint64
+	SeqNo         uint64
+}
+
+// snapshot will return a vbucketSnapshot which can be later used to execute a
+// rollback of this vbucket to this particular point in time.
+func (s *Vbucket) snapshot() *vbucketSnapshot {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	return &vbucketSnapshot{
+		CompactionRev: s.compactionRev,
+		SeqNo:         s.maxSeqNo,
+	}
+}
+
+// rollback will rollback this vbucket to a specific seqno (including that seqno)
+// NOTE: This is not safe to call directly since replicators can be running which
+// will blow up if they are not kept in sync.  Additionally, it is not safe to
+// rollback a vbucket which has been compacted, since the maxseqno will get broken
+// without it being manually adjusted to the rollback point.  This is because rollback
+// calculates a maxSeqNo (which is important for replication to know what still needs to
+// be replicated).  However on the master side of things, the maxSeqNo must be set exactly
+// to the value it was rolled back to, otherwise lower seqNo's might get reused in error.
+// if they were compacted away.  The vbucketSnapshot system prevents this.
+// Use bucket::RollbackVb instead.
+func (s *Vbucket) rollback(snap *vbucketSnapshot) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if snap.CompactionRev != s.compactionRev {
+		return errors.New("cannot rollback after a compaction with a snapshot from before")
+	}
+
+	var maxSeqNo uint64
+
+	newMutations := make([]*Document, 0, len(s.documents))
+	for _, mutation := range s.documents {
+		if mutation.SeqNo <= snap.SeqNo {
+			newMutations = append(newMutations, mutation)
+			if mutation.SeqNo > maxSeqNo {
+				maxSeqNo = mutation.SeqNo
+			}
+		}
+	}
+
+	s.documents = newMutations
+	s.maxSeqNo = maxSeqNo
 
 	return nil
 }

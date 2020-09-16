@@ -141,6 +141,24 @@ func (r *replicator) Resume() {
 	r.checkVbucketsLocked()
 }
 
+// Rollback will rollback this replicator to an older point.  It's used during
+// bucket rollback to reset the replicator to where it should be.
+// NOTE: This method MUST NOT be called unless the replicator is paused.
+func (r *replicator) Rollback(vbIdx uint, seqNo uint64) error {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.disabled {
+		return errors.New("replicator must be paused to rollback")
+	}
+
+	if seqNo < r.maxSeqNos[vbIdx] {
+		r.maxSeqNos[vbIdx] = seqNo
+	}
+
+	return nil
+}
+
 func (r *replicator) Signal(vbIdx uint) {
 	r.lock.Lock()
 	defer r.lock.Unlock()

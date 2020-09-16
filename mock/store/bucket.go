@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"log"
 	"time"
 
 	"github.com/couchbaselabs/gocaves/mock/mocktime"
@@ -9,8 +10,9 @@ import (
 
 // Bucket represents a Bucket store
 type Bucket struct {
-	chrono   *mocktime.Chrono
-	vbuckets [][]*Vbucket
+	chrono      *mocktime.Chrono
+	vbuckets    [][]*Vbucket
+	replicators []*replicator
 }
 
 // BucketConfig specifies the configuration for a new Bucket store.
@@ -44,9 +46,30 @@ func NewBucket(config BucketConfig) (*Bucket, error) {
 		vbReplicas[repIdx] = vbuckets
 	}
 
+	var replicators []*replicator
+	for repIdx := range vbReplicas {
+		if repIdx == 0 {
+			// We can't replicate to the first replica, obviously...
+			continue
+		}
+
+		replicator, err := newReplicator(replicatorConfig{
+			Chrono:      config.Chrono,
+			SrcVbuckets: vbReplicas[0],
+			DstVbuckets: vbReplicas[repIdx],
+			Latency:     config.ReplicaLatency,
+		})
+		if err != nil {
+			log.Printf("failed to start replicator: %v", err)
+		}
+
+		replicators = append(replicators, replicator)
+	}
+
 	bucket := &Bucket{
-		chrono:   config.Chrono,
-		vbuckets: vbReplicas,
+		chrono:      config.Chrono,
+		vbuckets:    vbReplicas,
+		replicators: replicators,
 	}
 
 	return bucket, nil
@@ -89,4 +112,70 @@ func (b *Bucket) GetVbucket(repIdx, vbIdx uint) *Vbucket {
 	}
 
 	return vbuckets[vbIdx]
+}
+
+// Compact will compact all of the vbuckets within this bucket.
+// NOTE: If this function bails out due to an error for any reason, it's possible
+// that not all buckets will have been compacted.  They are performed in sequence
+// from first to last.  Also, we do not compact the replicas, so any mutation
+// streams from them are always uncompacted.
+func (b *Bucket) Compact() error {
+	for _, vbucket := range b.vbuckets[0] {
+		if err := vbucket.Compact(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// BucketSnapshot represents a snapshot of the bucket at a point in time.  This
+// can later be used to rollback the bucket to this point in time.
+type BucketSnapshot struct {
+	vbuckets []*vbucketSnapshot
+}
+
+// Snapshot returns a snapshot of the current state of a Bucket which can be used
+// to later rollback to the bucket to that point in time.
+func (b *Bucket) Snapshot() *BucketSnapshot {
+	primaryVbuckets := b.vbuckets[0]
+
+	snapshots := make([]*vbucketSnapshot, 0, len(primaryVbuckets))
+	for _, vbucket := range primaryVbuckets {
+		snapshots = append(snapshots, vbucket.snapshot())
+	}
+
+	return &BucketSnapshot{
+		vbuckets: snapshots,
+	}
+}
+
+// Rollback will rollback the bucket to a previously snapshotted state.
+func (b *Bucket) Rollback(snap *BucketSnapshot) error {
+	// Pause all the replicators first
+	for _, replicator := range b.replicators {
+		replicator.Pause()
+	}
+
+	// Rollback all the vbuckets
+	for _, vbReplicas := range b.vbuckets {
+		for vbIdx, vbucket := range vbReplicas {
+			vbucket.rollback(snap.vbuckets[vbIdx])
+		}
+	}
+
+	// Rollback the replicators
+	primaryVbuckets := b.vbuckets[0]
+	for _, replicator := range b.replicators {
+		for vbIdx := range primaryVbuckets {
+			replicator.Rollback(uint(vbIdx), snap.vbuckets[vbIdx].SeqNo)
+		}
+	}
+
+	// We can now resume all the replicators.
+	for _, replicator := range b.replicators {
+		replicator.Resume()
+	}
+
+	return nil
 }
