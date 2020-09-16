@@ -44,10 +44,17 @@ func (t *Chrono) TimeTravel(d time.Duration) {
 		d = 0
 	}
 
+	// We adjust the timeshift values
 	timeShiftNs := uint64(d / time.Nanosecond)
 	atomic.AddUint64(&t.timeShiftNs, timeShiftNs)
 
-	t.checkTimers()
+	// Then we reschedule all our timers.  Any expired timers will be
+	// scheduled to execute immediately.
+	t.rescheduleTimers()
+
+	// We sleep for 5ms here to allow any pending timers to be executed.  Hopefully
+	// thats enough time to allow them all to execute, but who knows...
+	time.Sleep(5 * time.Millisecond)
 }
 
 func (t *Chrono) addTimer(mtmr *mockTimer) {
@@ -62,44 +69,26 @@ func (t *Chrono) removeTimer(tmr *mockTimer) {
 	defer t.timersLock.Unlock()
 }
 
-func (t *Chrono) findExpiredTimers() []*mockTimer {
+func (t *Chrono) rescheduleTimers() {
 	curTime := t.Now()
 
 	t.timersLock.Lock()
 	defer t.timersLock.Unlock()
 
-	var expiredTimers []*mockTimer
 	for _, mtmr := range t.timers {
-		if mtmr.triggerTime.After(curTime) {
-			continue
+		var waitTime time.Duration
+
+		if curTime.Before(mtmr.triggerTime) {
+			waitTime = mtmr.triggerTime.Sub(curTime)
 		}
 
-		expiredTimers = append(expiredTimers, mtmr)
-	}
-
-	return expiredTimers
-}
-
-func (t *Chrono) checkTimers() {
-	// We intentionally split this method into two pieces, one which scans
-	// for the expired timers, and the second stage which actually resets them
-	// for immediately which causes them to trigger.  This is important as the
-	// processing of a timer requires locking the timer list to remove it, which
-	// could cause a race.  The timers themselves are thread-safe though.
-	expiredTimers := t.findExpiredTimers()
-
-	for _, mtmr := range expiredTimers {
 		// If Stop returns false, it means it already has triggered and could not
 		// be stopped, but this is fine and we can simply ignore it since all we
-		// are trying to do here is reset it to trigger immediately anyways.
+		// are trying to do here is reset them anyways...
 		if mtmr.timer.Stop() {
-			mtmr.timer.Reset(0)
+			mtmr.timer.Reset(waitTime)
 		}
 	}
-
-	// We sleep for 5ms here to allow any pending timers to be executed.  Hopefully
-	// thats enough time to allow them all to execute, but who knows...
-	time.Sleep(5 * time.Millisecond)
 }
 
 // AfterFunc calls a callback function after a duration has passed.
