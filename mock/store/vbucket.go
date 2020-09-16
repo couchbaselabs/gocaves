@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"log"
+	"sort"
 	"sync"
 	"time"
 
@@ -221,6 +222,36 @@ func (s *Vbucket) addRepDocMutation(doc *Document) {
 // compact will compact all of the mutations within a vbucket such that no two
 // sequence numbers exist which are for the same document key.
 func (s *Vbucket) compact() error {
-	// TODO(brett19): Implement support for compaction in case it is needed.
-	return errors.New("not implemented")
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	// We take advantage of the fact that strings and []byte's are equivalent in Go.
+	// It is specifically allowed by their spec to convert between them, and non-UTF8
+	// keys will still be stored and compared correctly:
+	keyMap := make(map[string]*Document)
+
+	// Pull all the documents into the map, going oldest to newest.  Duplicate documents
+	// for the same key will only end up in the map once, with the most recent version.
+	for _, doc := range s.documents {
+		keyMap[string(doc.Key)] = doc
+	}
+
+	// Let's build out an array again
+	docs := make([]*Document, 0, len(keyMap))
+	for _, doc := range keyMap {
+		docs = append(docs, doc)
+	}
+
+	// Now we just need to re-sort the array such that the seqno's are in order like
+	// we expect that they should be...
+	sort.Slice(docs, func(i, j int) bool {
+		return docs[i].SeqNo < docs[j].SeqNo
+	})
+
+	// And swap out the documents array!  Note that the maxseqno never changes as part
+	// of this swap (but the minseqno might change), since we always take the newest
+	// versions of the documents.
+	s.documents = docs
+
+	return nil
 }
