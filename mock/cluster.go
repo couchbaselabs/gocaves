@@ -6,14 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// ClusterFeature specifies a specific cluster feature
-type ClusterFeature string
-
-// The following is a list of possible cluster features
-const (
-	ClusterFeatureDurations = "durations"
-)
-
 // Cluster represents an instance of a mock cluster
 type Cluster struct {
 	id              string
