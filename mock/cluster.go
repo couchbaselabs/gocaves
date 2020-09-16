@@ -1,6 +1,10 @@
 package mock
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/google/uuid"
+)
 
 // ClusterFeature specifies a specific cluster feature
 type ClusterFeature string
@@ -12,6 +16,7 @@ const (
 
 // Cluster represents an instance of a mock cluster
 type Cluster struct {
+	id              string
 	enabledFeatures []ClusterFeature
 	numVbuckets     uint
 
@@ -36,6 +41,7 @@ func NewCluster(opts NewClusterOptions) (*Cluster, error) {
 	}
 
 	cluster := &Cluster{
+		id:              uuid.New().String(),
 		enabledFeatures: opts.EnabledFeatures,
 		numVbuckets:     opts.NumVbuckets,
 		buckets:         nil,
