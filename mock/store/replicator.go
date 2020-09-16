@@ -104,19 +104,29 @@ func (r *replicator) checkVbucketsLocked() {
 	}
 
 	if !nextReplicateWake.IsZero() {
-		replicateWait := nextReplicateWake.Sub(r.chrono.Now())
-		r.chrono.AfterFunc(replicateWait, func() {
-			r.lock.Lock()
-			defer r.lock.Unlock()
-			r.checkVbucketsLocked()
-		})
+		if !r.hasTimerSet {
+			r.hasTimerSet = true
+
+			replicateWait := nextReplicateWake.Sub(r.chrono.Now())
+			r.chrono.AfterFunc(replicateWait, r.replicationTimerTripped)
+		}
 	}
+}
+
+func (r *replicator) replicationTimerTripped() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.hasTimerSet = false
+	r.checkVbucketsLocked()
 }
 
 func (r *replicator) Pause() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
+	// When we pause, we set disabled to true to ensure if any of the timers
+	// trip, that they are ignored.
 	r.disabled = true
 }
 
@@ -124,8 +134,10 @@ func (r *replicator) Resume() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
+	// When we resume, we turn on the replicator and then manually trigger
+	// a check for any replications that need to happen in case there is no
+	// timer running.
 	r.disabled = false
-
 	r.checkVbucketsLocked()
 }
 
