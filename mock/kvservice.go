@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/couchbaselabs/gocaves/memd"
+	"github.com/couchbase/gocbcore/v9/memd"
 )
 
 // KvService represents an instance of the kv service.
