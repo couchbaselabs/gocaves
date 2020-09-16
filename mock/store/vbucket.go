@@ -15,13 +15,14 @@ import (
 // of simplicity of this mock storage engine, this one object is used
 // throughout the implementation.
 type Document struct {
-	VbID         uint
-	Key          []byte
+	VbID      uint
+	Key       []byte
+	Value     []byte
+	Xattrs    map[string][]byte
+	IsDeleted bool
+
 	Cas          uint64
-	Value        []byte
-	Xattrs       map[string][]byte
 	SeqNo        uint64
-	IsDeleted    bool
 	ModifiedTime time.Time
 }
 
