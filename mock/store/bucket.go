@@ -75,6 +75,12 @@ func NewBucket(config BucketConfig) (*Bucket, error) {
 	return bucket, nil
 }
 
+func (b *Bucket) signalReplicators(vbIdx uint) {
+	for _, replicator := range b.replicators {
+		replicator.Signal(vbIdx)
+	}
+}
+
 // Get fetches a document from a particular replica and vbucket index.
 func (b *Bucket) Get(repIdx, vbIdx uint, key []byte) (*Document, error) {
 	vbucket := b.GetVbucket(repIdx, vbIdx)
@@ -84,13 +90,17 @@ func (b *Bucket) Get(repIdx, vbIdx uint, key []byte) (*Document, error) {
 // Insert inserts a document into the master replica of a vbucket.
 func (b *Bucket) Insert(doc *Document) (*Document, error) {
 	vbucket := b.GetVbucket(0, doc.VbID)
-	return vbucket.insert(doc)
+	doc, err := vbucket.insert(doc)
+	b.signalReplicators(doc.VbID)
+	return doc, err
 }
 
 // Set stores a document into the master replica of a vbucket.
 func (b *Bucket) Set(doc *Document) (*Document, error) {
 	vbucket := b.GetVbucket(0, doc.VbID)
-	return vbucket.set(doc)
+	doc, err := vbucket.set(doc)
+	b.signalReplicators(doc.VbID)
+	return doc, err
 }
 
 // Remove removes a document from the master replica of a vbucket.
