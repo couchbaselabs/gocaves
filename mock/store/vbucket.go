@@ -29,7 +29,7 @@ type Vbucket struct {
 	chrono    *mocktime.Chrono
 	lock      sync.Mutex
 	documents []*Document
-	seqNoIncr uint64
+	maxSeqNo  uint64
 }
 
 type vbucketConfig struct {
@@ -113,13 +113,12 @@ func (s *Vbucket) GetAllWithin(startSeqNo, endSeqNo uint64) ([]*Document, error)
 }
 
 func (s *Vbucket) maxSeqNoLocked() uint64 {
-	return s.seqNoIncr - 1
+	return s.maxSeqNo
 }
 
 func (s *Vbucket) nextSeqNoLocked() uint64 {
-	curSeqNo := s.seqNoIncr
-	s.seqNoIncr++
-	return curSeqNo
+	s.maxSeqNo++
+	return s.maxSeqNo
 }
 
 func (s *Vbucket) findDocLocked(key []byte) *Document {
@@ -197,13 +196,13 @@ func (s *Vbucket) addRepDocMutation(doc *Document) {
 	defer s.lock.Unlock()
 
 	// Make sure we aren't somehow getting out of order sequence numbers...
-	if doc.SeqNo < s.seqNoIncr {
+	if doc.SeqNo <= s.maxSeqNo {
 		log.Printf("unexpected seqno during replica document set")
 		return
 	}
 
 	// Force the max seqno to the newly added document.
-	s.seqNoIncr = doc.SeqNo + 1
+	s.maxSeqNo = doc.SeqNo
 
 	// Create a copy of the document and insert it into our data.
 	newDoc := copyDocument(doc)
