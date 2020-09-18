@@ -1,4 +1,4 @@
-package services
+package servers
 
 import (
 	"log"
@@ -8,32 +8,32 @@ import (
 	"github.com/couchbase/gocbcore/v9/memd"
 )
 
-// MemdServiceHandlers provides all the handlers for this service
-type MemdServiceHandlers struct {
+// MemdServerHandlers provides all the handlers for the memd server
+type MemdServerHandlers struct {
 	NewClientHandler  func(*MemdClient)
 	LostClientHandler func(*MemdClient)
 	PacketHandler     func(*MemdClient, *memd.Packet)
 }
 
-// MemdService represents an instance of the memd service.
-type MemdService struct {
+// MemdServer represents an instance of the memd server.
+type MemdServer struct {
 	lock       sync.Mutex
 	listenPort int
 	localAddr  string
 	listener   net.Listener
-	handlers   MemdServiceHandlers
+	handlers   MemdServerHandlers
 
 	clients []*MemdClient
 }
 
-// NewMemdServiceOptions enables the specification of default options for a new memd service.
-type NewMemdServiceOptions struct {
-	Handlers MemdServiceHandlers
+// NewMemdServerOptions enables the specification of default options for a new memd server.
+type NewMemdServerOptions struct {
+	Handlers MemdServerHandlers
 }
 
-// NewMemdService instantiates a new instance of the memd service.
-func NewMemdService(opts NewMemdServiceOptions) (*MemdService, error) {
-	svc := &MemdService{
+// NewMemdService instantiates a new instance of the memd server.
+func NewMemdService(opts NewMemdServerOptions) (*MemdServer, error) {
+	svc := &MemdServer{
 		handlers: opts.Handlers,
 	}
 
@@ -45,12 +45,12 @@ func NewMemdService(opts NewMemdServiceOptions) (*MemdService, error) {
 	return svc, nil
 }
 
-// ListenPort returns the port this service is listening on.
-func (s *MemdService) ListenPort() int {
+// ListenPort returns the port this server is listening on.
+func (s *MemdServer) ListenPort() int {
 	return s.listenPort
 }
 
-func (s *MemdService) start() error {
+func (s *MemdServer) start() error {
 	lsnr, err := net.Listen("tcp", ":0")
 	if err != nil {
 		return err
@@ -86,16 +86,29 @@ func (s *MemdService) start() error {
 		}
 	}()
 
-	log.Printf("memd service started on %+v", s)
+	log.Printf("memd server started on %+v", s)
 
 	return err
 }
 
-func (s *MemdService) handleClientRequest(client *MemdClient, pak *memd.Packet) {
+// GetAllClients returns a list of all clients which are connected.
+func (s *MemdServer) GetAllClients() []*MemdClient {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	var allClients []*MemdClient
+	for _, foundClient := range s.clients {
+		allClients = append(allClients, foundClient)
+	}
+
+	return allClients
+}
+
+func (s *MemdServer) handleClientRequest(client *MemdClient, pak *memd.Packet) {
 	s.handlers.PacketHandler(client, pak)
 }
 
-func (s *MemdService) handleClientDisconnect(client *MemdClient) {
+func (s *MemdServer) handleClientDisconnect(client *MemdClient) {
 	s.handlers.LostClientHandler(client)
 
 	s.lock.Lock()
@@ -111,8 +124,8 @@ func (s *MemdService) handleClientDisconnect(client *MemdClient) {
 	s.lock.Unlock()
 }
 
-// Close causes this memd service to be forcefully stopped and all clients dropped.
-func (s *MemdService) Close() error {
+// Close causes this memd server to be forcefully stopped and all clients dropped.
+func (s *MemdServer) Close() error {
 	err := s.listener.Close()
 	if err != nil {
 		log.Printf("failed to close memd listener: %s", err)

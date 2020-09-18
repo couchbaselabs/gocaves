@@ -1,5 +1,5 @@
 package mock
 
-// SearchService represents an instance of the search service.
-type SearchService struct {
+// searchService represents an instance of the search service.
+type searchService struct {
 }

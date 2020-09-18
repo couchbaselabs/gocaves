@@ -1,113 +1,133 @@
 package mock
 
 import (
-	"log"
-	"net"
-	"sync"
+	"fmt"
 
 	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbaselabs/gocaves/mock/servers"
 )
+
+// KvRequest represents an incoming packet from one of our clients.  Note that
+// kv is not always request/reply oriented, but this naming is more clear.
+type KvRequest struct {
+	Source *KvClient
+	Packet memd.Packet
+}
+
+// KvClient represents all the state about a connected kv client.
+type KvClient struct {
+	client  *servers.MemdClient
+	service *KvService
+
+	SelectedBucket string
+}
+
+// Source returns the KvService which owns this client.
+func (c *KvClient) Source() *KvService {
+	return c.service
+}
+
+// WritePacket tries to write data to the underlying connection.
+func (c *KvClient) WritePacket(pak *memd.Packet) error {
+	return c.client.WritePacket(pak)
+}
+
+// Close attempts to close the connection.
+func (c *KvClient) Close() error {
+	return c.client.Close()
+}
 
 // KvService represents an instance of the kv service.
 type KvService struct {
 	clusterNode *ClusterNode
-
-	lock       sync.Mutex
-	listenPort int
-	localAddr  string
-	listener   net.Listener
-
-	clients []*KvClient
+	server      *servers.MemdServer
 }
 
-// NewKvServiceOptions enables the specification of default options for a new kv service.
-type NewKvServiceOptions struct {
+// newKvServiceOptions enables the specification of default options for a new kv service.
+type newKvServiceOptions struct {
 }
 
-// NewKvService instantiates a new instance of the kv service.
-func NewKvService(parent *ClusterNode, opts NewKvServiceOptions) (*KvService, error) {
+// newKvService instantiates a new instance of the kv service.
+func newKvService(parent *ClusterNode, opts newKvServiceOptions) (*KvService, error) {
 	svc := &KvService{
 		clusterNode: parent,
 	}
 
-	err := svc.start()
+	srv, err := servers.NewMemdService(servers.NewMemdServerOptions{
+		Handlers: servers.MemdServerHandlers{
+			NewClientHandler:  svc.handleNewMemdClient,
+			LostClientHandler: svc.handleLostMemdClient,
+			PacketHandler:     svc.handleMemdPacket,
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
+	svc.server = srv
 
 	return svc, nil
 }
 
-func (s *KvService) start() error {
-	lsnr, err := net.Listen("tcp", ":0")
-	if err != nil {
-		return err
+// Node returns the ClusterNode which owns this service.
+func (s *KvService) Node() *ClusterNode {
+	return s.clusterNode
+}
+
+// Address returns the host/port address of this service.
+func (s *KvService) Address() string {
+	return fmt.Sprintf("%s:%d", s.Hostname(), s.ListenPort())
+}
+
+// Hostname returns the hostname where this service can be accessed.
+func (s *KvService) Hostname() string {
+	return "127.0.0.1"
+}
+
+// ListenPort returns the port this service is listening on.
+func (s *KvService) ListenPort() int {
+	return s.server.ListenPort()
+}
+
+// GetAllClients returns a list of all the clients connected to this service.
+func (s *KvService) GetAllClients() []*KvClient {
+	allClients := s.server.GetAllClients()
+
+	var allKvClients []*KvClient
+	for _, client := range allClients {
+		kvCli := s.getKvClient(client)
+		allKvClients = append(allKvClients, kvCli)
 	}
 
-	// Save the local listening address
-	addr := lsnr.Addr()
-	tcpAddr := addr.(*net.TCPAddr)
-	s.listenPort = tcpAddr.Port
-	s.localAddr = addr.String()
-
-	go func() {
-		for {
-			conn, err := lsnr.Accept()
-			if err != nil {
-				log.Printf("accept failed: %s", err)
-				break
-			}
-
-			client, err := NewKvClient(s, conn)
-			if err != nil {
-				log.Printf("failed to create kv client: %s", err)
-				break
-			}
-
-			s.lock.Lock()
-
-			s.clients = append(s.clients, client)
-
-			s.lock.Unlock()
-		}
-	}()
-
-	return err
+	return allKvClients
 }
 
-func (s *KvService) handleClientRequest(client *KvClient, pak *memd.Packet) {
-
-}
-
-func (s *KvService) handleClientDisconnect(client *KvClient) {
-	s.lock.Lock()
-
-	var newClients []*KvClient
-	for _, foundClient := range s.clients {
-		if foundClient != client {
-			newClients = append(newClients, foundClient)
-		}
-	}
-	s.clients = newClients
-
-	s.lock.Unlock()
-}
-
-// Close causes this kv service to be forcefully stopped and all clients dropped.
+// Close will shut down this service once it is no longer needed.
 func (s *KvService) Close() error {
-	s.lock.Lock()
+	// TODO(brett19): Implement this...
+	return nil
+}
 
-	clients := s.clients
-	s.clients = nil
+func (s *KvService) getKvClient(cli *servers.MemdClient) *KvClient {
+	var kvCli *KvClient
+	cli.GetContext(&kvCli)
+	return kvCli
+}
 
-	s.lock.Unlock()
+func (s *KvService) handleNewMemdClient(cli *servers.MemdClient) {
+	kvCli := s.getKvClient(cli)
+	kvCli.client = cli
+	kvCli.service = s
+}
 
-	for _, client := range clients {
-		err := client.Close()
-		if err != nil {
-			log.Printf("faile to close kv client: %s", err)
-		}
+func (s *KvService) handleLostMemdClient(cli *servers.MemdClient) {
+	kvCli := s.getKvClient(cli)
+	kvCli.client = nil
+}
+
+func (s *KvService) handleMemdPacket(cli *servers.MemdClient, pak *memd.Packet) {
+	kvCli := s.getKvClient(cli)
+	if kvCli.client == nil {
+		return
 	}
 
-	return s.listener.Close()
 }

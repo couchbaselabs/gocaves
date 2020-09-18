@@ -1,23 +1,25 @@
-package services
+package servers
 
 import (
 	"encoding/binary"
 	"net"
 
 	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbaselabs/gocaves/mock/ctxstore"
 )
 
 // MemdClient represents a connected memd client.
 type MemdClient struct {
-	parent *MemdService
-	conn   net.Conn
-	mconn  *memd.Conn
+	parent   *MemdServer
+	conn     net.Conn
+	mconn    *memd.Conn
+	ctxStore ctxstore.Store
 
 	closeWaitCh chan struct{}
 }
 
 // NewMemdClient allows the creation of a new memd client
-func newMemdClient(parent *MemdService, conn net.Conn) (*MemdClient, error) {
+func newMemdClient(parent *MemdServer, conn net.Conn) (*MemdClient, error) {
 	mconn := memd.NewConn(conn)
 
 	cli := &MemdClient{
@@ -35,7 +37,7 @@ func newMemdClient(parent *MemdService, conn net.Conn) (*MemdClient, error) {
 }
 
 // WritePacket writes a packet to the connection.
-func (c *MemdClient) WritePacket(pak *memd.Packet) {
+func (c *MemdClient) WritePacket(pak *memd.Packet) error {
 	// In order to support various hello features, we detect when there is a hello response
 	// packet sent, and then automatically enable the appropriate protocol features when
 	// we do that.
@@ -50,7 +52,7 @@ func (c *MemdClient) WritePacket(pak *memd.Packet) {
 
 	// Actually write the packet.  Note that it is critical that the features we enable above
 	// don't actually affect how the HELLO packet is being written.
-	c.mconn.WritePacket(pak)
+	return c.mconn.WritePacket(pak)
 }
 
 func (c *MemdClient) start() error {
@@ -84,4 +86,9 @@ func (c *MemdClient) Close() error {
 
 	// Finally we can return the error that occurred.
 	return err
+}
+
+// GetContext gets arbitrary context associated with this client
+func (c *MemdClient) GetContext(valuePtr interface{}) {
+	c.ctxStore.Get(valuePtr)
 }

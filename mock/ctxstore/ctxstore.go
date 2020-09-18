@@ -1,14 +1,16 @@
-package mock
+package ctxstore
 
 import (
 	"reflect"
 )
 
-type ctxStore struct {
+// Store allows generic contextual data storage
+type Store struct {
 	data map[reflect.Type]reflect.Value
 }
 
-func (s *ctxStore) Get(valuePtr interface{}) {
+// Get returns an associated context by its type
+func (s *Store) Get(valuePtr interface{}) {
 	v := reflect.ValueOf(valuePtr)
 	if v.Kind() != reflect.Ptr {
 		panic("should specify a pointer to pointer type (1)")

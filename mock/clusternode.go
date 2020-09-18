@@ -1,6 +1,10 @@
 package mock
 
-import "log"
+import (
+	"log"
+
+	"github.com/google/uuid"
+)
 
 // NewNodeOptions allows the specification of initial options for a new node.
 type NewNodeOptions struct {
@@ -10,23 +14,25 @@ type NewNodeOptions struct {
 // ClusterNode specifies a node within a cluster instance.
 type ClusterNode struct {
 	cluster *Cluster
+	id      string
 
 	kvService        *KvService
 	mgmtService      *MgmtService
-	viewsService     *ViewsService
-	queryService     *QueryService
-	searchService    *SearchService
+	viewsService     *viewsService
+	queryService     *queryService
+	searchService    *searchService
 	analyticsService *AnalyticsService
 }
 
 // NewClusterNode creates a new ClusterNode instance
 func NewClusterNode(parent *Cluster, opts NewNodeOptions) (*ClusterNode, error) {
 	node := &ClusterNode{
+		id:      uuid.New().String(),
 		cluster: parent,
 	}
 
 	if serviceTypeListContains(opts.EnabledServices, ServiceTypeKeyValue) {
-		kvService, err := NewKvService(node, NewKvServiceOptions{})
+		kvService, err := newKvService(node, newKvServiceOptions{})
 		if err != nil {
 			log.Printf("cluster node failed to start kv service: %s", err)
 			node.cleanup()
@@ -37,7 +43,7 @@ func NewClusterNode(parent *Cluster, opts NewNodeOptions) (*ClusterNode, error) 
 	}
 
 	if serviceTypeListContains(opts.EnabledServices, ServiceTypeMgmt) {
-		mgmtService, err := NewMgmtService(node, NewMgmtServiceOptions{})
+		mgmtService, err := newMgmtService(node, newMgmtServiceOptions{})
 		if err != nil {
 			log.Printf("cluster node failed to start mgmt service: %s", err)
 			node.cleanup()
@@ -49,6 +55,16 @@ func NewClusterNode(parent *Cluster, opts NewNodeOptions) (*ClusterNode, error) 
 
 	log.Printf("new cluster node created")
 	return node, nil
+}
+
+// ID returns the uuid of this node.
+func (n *ClusterNode) ID() string {
+	return n.id
+}
+
+// Cluster returns the Cluster this node is part of.
+func (n *ClusterNode) Cluster() *Cluster {
+	return n.cluster
 }
 
 func (n *ClusterNode) cleanup() {

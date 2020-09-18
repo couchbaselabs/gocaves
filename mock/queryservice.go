@@ -1,5 +1,5 @@
 package mock
 
-// QueryService represents an instance of the query service.
-type QueryService struct {
+// queryService represents an instance of the query service.
+type queryService struct {
 }

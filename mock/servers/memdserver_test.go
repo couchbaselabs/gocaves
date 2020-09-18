@@ -1,4 +1,4 @@
-package services
+package servers
 
 import (
 	"fmt"
@@ -17,8 +17,8 @@ func TestMemdBasic(t *testing.T) {
 	var lostClientInvokes []*MemdClient
 	var packetInvokes []*memd.Packet
 
-	svc, err := NewMemdService(NewMemdServiceOptions{
-		Handlers: MemdServiceHandlers{
+	svc, err := NewMemdService(NewMemdServerOptions{
+		Handlers: MemdServerHandlers{
 			NewClientHandler: func(cli *MemdClient) {
 				newClientInvokes = append(newClientInvokes, cli)
 			},
@@ -37,12 +37,12 @@ func TestMemdBasic(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("failed to start memd service: %v", err)
+		t.Fatalf("failed to start memd server: %v", err)
 	}
 
 	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", svc.ListenPort()))
 	if err != nil {
-		t.Fatalf("failed to dial memd service: %v", err)
+		t.Fatalf("failed to dial memd server: %v", err)
 	}
 	mconn := memd.NewConn(conn)
 

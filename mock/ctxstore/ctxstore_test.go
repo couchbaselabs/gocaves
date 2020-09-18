@@ -1,4 +1,4 @@
-package mock
+package ctxstore
 
 import "testing"
 
@@ -12,7 +12,7 @@ type testTypeY struct {
 }
 
 func TestCtxStore(t *testing.T) {
-	s := &ctxStore{}
+	s := &Store{}
 
 	var t1x *testTypeX
 	var t2y *testTypeY
