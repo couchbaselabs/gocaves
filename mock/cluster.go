@@ -1,9 +1,12 @@
 package mock
 
 import (
+	"log"
 	"time"
 
+	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock/mocktime"
+	"github.com/couchbaselabs/gocaves/mock/servers"
 	"github.com/google/uuid"
 )
 
@@ -19,6 +22,10 @@ type Cluster struct {
 	nodes   []*ClusterNode
 
 	currentConfig []byte
+
+	kvInHooks  KvHookManager
+	kvOutHooks KvHookManager
+	mgmtHooks  MgmtHookManager
 }
 
 // NewClusterOptions allows the specification of initial options for a new cluster.
@@ -56,6 +63,12 @@ func NewCluster(opts NewClusterOptions) (*Cluster, error) {
 	// one to be added here at creation time.  Theoretically nothing will break
 	// if there are no nodes in the cluster, but this might change in the future.
 	cluster.AddNode(opts.InitialNode)
+
+	// I don't really like this, but the default implementations have to be in the
+	// same package as us or we end up with a circular dependancy.  Maybe fix it with
+	// interfaces later...
+	(&kvImplCrud{}).Register(&cluster.kvInHooks)
+	(&mgmtImplConfig{}).Register(&cluster.mgmtHooks)
 
 	return cluster, nil
 }
@@ -125,4 +138,34 @@ func (c *Cluster) IsFeatureEnabled(feature ClusterFeature) bool {
 
 func (c *Cluster) updateConfig() {
 	c.currentConfig = nil
+}
+
+// KvInHooks returns the hook manager for incoming kv packets.
+func (c *Cluster) KvInHooks() *KvHookManager {
+	return &c.kvInHooks
+}
+
+// KvOutHooks returns the hook manager for outgoing kv packets.
+func (c *Cluster) KvOutHooks() *KvHookManager {
+	return &c.kvOutHooks
+}
+
+// MgmtHooks returns the hook manager for management requests.
+func (c *Cluster) MgmtHooks() *MgmtHookManager {
+	return &c.mgmtHooks
+}
+
+func (c *Cluster) handleKvPacketIn(source *KvClient, pak *memd.Packet) {
+	log.Printf("received kv packet %p %+v", source, pak)
+	c.kvInHooks.Invoke(source, pak)
+}
+
+func (c *Cluster) handleKvPacketOut(source *KvClient, pak *memd.Packet) bool {
+	log.Printf("sending kv packet %p %+v", source, pak)
+	return c.kvOutHooks.Invoke(source, pak)
+}
+
+func (c *Cluster) handleMgmtRequest(source *MgmtService, req *servers.HTTPRequest) *servers.HTTPResponse {
+	log.Printf("received mgmt request %p %+v", source, req)
+	return c.mgmtHooks.Invoke(source, req)
 }

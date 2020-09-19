@@ -70,9 +70,9 @@ type jsonCfgBucket struct {
 
 	// These are used for JSON IO, but isn't used for processing
 	// since it needs to be swapped out safely.
-	VBucketServerMap       jsonCfgVBucketServerMap `json:"vBucketServerMap"`
-	Nodes                  []jsonCfgNode           `json:"nodes"`
-	NodesExt               []jsonCfgNodeExt        `json:"nodesExt,omitempty"`
-	ClusterCapabilitiesVer []int                   `json:"clusterCapabilitiesVer,omitempty"`
-	ClusterCapabilities    map[string][]string     `json:"clusterCapabilities,omitempty"`
+	VBucketServerMap       *jsonCfgVBucketServerMap `json:"vBucketServerMap,omitempty"`
+	Nodes                  []jsonCfgNode            `json:"nodes"`
+	NodesExt               []jsonCfgNodeExt         `json:"nodesExt,omitempty"`
+	ClusterCapabilitiesVer []int                    `json:"clusterCapabilitiesVer,omitempty"`
+	ClusterCapabilities    map[string][]string      `json:"clusterCapabilities,omitempty"`
 }

@@ -1,6 +1,7 @@
 package mock
 
 import (
+	"encoding/json"
 	"log"
 
 	"github.com/couchbaselabs/gocaves/mock/store"
@@ -32,14 +33,14 @@ type Bucket struct {
 	numReplicas uint
 	numVbuckets uint
 	store       *store.Bucket
+	configRev   uint
 
 	// vbMap is an array for each vbucket, containing an array for
 	// each replica, containing the UUID of the node responsible.
 	// If a ClusterNode is removed, then it will still be in this map
 	// until a rebalance.  We do not keep ClusterNode pointers here
 	// directly so we can avoid needing to have a cyclical dependancy.
-	vbMap         [][]string
-	currentConfig []byte
+	vbMap [][]string
 }
 
 func newBucket(parent *Cluster, opts NewBucketOptions) (*Bucket, error) {
@@ -127,6 +128,14 @@ func (b *Bucket) UpdateVbMap(nodeList []string) {
 }
 
 func (b *Bucket) updateConfig() {
+	b.configRev++
+
+	// This is just for testing
+	b.GetConfig(nil)
+}
+
+// GetConfig returns the current config for this bucket.
+func (b *Bucket) GetConfig(reqNode *ClusterNode) []byte {
 	allNodes := b.cluster.nodes
 
 	var nodeList uniqueClusterNodeList
@@ -139,18 +148,48 @@ func (b *Bucket) updateConfig() {
 		}
 	}
 
+	// Generate the KV server list before we add the remaining nodes.
 	var serverList []string
 	for _, node := range nodeList {
 		serverList = append(serverList, node.kvService.Address())
 	}
 
-	var config jsonCfgVBucketServerMap
-	config.HashAlgorithm = "crc"
-	config.NumReplicas = int(b.numReplicas)
-	config.ServerList = serverList
-	config.VBucketMap = idxdVbMap
+	// Add the remaining nodes for the nodesExt and such.
+	for _, node := range allNodes {
+		nodeList.GetByID(allNodes, node.ID())
+	}
 
-	log.Printf("Bucket Config:\n%+v", config)
+	vbConfig := make(map[string]interface{})
+	vbConfig["hashAlgorithm"] = "CRC"
+	vbConfig["numReplicas"] = b.NumReplicas()
+	vbConfig["serverList"] = serverList
+	vbConfig["vBucketMap"] = idxdVbMap
 
-	b.currentConfig = nil
+	config := make(map[string]interface{})
+	config["rev"] = 1
+	config["name"] = b.Name()
+	config["uuid"] = b.ID()
+
+	config["bucketCapabilitiesVer"] = ""
+	config["bucketCapabilities"] = []string{
+		"collections",
+		"durableWrite",
+		"tombstonedUserXAttrs",
+		"couchapi",
+		"dcp",
+		"cbhello",
+		"touch",
+		"cccp",
+		"xdcrCheckpointing",
+		"nodesExt",
+		"xattr",
+	}
+
+	config["nodeLocator"] = "vbucket"
+	config["vBucketServerMap"] = vbConfig
+
+	log.Printf("Config: %+v", config)
+
+	configBytes, _ := json.Marshal(config)
+	return configBytes
 }

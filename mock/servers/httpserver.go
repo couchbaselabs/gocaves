@@ -1,9 +1,11 @@
 package servers
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -18,11 +20,27 @@ type HTTPRequest struct {
 	Body   io.Reader
 }
 
+// PeekBody will return the full body and swap the reader with a
+// new one which will allow other users to continue to use it.
+func (r *HTTPRequest) PeekBody() []byte {
+	data, _ := ioutil.ReadAll(r.Body)
+	r.Body = bytes.NewReader(data)
+	return data
+}
+
 // HTTPResponse encapsulates an HTTP response.
 type HTTPResponse struct {
 	StatusCode int
 	Header     http.Header
 	Body       io.Reader
+}
+
+// PeekBody will return the full body and swap the reader with a
+// new one which will allow other users to continue to use it.
+func (r *HTTPResponse) PeekBody() []byte {
+	data, _ := ioutil.ReadAll(r.Body)
+	r.Body = bytes.NewReader(data)
+	return data
 }
 
 // HTTPServerHandlers provides all the handlers for the http server
@@ -110,8 +128,8 @@ func (s *HTTPServer) start() error {
 	return nil
 }
 
-// Stop will stop this HTTP server
-func (s *HTTPServer) Stop() error {
+// Close will stop this HTTP server
+func (s *HTTPServer) Close() error {
 	if s.server == nil {
 		log.Printf("attempted to stop a stopped http `%s` server", s.ServiceName())
 		return errors.New("cannot stop a stopped server")
@@ -135,6 +153,12 @@ func (s *HTTPServer) handleHTTP(w http.ResponseWriter, req *http.Request) {
 		Header: req.Header,
 		Body:   req.Body,
 	})
+
+	if resp == nil {
+		// If nobody decides to answer the request, we write 501 Unsupported.
+		w.WriteHeader(501)
+		return
+	}
 
 	for headerName, headerValues := range resp.Header {
 		for _, headerValue := range headerValues {

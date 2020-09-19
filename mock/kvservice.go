@@ -29,6 +29,9 @@ func (c *KvClient) Source() *KvService {
 
 // WritePacket tries to write data to the underlying connection.
 func (c *KvClient) WritePacket(pak *memd.Packet) error {
+	if !c.service.clusterNode.cluster.handleKvPacketOut(c, pak) {
+		return nil
+	}
 	return c.client.WritePacket(pak)
 }
 
@@ -103,8 +106,7 @@ func (s *KvService) GetAllClients() []*KvClient {
 
 // Close will shut down this service once it is no longer needed.
 func (s *KvService) Close() error {
-	// TODO(brett19): Implement this...
-	return nil
+	return s.server.Close()
 }
 
 func (s *KvService) getKvClient(cli *servers.MemdClient) *KvClient {
@@ -130,4 +132,5 @@ func (s *KvService) handleMemdPacket(cli *servers.MemdClient, pak *memd.Packet) 
 		return
 	}
 
+	s.clusterNode.cluster.handleKvPacketIn(kvCli, pak)
 }

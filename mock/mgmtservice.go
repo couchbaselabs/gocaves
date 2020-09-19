@@ -36,12 +36,16 @@ func newMgmtService(parent *ClusterNode, opts newMgmtServiceOptions) (*MgmtServi
 	return svc, nil
 }
 
-func (s *MgmtService) handleNewRequest(*servers.HTTPRequest) *servers.HTTPResponse {
-	return nil
+// Node returns the node which owns this service.
+func (s *MgmtService) Node() *ClusterNode {
+	return s.clusterNode
+}
+
+func (s *MgmtService) handleNewRequest(req *servers.HTTPRequest) *servers.HTTPResponse {
+	return s.clusterNode.cluster.handleMgmtRequest(s, req)
 }
 
 // Close will shut down this service once it is no longer needed.
 func (s *MgmtService) Close() error {
-	// TODO(brett19): Implement this...
-	return nil
+	return s.server.Close()
 }
