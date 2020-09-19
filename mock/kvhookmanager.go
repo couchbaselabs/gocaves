@@ -1,8 +1,6 @@
 package mock
 
 import (
-	"context"
-
 	"github.com/couchbase/gocbcore/v9/memd"
 )
 
@@ -13,18 +11,12 @@ type KvHookFunc func(source *KvClient, pak *memd.Packet, next func())
 // KvHookManager implements a tree of hooks which can handle a kv packet.
 type KvHookManager struct {
 	hookManager
-	ctx       context.Context
-	ctxCancel context.CancelFunc
 }
 
 // Child returns a child hook manager to this hook manager.
 func (m *KvHookManager) Child() *KvHookManager {
-	ctx, ctxCancel := context.WithCancel(m.ctx)
-
 	return &KvHookManager{
 		hookManager: m.hookManager.Child(),
-		ctx:         ctx,
-		ctxCancel:   ctxCancel,
 	}
 }
 

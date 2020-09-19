@@ -41,6 +41,16 @@ func (s *MgmtService) Node() *ClusterNode {
 	return s.clusterNode
 }
 
+// Hostname returns the hostname where this service can be accessed.
+func (s *MgmtService) Hostname() string {
+	return "127.0.0.1"
+}
+
+// ListenPort returns the port this service is listening on.
+func (s *MgmtService) ListenPort() int {
+	return s.server.ListenPort()
+}
+
 func (s *MgmtService) handleNewRequest(req *servers.HTTPRequest) *servers.HTTPResponse {
 	return s.clusterNode.cluster.handleMgmtRequest(s, req)
 }

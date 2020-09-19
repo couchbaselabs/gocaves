@@ -11,21 +11,25 @@ import (
 type memdPakFields int
 
 const (
-	memdPakFieldMagic  = 1 << 0
-	memdPakFieldCmd    = 1 << 1
-	memdPakFieldKey    = 1 << 2
-	memdPakFieldOpaque = 1 << 3
+	memdPakFieldMagic        = 1 << 0
+	memdPakFieldCmd          = 1 << 1
+	memdPakFieldKey          = 1 << 2
+	memdPakFieldOpaque       = 1 << 3
+	memdPakFieldCollectionID = 1 << 3
 )
 
 // KvHookExpect provides a nicer way to configure kv hooks.
 type KvHookExpect struct {
-	parent       *KvHookManager
-	expectSource *KvClient
-	expectFields memdPakFields
-	expectMagic  memd.CmdMagic
-	expectCmd    memd.CmdCode
-	expectOpaque uint32
-	expectKey    []byte
+	parent               *KvHookManager
+	expectSource         *KvClient
+	expectFields         memdPakFields
+	expectMagic          memd.CmdMagic
+	expectCmd            memd.CmdCode
+	expectOpaque         uint32
+	expectKey            []byte
+	expectCollectionID   uint32
+	expectScopeName      string
+	expectCollectionName string
 }
 
 // ReplyTo specifies to expect the reply to another packet.
@@ -72,6 +76,25 @@ func (e KvHookExpect) Opaque(opaque uint32) *KvHookExpect {
 	return &e
 }
 
+// CollectionID specifies a specific collection id which is expected.
+func (e KvHookExpect) CollectionID(id uint32) *KvHookExpect {
+	e.expectFields |= memdPakFieldCollectionID
+	e.expectCollectionID = id
+	return &e
+}
+
+// ScopeName specifies a specific scope name which is expected.
+func (e KvHookExpect) ScopeName(name string) *KvHookExpect {
+	e.expectScopeName = name
+	return &e
+}
+
+// CollectionName specifies a specific collection name which is expected.
+func (e KvHookExpect) CollectionName(name string) *KvHookExpect {
+	e.expectCollectionName = name
+	return &e
+}
+
 // Handler specifies the handler to invoke if the expectations are met.
 func (e KvHookExpect) Handler(fn func(source *KvClient, pak *memd.Packet, next func())) *KvHookExpect {
 	e.parent.Push(func(source *KvClient, pak *memd.Packet, next func()) {
@@ -90,6 +113,25 @@ func (e KvHookExpect) Handler(fn func(source *KvClient, pak *memd.Packet, next f
 		}
 		if e.expectFields&memdPakFieldOpaque != 0 && pak.Opaque != e.expectOpaque {
 			shouldReject = true
+		}
+		if e.expectFields&memdPakFieldCollectionID != 0 && pak.CollectionID != e.expectCollectionID {
+			shouldReject = true
+		}
+
+		if e.expectScopeName != "" || e.expectCollectionName != "" {
+			bucket := source.SelectedBucket()
+			if bucket != nil {
+				scopeName, collName := bucket.CollectionManifest().GetByID(pak.CollectionID)
+				if e.expectScopeName != "" && scopeName != e.expectScopeName {
+					shouldReject = true
+				}
+				if e.expectCollectionName != "" && collName != e.expectCollectionName {
+					shouldReject = true
+				}
+			} else {
+				// If we were expecting a scope/collection, but there is no bucket, that's not possible.
+				shouldReject = true
+			}
 		}
 
 		if shouldReject {

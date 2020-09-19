@@ -1,25 +1,26 @@
 package mock
 
 import (
-	"fmt"
-
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock/servers"
 )
-
-// KvRequest represents an incoming packet from one of our clients.  Note that
-// kv is not always request/reply oriented, but this naming is more clear.
-type KvRequest struct {
-	Source *KvClient
-	Packet memd.Packet
-}
 
 // KvClient represents all the state about a connected kv client.
 type KvClient struct {
 	client  *servers.MemdClient
 	service *KvService
 
-	SelectedBucket string
+	selectedBucketName string
+}
+
+// SelectedBucketName returns the currently selected bucket's name.
+func (c *KvClient) SelectedBucketName() string {
+	return c.selectedBucketName
+}
+
+// SelectedBucket returns the currently selected bucket.
+func (c *KvClient) SelectedBucket() *Bucket {
+	return c.service.clusterNode.cluster.GetBucket(c.selectedBucketName)
 }
 
 // Source returns the KvService which owns this client.
@@ -74,11 +75,6 @@ func newKvService(parent *ClusterNode, opts newKvServiceOptions) (*KvService, er
 // Node returns the ClusterNode which owns this service.
 func (s *KvService) Node() *ClusterNode {
 	return s.clusterNode
-}
-
-// Address returns the host/port address of this service.
-func (s *KvService) Address() string {
-	return fmt.Sprintf("%s:%d", s.Hostname(), s.ListenPort())
 }
 
 // Hostname returns the hostname where this service can be accessed.

@@ -1,0 +1,195 @@
+{
+  "name": "default",
+  "nodes": [
+    {
+      "systemStats": {
+        "cpu_utilization_rate": 1.133025597985732,
+        "cpu_stolen_rate": 0.1258917331095258,
+        "swap_total": 2046816256,
+        "swap_used": 237715456,
+        "mem_total": 49093763072,
+        "mem_free": 44614684672,
+        "mem_limit": 49093763072,
+        "cpu_cores_available": 24,
+        "allocstall": 0
+      },
+      "interestingStats": {
+        "cmd_get": 0,
+        "couch_docs_actual_disk_size": 4277712,
+        "couch_docs_data_size": 4249600,
+        "couch_spatial_data_size": 0,
+        "couch_spatial_disk_size": 0,
+        "couch_views_actual_disk_size": 0,
+        "couch_views_data_size": 0,
+        "curr_items": 0,
+        "curr_items_tot": 0,
+        "ep_bg_fetched": 0,
+        "get_hits": 0,
+        "mem_used": 38148176,
+        "ops": 0,
+        "vb_active_num_non_resident": 0,
+        "vb_replica_curr_items": 0
+      },
+      "uptime": "385681",
+      "memoryTotal": 49093763072,
+      "memoryFree": 44614684672,
+      "mcdMemoryReserved": 37455,
+      "mcdMemoryAllocated": 37455,
+      "couchApiBase": "http://172.23.111.137:8092/",
+      "couchApiBaseHTTPS": "https://172.23.111.137:18092/",
+      "clusterMembership": "active",
+      "recoveryType": "none",
+      "status": "healthy",
+      "otpNode": "ns_1@cb.local",
+      "thisNode": true,
+      "hostname": "172.23.111.137:8091",
+      "nodeUUID": "2144f6b01d6fd654a33f25599eb0c033",
+      "clusterCompatibility": 458752,
+      "version": "7.0.0-3016-enterprise",
+      "os": "x86_64-unknown-linux-gnu",
+      "cpuCount": 24,
+      "ports": {
+        "direct": 11210,
+        "httpsCAPI": 18092,
+        "httpsMgmt": 18091,
+        "distTCP": 21100,
+        "distTLS": 21150
+      },
+      "services": ["cbas", "index", "kv", "n1ql"],
+      "nodeEncryption": false,
+      "configuredHostname": "127.0.0.1:8091",
+      "addressFamily": "inet",
+      "externalListeners": [
+        {
+          "afamily": "inet",
+          "nodeEncryption": false
+        },
+        {
+          "afamily": "inet6",
+          "nodeEncryption": false
+        }
+      ]
+    }
+  ],
+  "buckets": {
+    "uri": "/pools/default/buckets?v=101409776&uuid=e0bd1a48f0ee441e642c990aff745676",
+    "terseBucketsBase": "/pools/default/b/",
+    "terseStreamingBucketsBase": "/pools/default/bs/"
+  },
+  "remoteClusters": {
+    "uri": "/pools/default/remoteClusters?uuid=e0bd1a48f0ee441e642c990aff745676",
+    "validateURI": "/pools/default/remoteClusters?just_validate=1"
+  },
+  "alerts": [
+    {
+      "msg": "Approaching full disk warning. Usage of disk \"/\" on node \"127.0.0.1\" is around 92%.",
+      "serverTime": "2020-09-19T09:00:03.000Z"
+    }
+  ],
+  "alertsSilenceURL": "/controller/resetAlerts?uuid=e0bd1a48f0ee441e642c990aff745676&token=6",
+  "controllers": {
+    "addNode": {
+      "uri": "/controller/addNodeV2?uuid=e0bd1a48f0ee441e642c990aff745676"
+    },
+    "rebalance": {
+      "uri": "/controller/rebalance?uuid=e0bd1a48f0ee441e642c990aff745676"
+    },
+    "failOver": {
+      "uri": "/controller/failOver?uuid=e0bd1a48f0ee441e642c990aff745676"
+    },
+    "startGracefulFailover": {
+      "uri": "/controller/startGracefulFailover?uuid=e0bd1a48f0ee441e642c990aff745676"
+    },
+    "reAddNode": {
+      "uri": "/controller/reAddNode?uuid=e0bd1a48f0ee441e642c990aff745676"
+    },
+    "reFailOver": {
+      "uri": "/controller/reFailOver?uuid=e0bd1a48f0ee441e642c990aff745676"
+    },
+    "ejectNode": {
+      "uri": "/controller/ejectNode?uuid=e0bd1a48f0ee441e642c990aff745676"
+    },
+    "setRecoveryType": {
+      "uri": "/controller/setRecoveryType?uuid=e0bd1a48f0ee441e642c990aff745676"
+    },
+    "setAutoCompaction": {
+      "uri": "/controller/setAutoCompaction?uuid=e0bd1a48f0ee441e642c990aff745676",
+      "validateURI": "/controller/setAutoCompaction?just_validate=1"
+    },
+    "clusterLogsCollection": {
+      "startURI": "/controller/startLogsCollection?uuid=e0bd1a48f0ee441e642c990aff745676",
+      "cancelURI": "/controller/cancelLogsCollection?uuid=e0bd1a48f0ee441e642c990aff745676"
+    },
+    "replication": {
+      "createURI": "/controller/createReplication?uuid=e0bd1a48f0ee441e642c990aff745676",
+      "validateURI": "/controller/createReplication?just_validate=1"
+    }
+  },
+  "rebalanceStatus": "none",
+  "rebalanceProgressUri": "/pools/default/rebalanceProgress",
+  "stopRebalanceUri": "/controller/stopRebalance?uuid=e0bd1a48f0ee441e642c990aff745676",
+  "nodeStatusesUri": "/nodeStatuses",
+  "maxBucketCount": 30,
+  "maxCollectionCount": 1200,
+  "maxScopeCount": 1200,
+  "autoCompactionSettings": {
+    "parallelDBAndViewCompaction": false,
+    "databaseFragmentationThreshold": {
+      "percentage": 30,
+      "size": "undefined"
+    },
+    "viewFragmentationThreshold": {
+      "percentage": 30,
+      "size": "undefined"
+    },
+    "indexCompactionMode": "circular",
+    "indexCircularCompaction": {
+      "daysOfWeek": "Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday",
+      "interval": {
+        "fromHour": 0,
+        "toHour": 0,
+        "fromMinute": 0,
+        "toMinute": 0,
+        "abortOutside": false
+      }
+    },
+    "indexFragmentationThreshold": {
+      "percentage": 30
+    }
+  },
+  "tasks": {
+    "uri": "/pools/default/tasks?v=89878780"
+  },
+  "counters": {
+    "rebalance_success": 1,
+    "rebalance_start": 1
+  },
+  "indexStatusURI": "/indexStatus?v=21137658",
+  "serverGroupsUri": "/pools/default/serverGroups?v=33997461",
+  "clusterName": "",
+  "balanced": true,
+  "checkPermissionsURI": "/pools/default/checkPermissions",
+  "memoryQuota": 600,
+  "indexMemoryQuota": 512,
+  "ftsMemoryQuota": 512,
+  "cbasMemoryQuota": 4646,
+  "eventingMemoryQuota": 256,
+  "storageTotals": {
+    "ram": {
+      "total": 49093763072,
+      "quotaTotal": 629145600,
+      "quotaUsed": 104857600,
+      "used": 9500766208,
+      "usedByData": 38148176,
+      "quotaUsedPerNode": 104857600,
+      "quotaTotalPerNode": 629145600
+    },
+    "hdd": {
+      "total": 331572948992,
+      "quotaTotal": 331572948992,
+      "used": 305047113072,
+      "usedByData": 4277712,
+      "free": 26525835920
+    }
+  }
+}

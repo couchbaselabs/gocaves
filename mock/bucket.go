@@ -1,7 +1,6 @@
 package mock
 
 import (
-	"encoding/json"
 	"log"
 
 	"github.com/couchbaselabs/gocaves/mock/store"
@@ -41,6 +40,8 @@ type Bucket struct {
 	// until a rebalance.  We do not keep ClusterNode pointers here
 	// directly so we can avoid needing to have a cyclical dependancy.
 	vbMap [][]string
+
+	collManifest CollectionManifest
 }
 
 func newBucket(parent *Cluster, opts NewBucketOptions) (*Bucket, error) {
@@ -94,6 +95,11 @@ func (b Bucket) NumReplicas() uint {
 	return b.numReplicas
 }
 
+// CollectionManifest returns the collection manifest of this bucket.
+func (b Bucket) CollectionManifest() CollectionManifest {
+	return b.collManifest
+}
+
 // UpdateVbMap will update the vbmap such that all vbuckets are assigned to the
 // specific nodes which are passed in.  Note that this rebalance is guarenteed to
 // be very explicit such that vbNode = (vbId % numNode), and replicas are just ++.
@@ -134,8 +140,8 @@ func (b *Bucket) updateConfig() {
 	b.GetConfig(nil)
 }
 
-// GetConfig returns the current config for this bucket.
-func (b *Bucket) GetConfig(reqNode *ClusterNode) []byte {
+// GetVbServerInfo returns the vb nodes, then the vb map, then the ordered list of all nodes
+func (b *Bucket) GetVbServerInfo(reqNode *ClusterNode) ([]*ClusterNode, [][]int, []*ClusterNode) {
 	allNodes := b.cluster.nodes
 
 	var nodeList uniqueClusterNodeList
@@ -148,48 +154,13 @@ func (b *Bucket) GetConfig(reqNode *ClusterNode) []byte {
 		}
 	}
 
-	// Generate the KV server list before we add the remaining nodes.
-	var serverList []string
-	for _, node := range nodeList {
-		serverList = append(serverList, node.kvService.Address())
-	}
+	// Grab the KV server list before we add the remaining nodes.
+	kvNodes := []*ClusterNode(nodeList)
 
 	// Add the remaining nodes for the nodesExt and such.
 	for _, node := range allNodes {
 		nodeList.GetByID(allNodes, node.ID())
 	}
 
-	vbConfig := make(map[string]interface{})
-	vbConfig["hashAlgorithm"] = "CRC"
-	vbConfig["numReplicas"] = b.NumReplicas()
-	vbConfig["serverList"] = serverList
-	vbConfig["vBucketMap"] = idxdVbMap
-
-	config := make(map[string]interface{})
-	config["rev"] = 1
-	config["name"] = b.Name()
-	config["uuid"] = b.ID()
-
-	config["bucketCapabilitiesVer"] = ""
-	config["bucketCapabilities"] = []string{
-		"collections",
-		"durableWrite",
-		"tombstonedUserXAttrs",
-		"couchapi",
-		"dcp",
-		"cbhello",
-		"touch",
-		"cccp",
-		"xdcrCheckpointing",
-		"nodesExt",
-		"xattr",
-	}
-
-	config["nodeLocator"] = "vbucket"
-	config["vBucketServerMap"] = vbConfig
-
-	log.Printf("Config: %+v", config)
-
-	configBytes, _ := json.Marshal(config)
-	return configBytes
+	return kvNodes, idxdVbMap, nodeList
 }
