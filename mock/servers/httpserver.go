@@ -2,6 +2,7 @@ package servers
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +42,15 @@ func (r *HTTPResponse) PeekBody() []byte {
 	data, _ := ioutil.ReadAll(r.Body)
 	r.Body = bytes.NewReader(data)
 	return data
+}
+
+// WithJSONBody sets the body of the response to a specific JSON value
+// NOTE: This does not set headers or status code.
+// NOTE: This returns a copy of the object.
+func (r HTTPResponse) WithJSONBody(val interface{}) *HTTPResponse {
+	data, _ := json.Marshal(val)
+	r.Body = bytes.NewReader(data)
+	return &r
 }
 
 // HTTPServerHandlers provides all the handlers for the http server

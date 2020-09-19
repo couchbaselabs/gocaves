@@ -22,7 +22,7 @@ func main() {
 	newBucket, err := cluster.AddBucket(mock.NewBucketOptions{
 		Name:        "default",
 		Type:        mock.BucketTypeCouchbase,
-		NumReplicas: 2,
+		NumReplicas: 1,
 	})
 	if err != nil {
 		log.Printf("Failed to create bucket: %+v", err)
