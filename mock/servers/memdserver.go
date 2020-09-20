@@ -62,6 +62,8 @@ func (s *MemdServer) start() error {
 	s.listenPort = tcpAddr.Port
 	s.localAddr = addr.String()
 
+	log.Printf("starting listener for kv (memd) server on port %d", s.listenPort)
+
 	go func() {
 		for {
 			conn, err := lsnr.Accept()
@@ -85,8 +87,6 @@ func (s *MemdServer) start() error {
 			s.handlers.NewClientHandler(client)
 		}
 	}()
-
-	log.Printf("memd server started on %+v", s)
 
 	return err
 }

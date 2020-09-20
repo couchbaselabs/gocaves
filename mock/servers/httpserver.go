@@ -127,7 +127,7 @@ func (s *HTTPServer) start() error {
 	}
 	s.server = srv
 
-	log.Printf("starting listener for http `%s` server on port %d", s.ServiceName(), s.listenPort)
+	log.Printf("starting listener for %s (http) server on port %d", s.ServiceName(), s.listenPort)
 	go func() {
 		err := srv.Serve(s.listener)
 		if err != nil {

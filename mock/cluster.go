@@ -67,6 +67,7 @@ func NewCluster(opts NewClusterOptions) (*Cluster, error) {
 	// I don't really like this, but the default implementations have to be in the
 	// same package as us or we end up with a circular dependancy.  Maybe fix it with
 	// interfaces later...
+	(&kvImplHello{}).Register(&cluster.kvInHooks)
 	(&kvImplCrud{}).Register(&cluster.kvInHooks)
 	(&mgmtImplConfig{}).Register(&cluster.mgmtHooks)
 
@@ -168,4 +169,28 @@ func (c *Cluster) handleKvPacketOut(source *KvClient, pak *memd.Packet) bool {
 func (c *Cluster) handleMgmtRequest(source *MgmtService, req *servers.HTTPRequest) *servers.HTTPResponse {
 	log.Printf("received mgmt request %p %+v", source, req)
 	return c.mgmtHooks.Invoke(source, req)
+}
+
+func (c *Cluster) handleViewRequest(source *ViewService, req *servers.HTTPRequest) *servers.HTTPResponse {
+	log.Printf("received view request %p %+v", source, req)
+	// TODO(brett19): Implement views request processing
+	return nil
+}
+
+func (c *Cluster) handleQueryRequest(source *QueryService, req *servers.HTTPRequest) *servers.HTTPResponse {
+	log.Printf("received query request %p %+v", source, req)
+	// TODO(brett19): Implement query request processing
+	return nil
+}
+
+func (c *Cluster) handleSearchRequest(source *SearchService, req *servers.HTTPRequest) *servers.HTTPResponse {
+	log.Printf("received search request %p %+v", source, req)
+	// TODO(brett19): Implement search request processing
+	return nil
+}
+
+func (c *Cluster) handleAnalyticsRequest(source *AnalyticsService, req *servers.HTTPRequest) *servers.HTTPResponse {
+	log.Printf("received analytics request %p %+v", source, req)
+	// TODO(brett19): Implement analytics request processing
+	return nil
 }

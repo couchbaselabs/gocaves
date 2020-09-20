@@ -9,21 +9,22 @@ import (
 func (n *ClusterNode) GetConfig(reqNode *ClusterNode, forBucket *Bucket) []byte {
 	config := make(map[string]interface{})
 
-	// TODO(brett19): Add the right stuff here for views.
+	// TODO(brett19): Add the right handling here for TLS.
 	if forBucket != nil {
 		// This is inexplicably URL encoded for god knows what reason
 		config["couchApiBase"] = fmt.Sprintf("http://%s:%d/%s%%2B%s",
-			"invalid-address", 0, forBucket.Name(), forBucket.ID())
+			n.viewService.Hostname(), n.viewService.ListenPort(), forBucket.Name(), forBucket.ID())
 		config["couchApiBaseHTTPS"] = fmt.Sprintf("http://%s:%d/%s%%2B%s",
 			"invalid-address", 0, forBucket.Name(), forBucket.ID())
 	} else {
 		config["couchApiBase"] = fmt.Sprintf("http://%s:%d/",
-			"invalid-address", 0)
+			n.viewService.Hostname(), n.viewService.ListenPort())
 		config["couchApiBaseHTTPS"] = fmt.Sprintf("http://%s:%d/",
 			"invalid-address", 0)
 	}
 
-	config["otpNode"] = "ns_NOPE@cb.local" // TODO(brett19):
+	// TODO(brett19): Generate something reasonable for the otpNode field
+	config["otpNode"] = "ns_NOPE@cb.local"
 	config["thisNode"] = n == reqNode
 	config["hostname"] = fmt.Sprintf("%s:%d", n.mgmtService.Hostname(), n.mgmtService.ListenPort())
 	config["configuredHostname"] = fmt.Sprintf("%s:%d", n.mgmtService.Hostname(), n.mgmtService.ListenPort())
