@@ -82,9 +82,9 @@ func (b *Bucket) signalReplicators(vbIdx uint) {
 }
 
 // Get fetches a document from a particular replica and vbucket index.
-func (b *Bucket) Get(repIdx, vbIdx uint, key []byte) (*Document, error) {
+func (b *Bucket) Get(repIdx, vbIdx uint, collectionID uint, key []byte) (*Document, error) {
 	vbucket := b.GetVbucket(repIdx, vbIdx)
-	return vbucket.Get(key)
+	return vbucket.Get(collectionID, key)
 }
 
 // Insert inserts a document into the master replica of a vbucket.

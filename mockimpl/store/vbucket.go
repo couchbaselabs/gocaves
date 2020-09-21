@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"log"
 	"sort"
 	"sync"
@@ -15,11 +16,14 @@ import (
 // of simplicity of this mock storage engine, this one object is used
 // throughout the implementation.
 type Document struct {
-	VbID      uint
-	Key       []byte
-	Value     []byte
-	Xattrs    map[string][]byte
-	IsDeleted bool
+	VbID         uint
+	CollectionID uint
+	Key          []byte
+	Value        []byte
+	Xattrs       map[string][]byte
+	Flags        uint32
+	Datatype     uint8
+	IsDeleted    bool
 
 	Cas          uint64
 	SeqNo        uint64
@@ -48,7 +52,10 @@ func newVbucket(config vbucketConfig) (*Vbucket, error) {
 func copyDocument(src *Document) *Document {
 	var dst Document
 
+	dst.CollectionID = src.CollectionID
 	dst.Key = append([]byte{}, src.Key...)
+	dst.Flags = src.Flags
+	dst.Datatype = src.Datatype
 	dst.Cas = src.Cas
 	dst.SeqNo = src.SeqNo
 	dst.Value = append([]byte{}, src.Value...)
@@ -72,11 +79,11 @@ func (s *Vbucket) MaxSeqNo() uint64 {
 }
 
 // Get returns a document in the vbucket by key
-func (s *Vbucket) Get(key []byte) (*Document, error) {
+func (s *Vbucket) Get(collectionID uint, key []byte) (*Document, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	foundDoc := s.findDocLocked(key)
+	foundDoc := s.findDocLocked(collectionID, key)
 	if foundDoc == nil {
 		return nil, errors.New("document not found")
 	}
@@ -124,7 +131,7 @@ func (s *Vbucket) nextSeqNoLocked() uint64 {
 	return s.maxSeqNo
 }
 
-func (s *Vbucket) findDocLocked(key []byte) *Document {
+func (s *Vbucket) findDocLocked(collectionID uint, key []byte) *Document {
 	// TODO(brett19): Maybe someday we can improve the performance of this by
 	// scanning from end-to-start instead of start-to-end...
 
@@ -133,7 +140,7 @@ func (s *Vbucket) findDocLocked(key []byte) *Document {
 
 	var foundDoc *Document
 	for _, doc := range s.documents {
-		if bytes.Compare(doc.Key, key) == 0 {
+		if doc.CollectionID == collectionID && bytes.Compare(doc.Key, key) == 0 {
 			foundDoc = doc
 		}
 	}
@@ -161,7 +168,7 @@ func (s *Vbucket) insert(doc *Document) (*Document, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	foundDoc := s.findDocLocked(doc.Key)
+	foundDoc := s.findDocLocked(doc.CollectionID, doc.Key)
 	if foundDoc != nil {
 		return nil, errors.New("doc already exists")
 	}
@@ -177,7 +184,7 @@ func (s *Vbucket) set(doc *Document) (*Document, error) {
 
 	// We scan for an existing document first.  Checking the CAS based on
 	// whether we found one or not.  We don't need it other than that though.
-	foundDoc := s.findDocLocked(doc.Key)
+	foundDoc := s.findDocLocked(doc.CollectionID, doc.Key)
 	if foundDoc != nil {
 		if doc.Cas != 0 && foundDoc.Cas != doc.Cas {
 			return nil, errors.New("cas mismatch")
@@ -239,7 +246,8 @@ func (s *Vbucket) Compact() error {
 	// Pull all the documents into the map, going oldest to newest.  Duplicate documents
 	// for the same key will only end up in the map once, with the most recent version.
 	for _, doc := range s.documents {
-		keyMap[string(doc.Key)] = doc
+		keyPath := fmt.Sprintf("%d-%s", doc.CollectionID, doc.Key)
+		keyMap[keyPath] = doc
 	}
 
 	// Let's build out an array again

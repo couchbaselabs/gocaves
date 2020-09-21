@@ -35,19 +35,41 @@ func (n *ClusterNode) GetConfig(reqNode *ClusterNode, forBucket *Bucket) []byte 
 		config["replication"] = 0
 	}
 
-	config["ports"] = map[string]interface{}{
-		"direct":    11210,
-		"httpsCAPI": 18092,
-		"httpsMgmt": 18091,
-		"distTCP":   21100,
-		"distTLS":   21150,
+	servicePorts := map[string]interface{}{
+		"distTCP": 32767,
+		"distTLS": 32767,
 	}
-	config["services"] = []string{
-		"cbas",
+
+	servicesList := []string{
 		"index",
-		"kv",
-		"n1ql",
 	}
+
+	if n.kvService != nil {
+		servicesList = append(servicesList, "kv")
+
+		servicePorts["direct"] = n.kvService.ListenPort()
+	}
+
+	if n.mgmtService != nil {
+		// TODO(brett19): Add SSL support for mgmt here
+		servicePorts["httpsMgmt"] = 32767
+	}
+
+	if n.viewService != nil {
+		// TODO(brett19): Add SSL support for views here
+		servicePorts["httpsCAPI"] = 32767
+	}
+
+	if n.queryService != nil {
+		servicesList = append(servicesList, "n1ql")
+	}
+
+	if n.analyticsService != nil {
+		servicesList = append(servicesList, "cbas")
+	}
+
+	config["ports"] = servicePorts
+	config["services"] = servicesList
 	config["nodeEncryption"] = false
 	config["addressFamily"] = "inet"
 	config["externalListeners"] = []interface{}{
@@ -124,10 +146,13 @@ func (n *ClusterNode) GetTerseConfig(reqNode *ClusterNode, forBucket *Bucket) []
 
 	config["hostname"] = fmt.Sprintf("%s:%d", n.mgmtService.Hostname(), n.mgmtService.ListenPort())
 
-	// TODO(brett19): Add the right ports that belong here...
-	config["ports"] = map[string]interface{}{
-		"direct": 11210,
+	servicePorts := map[string]interface{}{}
+
+	if n.kvService != nil {
+		servicePorts["direct"] = n.kvService.ListenPort()
 	}
+
+	config["ports"] = servicePorts
 
 	configBytes, _ := json.Marshal(config)
 	return configBytes
@@ -137,18 +162,7 @@ func (n *ClusterNode) GetTerseConfig(reqNode *ClusterNode, forBucket *Bucket) []
 func (n *ClusterNode) GetExtConfig(reqNode *ClusterNode, forBucket *Bucket) []byte {
 	config := make(map[string]interface{})
 
-	config["services"] = map[string]interface{}{
-		"mgmt":    8091,
-		"mgmtSSL": 18091,
-		"cbas":    8095,
-		"cbasSSL": 18095,
-		"kv":      11210,
-		"kvSSL":   11207,
-		"capi":    8092,
-		"capiSSL": 18092,
-		"n1ql":    8093,
-		"n1qlSSL": 18093,
-
+	servicePorts := map[string]interface{}{
 		// We don't actually support these, so we give invalid ports
 		"indexAdmin":         32767,
 		"indexScan":          32767,
@@ -159,6 +173,43 @@ func (n *ClusterNode) GetExtConfig(reqNode *ClusterNode, forBucket *Bucket) []by
 		"indexStreamMaint":   32767,
 		"projector":          32767,
 	}
+
+	if n.kvService != nil {
+		servicePorts["kv"] = n.kvService.ListenPort()
+
+		// TODO(brett19): Add SSL support for kv service here
+		servicePorts["kvSSL"] = 32767
+	}
+
+	if n.mgmtService != nil {
+		servicePorts["mgmt"] = n.mgmtService.ListenPort()
+
+		// TODO(brett19): Add SSL support for mgmt service here
+		servicePorts["mgmtSSL"] = 32767
+	}
+
+	if n.viewService != nil {
+		servicePorts["capi"] = n.viewService.ListenPort()
+
+		// TODO(brett19): Add SSL support for views service here
+		servicePorts["capiSSL"] = 32767
+	}
+
+	if n.queryService != nil {
+		servicePorts["n1ql"] = n.queryService.ListenPort()
+
+		// TODO(brett19): Add SSL support for n1ql service here
+		servicePorts["n1qlSSL"] = 32767
+	}
+
+	if n.analyticsService != nil {
+		servicePorts["cbas"] = n.analyticsService.ListenPort()
+
+		// TODO(brett19): Add SSL support for analytics service here
+		servicePorts["cbasSSL"] = 32767
+	}
+
+	config["services"] = servicePorts
 	config["thisNode"] = n == reqNode
 
 	configBytes, _ := json.Marshal(config)

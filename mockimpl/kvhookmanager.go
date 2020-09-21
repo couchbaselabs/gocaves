@@ -41,7 +41,7 @@ func (m *KvHookManager) Invoke(source *KvClient, pak *memd.Packet) bool {
 	var successMarker struct{}
 	var reachedEndOfChain bool
 
-	m.hookManager.Invoke(func(hook interface{}, next func() interface{}) interface{} {
+	res := m.hookManager.Invoke(func(hook interface{}, next func() interface{}) interface{} {
 		hookFn := *(hook.(*KvHookFunc))
 		hookFn(source, pak, func() {
 			res := next()
@@ -52,6 +52,9 @@ func (m *KvHookManager) Invoke(source *KvClient, pak *memd.Packet) bool {
 		})
 		return successMarker
 	})
+	if res == nil {
+		reachedEndOfChain = true
+	}
 
 	return reachedEndOfChain
 }

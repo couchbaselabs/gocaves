@@ -1,7 +1,9 @@
 package mockimpl
 
 import (
+	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/couchbase/gocbcore/v9/memd"
@@ -68,6 +70,8 @@ func NewCluster(opts NewClusterOptions) (*Cluster, error) {
 	// same package as us or we end up with a circular dependancy.  Maybe fix it with
 	// interfaces later...
 	(&kvImplHello{}).Register(&cluster.kvInHooks)
+	(&kvImplAuth{}).Register(&cluster.kvInHooks)
+	(&kvImplCccp{}).Register(&cluster.kvInHooks)
 	(&kvImplCrud{}).Register(&cluster.kvInHooks)
 	(&mgmtImplConfig{}).Register(&cluster.mgmtHooks)
 
@@ -141,6 +145,18 @@ func (c *Cluster) updateConfig() {
 	c.currentConfig = nil
 }
 
+// ConnectionString returns the basic non-TLS connection string for this cluster.
+func (c *Cluster) ConnectionString() string {
+	nodesList := make([]string, 0)
+	for _, node := range c.nodes {
+		if node.kvService != nil {
+			nodesList = append(nodesList,
+				fmt.Sprintf("%s:%d", node.kvService.Hostname(), node.kvService.ListenPort()))
+		}
+	}
+	return "couchbase://" + strings.Join(nodesList, ",")
+}
+
 // KvInHooks returns the hook manager for incoming kv packets.
 func (c *Cluster) KvInHooks() *KvHookManager {
 	return &c.kvInHooks
@@ -157,13 +173,27 @@ func (c *Cluster) MgmtHooks() *MgmtHookManager {
 }
 
 func (c *Cluster) handleKvPacketIn(source *KvClient, pak *memd.Packet) {
-	log.Printf("received kv packet %p %+v", source, pak)
-	c.kvInHooks.Invoke(source, pak)
+	log.Printf("received kv packet %p CMD:%s", source, pak.Command.Name())
+	if c.kvInHooks.Invoke(source, pak) {
+		// If we reached the end of the chain, it means nobody replied and we need
+		// to default to sending a generic unsupported status code back...
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: pak.Command,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusUnknownCommand,
+		})
+		return
+	}
 }
 
 func (c *Cluster) handleKvPacketOut(source *KvClient, pak *memd.Packet) bool {
-	log.Printf("sending kv packet %p %+v", source, pak)
-	return c.kvOutHooks.Invoke(source, pak)
+	log.Printf("sending kv packet %p CMD:%s %+v", source, pak.Command.Name(), pak)
+	if !c.kvOutHooks.Invoke(source, pak) {
+		log.Printf("throwing away kv packet %p CMD:%s", source, pak.Command.Name())
+		return false
+	}
+	return true
 }
 
 func (c *Cluster) handleMgmtRequest(source *MgmtService, req *servers.HTTPRequest) *servers.HTTPResponse {

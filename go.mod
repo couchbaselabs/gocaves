@@ -2,7 +2,10 @@ module github.com/couchbaselabs/gocaves
 
 go 1.13
 
+replace github.com/couchbase/gocbcore/v9 => /Users/brettlawson/couchsdk/gocbcore
+
 require (
+	github.com/couchbase/gocb/v2 v2.1.6
 	github.com/couchbase/gocbcore/v9 v9.0.6
 	github.com/couchbaselabs/gocb v1.6.7 // indirect
 	github.com/google/uuid v1.1.1

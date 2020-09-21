@@ -100,6 +100,11 @@ func (b Bucket) CollectionManifest() CollectionManifest {
 	return b.collManifest
 }
 
+// Store returns the data-store for this bucket.
+func (b Bucket) Store() *store.Bucket {
+	return b.store
+}
+
 // UpdateVbMap will update the vbmap such that all vbuckets are assigned to the
 // specific nodes which are passed in.  Note that this rebalance is guarenteed to
 // be very explicit such that vbNode = (vbId % numNode), and replicas are just ++.

@@ -10,7 +10,23 @@ type KvClient struct {
 	client  *servers.MemdClient
 	service *KvService
 
-	selectedBucketName string
+	authenticatedUserName string
+	selectedBucketName    string
+}
+
+// SetAuthenticatedUserName sets the name of the user who is authenticated.
+func (c *KvClient) SetAuthenticatedUserName(userName string) {
+	c.authenticatedUserName = userName
+}
+
+// AuthenticatedUserName gets the name of the user who is authenticated.
+func (c *KvClient) AuthenticatedUserName() string {
+	return c.authenticatedUserName
+}
+
+// SetSelectedBucketName sets the currently selected bucket's name.
+func (c *KvClient) SetSelectedBucketName(bucketName string) {
+	c.selectedBucketName = bucketName
 }
 
 // SelectedBucketName returns the currently selected bucket's name.

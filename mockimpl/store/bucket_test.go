@@ -33,7 +33,7 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("cas was not assigned correctly")
 	}
 
-	getDoc, err := bucket.Get(0, 3, []byte("test"))
+	getDoc, err := bucket.Get(0, 3, 0, []byte("test"))
 	if err != nil {
 		t.Fatalf("failed to get document: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestReplication(t *testing.T) {
 		t.Fatalf("cas was not assigned correctly")
 	}
 
-	repDoc1, err := bucket.Get(1, 3, []byte("test"))
+	repDoc1, err := bucket.Get(1, 3, 0, []byte("test"))
 	if err == nil {
 		t.Fatalf("first replica fetch should have failed")
 	}
@@ -78,7 +78,7 @@ func TestReplication(t *testing.T) {
 
 	chrono.TimeTravel(100 * time.Millisecond)
 
-	repDoc2, err := bucket.Get(1, 3, []byte("test"))
+	repDoc2, err := bucket.Get(1, 3, 0, []byte("test"))
 	if err != nil {
 		t.Fatalf("second replica fetch should have worked")
 	}
