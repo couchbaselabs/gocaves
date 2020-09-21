@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	mock "github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mockimpl"
 	//checksuite "github.com/couchbaselabs/gocaves/checksuite"
 )
 
@@ -22,20 +22,20 @@ import (
 var sdkFlag = flag.Bool("sdk", false, "specifies we are running in a test-framework")
 var mockOnlyFlag = flag.Bool("mock-only", false, "specifies only to use the mock")
 
-func createDefaultCluster() *mock.Cluster {
-	cluster, err := mock.NewCluster(mock.NewClusterOptions{
-		InitialNode: mock.NewNodeOptions{},
+func createDefaultCluster() *mockimpl.Cluster {
+	cluster, err := mockimpl.NewCluster(mockimpl.NewClusterOptions{
+		InitialNode: mockimpl.NewNodeOptions{},
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	cluster.AddNode(mock.NewNodeOptions{})
-	cluster.AddNode(mock.NewNodeOptions{})
+	cluster.AddNode(mockimpl.NewNodeOptions{})
+	cluster.AddNode(mockimpl.NewNodeOptions{})
 
-	_, err = cluster.AddBucket(mock.NewBucketOptions{
+	_, err = cluster.AddBucket(mockimpl.NewBucketOptions{
 		Name:        "default",
-		Type:        mock.BucketTypeCouchbase,
+		Type:        mockimpl.BucketTypeCouchbase,
 		NumReplicas: 1,
 	})
 	if err != nil {
