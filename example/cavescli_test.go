@@ -51,11 +51,13 @@ func newCavesClient() (*cavesClient, error) {
 
 	log.Printf("CAVES connected")
 
-	decoder := json.NewDecoder(conn)
-	encoder := json.NewEncoder(conn)
+	cli := &cavesClient{
+		conn:    conn,
+		encoder: json.NewEncoder(conn),
+		decoder: json.NewDecoder(conn),
+	}
 
-	var helloCmd map[string]interface{}
-	err = decoder.Decode(&helloCmd)
+	helloCmd, err := cli.readCommand()
 	if err != nil {
 		log.Printf("failed to receive caves hello: %s", err)
 		return nil, err
@@ -66,21 +68,31 @@ func newCavesClient() (*cavesClient, error) {
 		return nil, errors.New("no hello")
 	}
 
-	return &cavesClient{
-		conn:    conn,
-		encoder: encoder,
-		decoder: decoder,
-	}, nil
+	return cli, nil
 }
 
-func (c *cavesClient) roundTripCommand(req map[string]interface{}) (map[string]interface{}, error) {
-	err := c.encoder.Encode(req)
+func (c *cavesClient) writeCommand(req map[string]interface{}) error {
+	return c.encoder.Encode(req)
+}
+
+func (c *cavesClient) readCommand() (map[string]interface{}, error) {
+	var resp map[string]interface{}
+
+	err := c.decoder.Decode(&resp)
 	if err != nil {
 		return nil, err
 	}
 
-	var resp map[string]interface{}
-	err = c.decoder.Decode(&resp)
+	return resp, nil
+}
+
+func (c *cavesClient) roundTripCommand(req map[string]interface{}) (map[string]interface{}, error) {
+	err := c.writeCommand(req)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.readCommand()
 	if err != nil {
 		return nil, err
 	}
@@ -89,13 +101,13 @@ func (c *cavesClient) roundTripCommand(req map[string]interface{}) (map[string]i
 }
 
 func (c *cavesClient) GetConnStr() (string, error) {
-	req := make(map[string]interface{})
-	req["type"] = "getconnstr"
-
-	resp, err := c.roundTripCommand(req)
+	resp, err := c.roundTripCommand(map[string]interface{}{
+		"type": "getconnstr",
+	})
 	if err != nil {
 		return "", err
 	}
 
-	return resp["connstr"].(string), nil
+	connStr := resp["connstr"].(string)
+	return connStr, nil
 }

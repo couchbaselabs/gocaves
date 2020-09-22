@@ -1,7 +1,6 @@
 package example
 
 import (
-	"log"
 	"testing"
 	"time"
 
@@ -31,7 +30,7 @@ func TestBasic(t *testing.T) {
 
 	connStr = connStr + "?auth_mechanisms=PLAIN"
 
-	log.Printf("got connection string: %s", connStr)
+	t.Logf("got connection string: %s", connStr)
 
 	cluster, err := gocb.Connect(connStr, gocb.ClusterOptions{
 		Authenticator: gocb.PasswordAuthenticator{
@@ -56,7 +55,7 @@ func TestBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to upsert: %s", err)
 	}
-	log.Printf("MutRes: %+v", mutRes)
+	t.Logf("MutRes: %+v", mutRes)
 
 	// Get a key from the bucket
 	doc, err := collection.Get("test-doc", nil)
@@ -64,5 +63,5 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("Failed to get: %s", err)
 	}
 
-	log.Printf("Doc: %+v", doc)
+	t.Logf("Doc: %+v", doc)
 }
