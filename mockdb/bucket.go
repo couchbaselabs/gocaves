@@ -91,16 +91,22 @@ func (b *Bucket) Get(repIdx, vbIdx uint, collectionID uint, key []byte) (*Docume
 func (b *Bucket) Insert(doc *Document) (*Document, error) {
 	vbucket := b.GetVbucket(0, doc.VbID)
 	doc, err := vbucket.insert(doc)
+	if err != nil {
+		return nil, err
+	}
 	b.signalReplicators(doc.VbID)
-	return doc, err
+	return doc, nil
 }
 
-// Set stores a document into the master replica of a vbucket.
-func (b *Bucket) Set(doc *Document) (*Document, error) {
-	vbucket := b.GetVbucket(0, doc.VbID)
-	doc, err := vbucket.set(doc)
+// Update allows a document to be atomically operated upon in the bucket.
+func (b *Bucket) Update(vbID, collectionID uint, key []byte, fn UpdateFunc) (*Document, error) {
+	vbucket := b.GetVbucket(0, vbID)
+	doc, err := vbucket.update(collectionID, key, fn)
+	if err != nil {
+		return nil, err
+	}
 	b.signalReplicators(doc.VbID)
-	return doc, err
+	return doc, nil
 }
 
 // Remove removes a document from the master replica of a vbucket.

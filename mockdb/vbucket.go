@@ -85,7 +85,7 @@ func (s *Vbucket) Get(collectionID uint, key []byte) (*Document, error) {
 
 	foundDoc := s.findDocLocked(collectionID, key)
 	if foundDoc == nil {
-		return nil, errors.New("document not found")
+		return nil, ErrDocNotFound
 	}
 
 	return copyDocument(foundDoc), nil
@@ -165,37 +165,43 @@ func (s *Vbucket) pushDocMutationLocked(doc *Document) *Document {
 // key already exists within the vbucket.
 // NOTE: This must never be called on a replica vbucket.
 func (s *Vbucket) insert(doc *Document) (*Document, error) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
+	return s.update(doc.CollectionID, doc.Key, func(existingDoc *Document) (*Document, error) {
+		if existingDoc != nil {
+			return nil, ErrDocExists
+		}
 
-	foundDoc := s.findDocLocked(doc.CollectionID, doc.Key)
-	if foundDoc != nil {
-		return nil, errors.New("doc already exists")
-	}
-
-	return s.pushDocMutationLocked(doc), nil
+		return doc, nil
+	})
 }
 
-// set stores a document to the bucket.
+// UpdateFunc represents a function which can modify the state of a document.
+type UpdateFunc func(*Document) (*Document, error)
+
+// update allows a document to be atomically operated upon in the vbucket.
 // NOTE: This must never be called on a replica vbucket.
-func (s *Vbucket) set(doc *Document) (*Document, error) {
+func (s *Vbucket) update(collectionID uint, key []byte, fn UpdateFunc) (*Document, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	// We scan for an existing document first.  Checking the CAS based on
-	// whether we found one or not.  We don't need it other than that though.
-	foundDoc := s.findDocLocked(doc.CollectionID, doc.Key)
+	// Try to find the document as input to the functor.
+	foundDoc := s.findDocLocked(collectionID, key)
 	if foundDoc != nil {
-		if doc.Cas != 0 && foundDoc.Cas != doc.Cas {
-			return nil, errors.New("cas mismatch")
-		}
-	} else {
-		if doc.Cas != 0 {
-			return nil, errors.New("doc not found")
-		}
+		// We never allow anyone to have access to the internal copy.
+		foundDoc = copyDocument(foundDoc)
 	}
 
-	return s.pushDocMutationLocked(doc), nil
+	// Pass the existing document to the functor and get back the new copy.
+	newDoc, err := fn(foundDoc)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no error was returned and no document was returned, ignore the write.
+	if newDoc == nil {
+		return nil, errors.New("functor did not return a document")
+	}
+
+	return s.pushDocMutationLocked(newDoc), nil
 }
 
 func (s *Vbucket) remove(key []byte) (*Document, error) {

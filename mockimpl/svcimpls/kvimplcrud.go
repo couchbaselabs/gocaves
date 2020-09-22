@@ -38,7 +38,6 @@ func (x *kvImplCrud) handleSetRequest(source mock.KvClient, pak *memd.Packet, ne
 		return
 	}
 
-	// TODO(brett19): The xattr behaviour here is wrong, it should be modifying the existing doc.
 	doc := &mockdb.Document{
 		VbID:         uint(pak.Vbucket),
 		CollectionID: uint(pak.CollectionID),
@@ -46,14 +45,54 @@ func (x *kvImplCrud) handleSetRequest(source mock.KvClient, pak *memd.Packet, ne
 		Value:        pak.Value,
 		Xattrs:       nil,
 	}
-	newDoc, err := selectedBucket.Store().Set(doc)
-	if err != nil {
-		// TODO(brett19): Correctly handle the various errors which can occur in a SET.
+
+	newDoc, err := selectedBucket.Store().Update(
+		doc.VbID, doc.CollectionID, doc.Key,
+		func(idoc *mockdb.Document) (*mockdb.Document, error) {
+			if pak.Cas != 0 {
+				if idoc == nil {
+					// The user specified a CAS and the document didn't exist.
+					return nil, mockdb.ErrDocNotFound
+				}
+
+				if idoc.Cas != pak.Cas {
+					return nil, mockdb.ErrDocExists
+				}
+			}
+
+			// Insert the document if it wasn't already existing.
+			if idoc == nil {
+				return doc, nil
+			}
+
+			// Otherwise we simply update the value
+			idoc.Value = doc.Value
+			return idoc, nil
+		})
+
+	if err == mockdb.ErrDocExists {
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: memd.CmdSet,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusKeyExists,
+		})
+		return
+	} else if err == mockdb.ErrDocNotFound {
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: memd.CmdSet,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusKeyNotFound,
+		})
+		return
+	} else if err != nil {
+		// TODO(brett19): Correctly handle the various errors which can occur in a SET.
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: memd.CmdSet,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusInternalError,
 		})
 		return
 	}
@@ -75,13 +114,21 @@ func (x *kvImplCrud) handleGetRequest(source mock.KvClient, pak *memd.Packet, ne
 	}
 
 	doc, err := selectedBucket.Store().Get(0, uint(pak.Vbucket), uint(pak.CollectionID), pak.Key)
-	if err != nil {
-		// TODO(brett19): Correctly handle the various errors which can occur in a GET.
+	if err == mockdb.ErrDocNotFound {
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: memd.CmdGet,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusKeyNotFound,
+		})
+		return
+	} else if err != nil {
+		// TODO(brett19): Correctly handle the various errors which can occur in a GET.
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: memd.CmdGet,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusInternalError,
 		})
 		return
 	}
