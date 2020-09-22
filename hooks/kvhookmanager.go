@@ -1,12 +1,13 @@
-package mockimpl
+package hooks
 
 import (
 	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbaselabs/gocaves/mock"
 )
 
 // KvHookFunc implements a hook for handling a kv packet.
 // NOTE: It is safe and expected that a hook may alter the packet.
-type KvHookFunc func(source *KvClient, pak *memd.Packet, next func())
+type KvHookFunc func(source mock.KvClient, pak *memd.Packet, next func())
 
 // KvHookManager implements a tree of hooks which can handle a kv packet.
 type KvHookManager struct {
@@ -37,7 +38,7 @@ func (m *KvHookManager) pushDestroyer(fn func()) {
 // Invoke will invoke this hook chain.  It starts at the most recently
 // registered hook and works it's way to the oldest hook.  It returns whether
 // the end of the hook chain was reached or not.
-func (m *KvHookManager) Invoke(source *KvClient, pak *memd.Packet) bool {
+func (m *KvHookManager) Invoke(source mock.KvClient, pak *memd.Packet) bool {
 	var successMarker struct{}
 	var reachedEndOfChain bool
 

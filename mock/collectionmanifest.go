@@ -1,4 +1,4 @@
-package mockimpl
+package mock
 
 // CollectionManifest represents one version of a collection manifest
 type CollectionManifest struct {

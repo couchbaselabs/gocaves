@@ -5,23 +5,17 @@ import (
 	"github.com/couchbaselabs/gocaves/mockimpl/servers"
 )
 
-// AnalyticsRequest represents a single request received by the analytics service.
-type AnalyticsRequest struct {
-	Source  *MgmtService
-	Request mock.HTTPRequest
-}
-
-// AnalyticsService represents a analytics service running somewhere in the cluster.
-type AnalyticsService struct {
-	clusterNode *ClusterNode
+// analyticsService represents a analytics service running somewhere in the cluster.
+type analyticsService struct {
+	clusterNode *clusterNodeInst
 	server      *servers.HTTPServer
 }
 
 type newAnalyticsServiceOptions struct {
 }
 
-func newAnalyticsService(parent *ClusterNode, opts newAnalyticsServiceOptions) (*AnalyticsService, error) {
-	svc := &AnalyticsService{
+func newAnalyticsService(parent *clusterNodeInst, opts newAnalyticsServiceOptions) (*analyticsService, error) {
+	svc := &analyticsService{
 		clusterNode: parent,
 	}
 
@@ -40,25 +34,25 @@ func newAnalyticsService(parent *ClusterNode, opts newAnalyticsServiceOptions) (
 }
 
 // Node returns the node which owns this service.
-func (s *AnalyticsService) Node() *ClusterNode {
+func (s *analyticsService) Node() mock.ClusterNode {
 	return s.clusterNode
 }
 
 // Hostname returns the hostname where this service can be accessed.
-func (s *AnalyticsService) Hostname() string {
+func (s *analyticsService) Hostname() string {
 	return "127.0.0.1"
 }
 
 // ListenPort returns the port this service is listening on.
-func (s *AnalyticsService) ListenPort() int {
+func (s *analyticsService) ListenPort() int {
 	return s.server.ListenPort()
 }
 
-func (s *AnalyticsService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
+func (s *analyticsService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
 	return s.clusterNode.cluster.handleAnalyticsRequest(s, req)
 }
 
 // Close will shut down this service once it is no longer needed.
-func (s *AnalyticsService) Close() error {
+func (s *analyticsService) Close() error {
 	return s.server.Close()
 }

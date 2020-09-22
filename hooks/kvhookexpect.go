@@ -1,4 +1,4 @@
-package mockimpl
+package hooks
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbaselabs/gocaves/mock"
 )
 
 type memdPakFields int
@@ -21,7 +22,7 @@ const (
 // KvHookExpect provides a nicer way to configure kv hooks.
 type KvHookExpect struct {
 	parent               *KvHookManager
-	expectSource         *KvClient
+	expectSource         mock.KvClient
 	expectFields         memdPakFields
 	expectMagic          memd.CmdMagic
 	expectCmd            memd.CmdCode
@@ -33,12 +34,12 @@ type KvHookExpect struct {
 }
 
 // ReplyTo specifies to expect the reply to another packet.
-func (e KvHookExpect) ReplyTo(source *KvClient, pak *memd.Packet) *KvHookExpect {
+func (e KvHookExpect) ReplyTo(source mock.KvClient, pak *memd.Packet) *KvHookExpect {
 	return e.Source(source).Opaque(pak.Opaque)
 }
 
 // Source specifies a specific source which is expected.
-func (e KvHookExpect) Source(cli *KvClient) *KvHookExpect {
+func (e KvHookExpect) Source(cli mock.KvClient) *KvHookExpect {
 	e.expectSource = cli
 	return &e
 }
@@ -96,8 +97,8 @@ func (e KvHookExpect) CollectionName(name string) *KvHookExpect {
 }
 
 // Handler specifies the handler to invoke if the expectations are met.
-func (e KvHookExpect) Handler(fn func(source *KvClient, pak *memd.Packet, next func())) *KvHookExpect {
-	e.parent.Push(func(source *KvClient, pak *memd.Packet, next func()) {
+func (e KvHookExpect) Handler(fn func(source mock.KvClient, pak *memd.Packet, next func())) *KvHookExpect {
+	e.parent.Push(func(source mock.KvClient, pak *memd.Packet, next func()) {
 		shouldReject := false
 		if e.expectSource != nil && source != e.expectSource {
 			shouldReject = true
@@ -146,8 +147,8 @@ func (e KvHookExpect) Handler(fn func(source *KvClient, pak *memd.Packet, next f
 }
 
 // Wait waits until the specific expectation is triggered.
-func (e KvHookExpect) Wait(checkFn func(*KvClient, *memd.Packet) bool) (*KvClient, *memd.Packet) {
-	var sourceOut *KvClient
+func (e KvHookExpect) Wait(checkFn func(mock.KvClient, *memd.Packet) bool) (mock.KvClient, *memd.Packet) {
+	var sourceOut mock.KvClient
 	var pakOut *memd.Packet
 	var panicErr error
 
@@ -158,7 +159,7 @@ func (e KvHookExpect) Wait(checkFn func(*KvClient, *memd.Packet) bool) (*KvClien
 		panicErr = errors.New("wait ended due to destroyed hook manager")
 		waitGrp.Done()
 	})
-	e.Handler(func(source *KvClient, pak *memd.Packet, next func()) {
+	e.Handler(func(source mock.KvClient, pak *memd.Packet, next func()) {
 		if checkFn(source, pak) {
 			sourceOut = source
 			pakOut = pak

@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/couchbaselabs/gocaves/api"
+	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mockimpl"
 	//checksuite "github.com/couchbaselabs/gocaves/checksuite"
 )
@@ -32,7 +33,7 @@ var controlPortFlag = flag.Int("control-port", 0, "specifies we are running in a
 var linkAddrFlag = flag.String("link-addr", "", "specifies a caves dev server to connect to")
 var mockOnlyFlag = flag.Bool("mock-only", false, "specifies only to use the mock")
 
-var globalCluster *mockimpl.Cluster
+var globalCluster mock.Cluster
 
 func handleAPIRequest(pkt interface{}) interface{} {
 	switch pkt.(type) {
@@ -45,20 +46,20 @@ func handleAPIRequest(pkt interface{}) interface{} {
 	return nil
 }
 
-func createDefaultCluster() *mockimpl.Cluster {
-	cluster, err := mockimpl.NewCluster(mockimpl.NewClusterOptions{
-		InitialNode: mockimpl.NewNodeOptions{},
+func createDefaultCluster() mock.Cluster {
+	cluster, err := mockimpl.NewCluster(mock.NewClusterOptions{
+		InitialNode: mock.NewNodeOptions{},
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	//cluster.AddNode(mockimpl.NewNodeOptions{})
-	//cluster.AddNode(mockimpl.NewNodeOptions{})
+	//cluster.AddNode(mock.NewNodeOptions{})
+	//cluster.AddNode(mock.NewNodeOptions{})
 
-	_, err = cluster.AddBucket(mockimpl.NewBucketOptions{
+	_, err = cluster.AddBucket(mock.NewBucketOptions{
 		Name:        "default",
-		Type:        mockimpl.BucketTypeCouchbase,
+		Type:        mock.BucketTypeCouchbase,
 		NumReplicas: 1,
 	})
 	if err != nil {

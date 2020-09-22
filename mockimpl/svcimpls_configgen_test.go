@@ -6,6 +6,9 @@ import (
 	"io/ioutil"
 	"reflect"
 	"testing"
+
+	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mockimpl/svcimpls"
 )
 
 func testReadJSONFile(t *testing.T, path string) interface{} {
@@ -101,13 +104,13 @@ func TestClusterConfig70(t *testing.T) {
 
 	testConfig := testReadJSONFile(t, "testdata/cluster_config_70.json")
 
-	cluster, _ := NewCluster(NewClusterOptions{
-		EnabledFeatures: []ClusterFeature{},
+	cluster, _ := NewCluster(mock.NewClusterOptions{
+		EnabledFeatures: []mock.ClusterFeature{},
 		NumVbuckets:     1024,
-		InitialNode:     NewNodeOptions{},
+		InitialNode:     mock.NewNodeOptions{},
 	})
 
-	configBytes := cluster.GetConfig(nil)
+	configBytes := svcimpls.GenClusterConfig(cluster, nil)
 
 	var actualConfig interface{}
 	json.Unmarshal(configBytes, &actualConfig)
@@ -118,19 +121,19 @@ func TestClusterConfig70(t *testing.T) {
 func TestBucketConfig70(t *testing.T) {
 	testConfig := testReadJSONFile(t, "testdata/bucket_config_70.json")
 
-	cluster, _ := NewCluster(NewClusterOptions{
-		EnabledFeatures: []ClusterFeature{},
+	cluster, _ := NewCluster(mock.NewClusterOptions{
+		EnabledFeatures: []mock.ClusterFeature{},
 		NumVbuckets:     1024,
-		InitialNode:     NewNodeOptions{},
+		InitialNode:     mock.NewNodeOptions{},
 	})
 
-	bucket, _ := cluster.AddBucket(NewBucketOptions{
+	bucket, _ := cluster.AddBucket(mock.NewBucketOptions{
 		Name:        "default",
-		Type:        BucketTypeCouchbase,
+		Type:        mock.BucketTypeCouchbase,
 		NumReplicas: 1,
 	})
 
-	configBytes := bucket.GetConfig(nil)
+	configBytes := svcimpls.GenBucketConfig(bucket, nil)
 
 	var actualConfig interface{}
 	json.Unmarshal(configBytes, &actualConfig)
@@ -141,19 +144,19 @@ func TestBucketConfig70(t *testing.T) {
 func TestBucketTerseConfig70(t *testing.T) {
 	testConfig := testReadJSONFile(t, "testdata/bucket_terseconfig_70.json")
 
-	cluster, _ := NewCluster(NewClusterOptions{
-		EnabledFeatures: []ClusterFeature{},
+	cluster, _ := NewCluster(mock.NewClusterOptions{
+		EnabledFeatures: []mock.ClusterFeature{},
 		NumVbuckets:     1024,
-		InitialNode:     NewNodeOptions{},
+		InitialNode:     mock.NewNodeOptions{},
 	})
 
-	bucket, _ := cluster.AddBucket(NewBucketOptions{
+	bucket, _ := cluster.AddBucket(mock.NewBucketOptions{
 		Name:        "default",
-		Type:        BucketTypeCouchbase,
+		Type:        mock.BucketTypeCouchbase,
 		NumReplicas: 1,
 	})
 
-	configBytes := bucket.GetTerseConfig(nil)
+	configBytes := svcimpls.GenTerseBucketConfig(bucket, nil)
 
 	var actualConfig interface{}
 	json.Unmarshal(configBytes, &actualConfig)

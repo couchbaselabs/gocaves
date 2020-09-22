@@ -1,23 +1,25 @@
-package mockimpl
+package svcimpls
 
 import (
 	"encoding/binary"
 
 	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbaselabs/gocaves/hooks"
+	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mockdb"
 )
 
 type kvImplCrud struct {
 }
 
-func (x *kvImplCrud) Register(hooks *KvHookManager) {
+func (x *kvImplCrud) Register(hooks *hooks.KvHookManager) {
 	reqExpects := hooks.Expect().Magic(memd.CmdMagicReq)
 
 	reqExpects.Cmd(memd.CmdSet).Handler(x.handleSetRequest)
 	reqExpects.Cmd(memd.CmdGet).Handler(x.handleGetRequest)
 }
 
-func (x *kvImplCrud) ensureBucket(source *KvClient, pak *memd.Packet, bucket *Bucket) bool {
+func (x *kvImplCrud) ensureBucket(source mock.KvClient, pak *memd.Packet, bucket mock.Bucket) bool {
 	if bucket == nil {
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -30,7 +32,7 @@ func (x *kvImplCrud) ensureBucket(source *KvClient, pak *memd.Packet, bucket *Bu
 	return true
 }
 
-func (x *kvImplCrud) handleSetRequest(source *KvClient, pak *memd.Packet, next func()) {
+func (x *kvImplCrud) handleSetRequest(source mock.KvClient, pak *memd.Packet, next func()) {
 	selectedBucket := source.SelectedBucket()
 	if !x.ensureBucket(source, pak, selectedBucket) {
 		return
@@ -66,7 +68,7 @@ func (x *kvImplCrud) handleSetRequest(source *KvClient, pak *memd.Packet, next f
 	})
 }
 
-func (x *kvImplCrud) handleGetRequest(source *KvClient, pak *memd.Packet, next func()) {
+func (x *kvImplCrud) handleGetRequest(source mock.KvClient, pak *memd.Packet, next func()) {
 	selectedBucket := source.SelectedBucket()
 	if !x.ensureBucket(source, pak, selectedBucket) {
 		return

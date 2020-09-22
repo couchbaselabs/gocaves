@@ -5,23 +5,17 @@ import (
 	"github.com/couchbaselabs/gocaves/mockimpl/servers"
 )
 
-// MgmtRequest represents a single request received by the management service.
-type MgmtRequest struct {
-	Source  *MgmtService
-	Request mock.HTTPRequest
-}
-
-// MgmtService represents a management service running somewhere in the cluster.
-type MgmtService struct {
-	clusterNode *ClusterNode
+// mgmtService represents a management service running somewhere in the cluster.
+type mgmtService struct {
+	clusterNode *clusterNodeInst
 	server      *servers.HTTPServer
 }
 
 type newMgmtServiceOptions struct {
 }
 
-func newMgmtService(parent *ClusterNode, opts newMgmtServiceOptions) (*MgmtService, error) {
-	svc := &MgmtService{
+func newMgmtService(parent *clusterNodeInst, opts newMgmtServiceOptions) (*mgmtService, error) {
+	svc := &mgmtService{
 		clusterNode: parent,
 	}
 
@@ -40,25 +34,25 @@ func newMgmtService(parent *ClusterNode, opts newMgmtServiceOptions) (*MgmtServi
 }
 
 // Node returns the node which owns this service.
-func (s *MgmtService) Node() *ClusterNode {
+func (s *mgmtService) Node() mock.ClusterNode {
 	return s.clusterNode
 }
 
 // Hostname returns the hostname where this service can be accessed.
-func (s *MgmtService) Hostname() string {
+func (s *mgmtService) Hostname() string {
 	return "127.0.0.1"
 }
 
 // ListenPort returns the port this service is listening on.
-func (s *MgmtService) ListenPort() int {
+func (s *mgmtService) ListenPort() int {
 	return s.server.ListenPort()
 }
 
-func (s *MgmtService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
+func (s *mgmtService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
 	return s.clusterNode.cluster.handleMgmtRequest(s, req)
 }
 
 // Close will shut down this service once it is no longer needed.
-func (s *MgmtService) Close() error {
+func (s *mgmtService) Close() error {
 	return s.server.Close()
 }

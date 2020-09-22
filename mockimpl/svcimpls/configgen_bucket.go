@@ -1,12 +1,14 @@
-package mockimpl
+package svcimpls
 
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/couchbaselabs/gocaves/mock"
 )
 
-// GetConfig returns the current config for this bucket.
-func (b *Bucket) GetConfig(reqNode *ClusterNode) []byte {
+// GenBucketConfig returns the current config for a bucket.
+func GenBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	kvNodes, vbMap, allNodes := b.GetVbServerInfo(reqNode)
 
 	config := make(map[string]interface{})
@@ -14,7 +16,7 @@ func (b *Bucket) GetConfig(reqNode *ClusterNode) []byte {
 	config["uuid"] = b.ID()
 
 	config["bucketType"] = "membase"
-	config["collectionsManifestUid"] = fmt.Sprintf("%d", b.collManifest.Rev)
+	config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().Rev)
 	config["evictionPolicy"] = "valueOnly"
 	config["storageBackend"] = "couchstore"
 	config["durabilityMinLevel"] = "none"
@@ -82,7 +84,7 @@ func (b *Bucket) GetConfig(reqNode *ClusterNode) []byte {
 
 	nodesConfig := make([]interface{}, 0)
 	for _, server := range allNodes {
-		nodeConfig := server.GetConfig(reqNode, b)
+		nodeConfig := GenClusterNodeConfig(server, reqNode, b)
 		nodesConfig = append(nodesConfig, json.RawMessage(nodeConfig))
 	}
 	config["nodes"] = nodesConfig
@@ -95,7 +97,7 @@ func (b *Bucket) GetConfig(reqNode *ClusterNode) []byte {
 
 	var vbServerList []interface{}
 	for _, node := range kvNodes {
-		address := fmt.Sprintf("%s:%d", node.kvService.Hostname(), node.kvService.ListenPort())
+		address := fmt.Sprintf("%s:%d", node.KvService().Hostname(), node.KvService().ListenPort())
 		vbServerList = append(vbServerList, address)
 	}
 	vbConfig["serverList"] = vbServerList
@@ -106,16 +108,16 @@ func (b *Bucket) GetConfig(reqNode *ClusterNode) []byte {
 	return configBytes
 }
 
-// GetTerseConfig returns the current mini config for this bucket.
-func (b *Bucket) GetTerseConfig(reqNode *ClusterNode) []byte {
+// GenTerseBucketConfig returns the current mini config for a bucket.
+func GenTerseBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	kvNodes, vbMap, allNodes := b.GetVbServerInfo(reqNode)
 
 	config := make(map[string]interface{})
-	config["rev"] = b.configRev
+	config["rev"] = b.ConfigRev()
 	config["name"] = b.Name()
 	config["uuid"] = b.ID()
 
-	config["collectionsManifestUid"] = fmt.Sprintf("%d", b.collManifest.Rev)
+	config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().Rev)
 
 	config["uri"] = fmt.Sprintf("/pools/default/buckets/%s?bucket_uuid=%s", b.Name(), b.ID())
 	config["streamingUri"] = fmt.Sprintf("/pools/default/bucketsStreaming/%s?bucket_uuid=%s", b.Name(), b.ID())
@@ -154,10 +156,10 @@ func (b *Bucket) GetTerseConfig(reqNode *ClusterNode) []byte {
 	nodesConfig := make([]interface{}, 0)
 	nodesExtConfig := make([]interface{}, 0)
 	for _, server := range allNodes {
-		nodeConfig := server.GetTerseConfig(reqNode, b)
+		nodeConfig := GenTerseClusterNodeConfig(server, reqNode, b)
 		nodesConfig = append(nodesConfig, json.RawMessage(nodeConfig))
 
-		nodeExtConfig := server.GetExtConfig(reqNode, b)
+		nodeExtConfig := GenExtClusterNodeConfig(server, reqNode, b)
 		nodesExtConfig = append(nodesExtConfig, json.RawMessage(nodeExtConfig))
 	}
 	config["nodes"] = nodesConfig
@@ -171,7 +173,7 @@ func (b *Bucket) GetTerseConfig(reqNode *ClusterNode) []byte {
 
 	var vbServerList []interface{}
 	for _, node := range kvNodes {
-		address := fmt.Sprintf("%s:%d", node.kvService.Hostname(), node.kvService.ListenPort())
+		address := fmt.Sprintf("%s:%d", node.KvService().Hostname(), node.KvService().ListenPort())
 		vbServerList = append(vbServerList, address)
 	}
 	vbConfig["serverList"] = vbServerList

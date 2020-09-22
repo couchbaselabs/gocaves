@@ -1,24 +1,26 @@
-package mockimpl
+package svcimpls
 
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/couchbaselabs/gocaves/mock"
 )
 
-// GetConfig returns the config data for this node.
-func (n *ClusterNode) GetConfig(reqNode *ClusterNode, forBucket *Bucket) []byte {
+// GenClusterNodeConfig returns the config data for a cluster node.
+func GenClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBucket mock.Bucket) []byte {
 	config := make(map[string]interface{})
 
 	// TODO(brett19): Add the right handling here for TLS.
 	if forBucket != nil {
 		// This is inexplicably URL encoded for god knows what reason
 		config["couchApiBase"] = fmt.Sprintf("http://%s:%d/%s%%2B%s",
-			n.viewService.Hostname(), n.viewService.ListenPort(), forBucket.Name(), forBucket.ID())
+			n.ViewService().Hostname(), n.ViewService().ListenPort(), forBucket.Name(), forBucket.ID())
 		config["couchApiBaseHTTPS"] = fmt.Sprintf("http://%s:%d/%s%%2B%s",
 			"invalid-address", 0, forBucket.Name(), forBucket.ID())
 	} else {
 		config["couchApiBase"] = fmt.Sprintf("http://%s:%d/",
-			n.viewService.Hostname(), n.viewService.ListenPort())
+			n.ViewService().Hostname(), n.ViewService().ListenPort())
 		config["couchApiBaseHTTPS"] = fmt.Sprintf("http://%s:%d/",
 			"invalid-address", 0)
 	}
@@ -26,8 +28,8 @@ func (n *ClusterNode) GetConfig(reqNode *ClusterNode, forBucket *Bucket) []byte 
 	// TODO(brett19): Generate something reasonable for the otpNode field
 	config["otpNode"] = "ns_NOPE@cb.local"
 	config["thisNode"] = n == reqNode
-	config["hostname"] = fmt.Sprintf("%s:%d", n.mgmtService.Hostname(), n.mgmtService.ListenPort())
-	config["configuredHostname"] = fmt.Sprintf("%s:%d", n.mgmtService.Hostname(), n.mgmtService.ListenPort())
+	config["hostname"] = fmt.Sprintf("%s:%d", n.MgmtService().Hostname(), n.MgmtService().ListenPort())
+	config["configuredHostname"] = fmt.Sprintf("%s:%d", n.MgmtService().Hostname(), n.MgmtService().ListenPort())
 	config["nodeUUID"] = n.ID()
 	config["recoveryType"] = "none"
 
@@ -44,27 +46,27 @@ func (n *ClusterNode) GetConfig(reqNode *ClusterNode, forBucket *Bucket) []byte 
 		"index",
 	}
 
-	if n.kvService != nil {
+	if n.KvService() != nil {
 		servicesList = append(servicesList, "kv")
 
-		servicePorts["direct"] = n.kvService.ListenPort()
+		servicePorts["direct"] = n.KvService().ListenPort()
 	}
 
-	if n.mgmtService != nil {
+	if n.MgmtService() != nil {
 		// TODO(brett19): Add SSL support for mgmt here
 		servicePorts["httpsMgmt"] = 32767
 	}
 
-	if n.viewService != nil {
+	if n.ViewService() != nil {
 		// TODO(brett19): Add SSL support for views here
 		servicePorts["httpsCAPI"] = 32767
 	}
 
-	if n.queryService != nil {
+	if n.QueryService() != nil {
 		servicesList = append(servicesList, "n1ql")
 	}
 
-	if n.analyticsService != nil {
+	if n.AnalyticsService() != nil {
 		servicesList = append(servicesList, "cbas")
 	}
 
@@ -130,8 +132,8 @@ func (n *ClusterNode) GetConfig(reqNode *ClusterNode, forBucket *Bucket) []byte 
 	return configBytes
 }
 
-// GetTerseConfig returns the mini config data for this node.
-func (n *ClusterNode) GetTerseConfig(reqNode *ClusterNode, forBucket *Bucket) []byte {
+// GenTerseClusterNodeConfig returns the terse config data for a cluster node.
+func GenTerseClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBucket mock.Bucket) []byte {
 	config := make(map[string]interface{})
 
 	// TODO(brett19): Add the right stuff here for views.
@@ -144,12 +146,12 @@ func (n *ClusterNode) GetTerseConfig(reqNode *ClusterNode, forBucket *Bucket) []
 			"invalid-address", 0)
 	}
 
-	config["hostname"] = fmt.Sprintf("%s:%d", n.mgmtService.Hostname(), n.mgmtService.ListenPort())
+	config["hostname"] = fmt.Sprintf("%s:%d", n.MgmtService().Hostname(), n.MgmtService().ListenPort())
 
 	servicePorts := map[string]interface{}{}
 
-	if n.kvService != nil {
-		servicePorts["direct"] = n.kvService.ListenPort()
+	if n.KvService() != nil {
+		servicePorts["direct"] = n.KvService().ListenPort()
 	}
 
 	config["ports"] = servicePorts
@@ -158,8 +160,8 @@ func (n *ClusterNode) GetTerseConfig(reqNode *ClusterNode, forBucket *Bucket) []
 	return configBytes
 }
 
-// GetExtConfig returns the extended config data for this node.
-func (n *ClusterNode) GetExtConfig(reqNode *ClusterNode, forBucket *Bucket) []byte {
+// GenExtClusterNodeConfig returns the extended config data for a cluster node.
+func GenExtClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBucket mock.Bucket) []byte {
 	config := make(map[string]interface{})
 
 	servicePorts := map[string]interface{}{
@@ -174,36 +176,36 @@ func (n *ClusterNode) GetExtConfig(reqNode *ClusterNode, forBucket *Bucket) []by
 		"projector":          32767,
 	}
 
-	if n.kvService != nil {
-		servicePorts["kv"] = n.kvService.ListenPort()
+	if n.KvService() != nil {
+		servicePorts["kv"] = n.KvService().ListenPort()
 
 		// TODO(brett19): Add SSL support for kv service here
 		servicePorts["kvSSL"] = 32767
 	}
 
-	if n.mgmtService != nil {
-		servicePorts["mgmt"] = n.mgmtService.ListenPort()
+	if n.MgmtService() != nil {
+		servicePorts["mgmt"] = n.MgmtService().ListenPort()
 
 		// TODO(brett19): Add SSL support for mgmt service here
 		servicePorts["mgmtSSL"] = 32767
 	}
 
-	if n.viewService != nil {
-		servicePorts["capi"] = n.viewService.ListenPort()
+	if n.ViewService() != nil {
+		servicePorts["capi"] = n.ViewService().ListenPort()
 
 		// TODO(brett19): Add SSL support for views service here
 		servicePorts["capiSSL"] = 32767
 	}
 
-	if n.queryService != nil {
-		servicePorts["n1ql"] = n.queryService.ListenPort()
+	if n.QueryService() != nil {
+		servicePorts["n1ql"] = n.QueryService().ListenPort()
 
 		// TODO(brett19): Add SSL support for n1ql service here
 		servicePorts["n1qlSSL"] = 32767
 	}
 
-	if n.analyticsService != nil {
-		servicePorts["cbas"] = n.analyticsService.ListenPort()
+	if n.AnalyticsService() != nil {
+		servicePorts["cbas"] = n.AnalyticsService().ListenPort()
 
 		// TODO(brett19): Add SSL support for analytics service here
 		servicePorts["cbasSSL"] = 32767

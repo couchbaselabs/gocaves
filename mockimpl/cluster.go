@@ -7,40 +7,33 @@ import (
 	"time"
 
 	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbaselabs/gocaves/hooks"
 	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mockimpl/svcimpls"
 	"github.com/couchbaselabs/gocaves/mocktime"
 	"github.com/google/uuid"
 )
 
-// Cluster represents an instance of a mock cluster
-type Cluster struct {
+// clusterInst represents an instance of a mock cluster
+type clusterInst struct {
 	id              string
-	enabledFeatures []ClusterFeature
+	enabledFeatures []mock.ClusterFeature
 	numVbuckets     uint
 	chrono          *mocktime.Chrono
 	replicaLatency  time.Duration
 
-	buckets []*Bucket
-	nodes   []*ClusterNode
+	buckets []*bucketInst
+	nodes   []*clusterNodeInst
 
 	currentConfig []byte
 
-	kvInHooks  KvHookManager
-	kvOutHooks KvHookManager
-	mgmtHooks  MgmtHookManager
-}
-
-// NewClusterOptions allows the specification of initial options for a new cluster.
-type NewClusterOptions struct {
-	Chrono          *mocktime.Chrono
-	EnabledFeatures []ClusterFeature
-	NumVbuckets     uint
-	InitialNode     NewNodeOptions
-	ReplicaLatency  time.Duration
+	kvInHooks  hooks.KvHookManager
+	kvOutHooks hooks.KvHookManager
+	mgmtHooks  hooks.MgmtHookManager
 }
 
 // NewCluster instantiates a new cluster instance.
-func NewCluster(opts NewClusterOptions) (*Cluster, error) {
+func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 	if opts.Chrono == nil {
 		opts.Chrono = &mocktime.Chrono{}
 	}
@@ -51,7 +44,7 @@ func NewCluster(opts NewClusterOptions) (*Cluster, error) {
 		opts.ReplicaLatency = 50 * time.Millisecond
 	}
 
-	cluster := &Cluster{
+	cluster := &clusterInst{
 		id:              uuid.New().String(),
 		enabledFeatures: opts.EnabledFeatures,
 		numVbuckets:     opts.NumVbuckets,
@@ -69,21 +62,29 @@ func NewCluster(opts NewClusterOptions) (*Cluster, error) {
 	// I don't really like this, but the default implementations have to be in the
 	// same package as us or we end up with a circular dependancy.  Maybe fix it with
 	// interfaces later...
-	(&kvImplHello{}).Register(&cluster.kvInHooks)
-	(&kvImplAuth{}).Register(&cluster.kvInHooks)
-	(&kvImplCccp{}).Register(&cluster.kvInHooks)
-	(&kvImplCrud{}).Register(&cluster.kvInHooks)
-	(&mgmtImplConfig{}).Register(&cluster.mgmtHooks)
+	svcimpls.Register(svcimpls.RegisterOptions{
+		KvInHooks:  &cluster.kvInHooks,
+		KvOutHooks: &cluster.kvOutHooks,
+		MgmtHooks:  &cluster.mgmtHooks,
+	})
 
 	return cluster, nil
 }
 
 // ID returns the uuid of this cluster.
-func (c *Cluster) ID() string {
+func (c *clusterInst) ID() string {
 	return c.id
 }
 
-func (c *Cluster) nodeUuids() []string {
+func (c *clusterInst) Nodes() []mock.ClusterNode {
+	nodes := make([]mock.ClusterNode, len(c.nodes))
+	for nodeIdx, node := range c.nodes {
+		nodes[nodeIdx] = node
+	}
+	return nodes
+}
+
+func (c *clusterInst) nodeUuids() []string {
 	var out []string
 	for _, node := range c.nodes {
 		out = append(out, node.ID())
@@ -92,8 +93,8 @@ func (c *Cluster) nodeUuids() []string {
 }
 
 // AddNode will add a new node to a cluster.
-func (c *Cluster) AddNode(opts NewNodeOptions) (*ClusterNode, error) {
-	node, err := NewClusterNode(c, opts)
+func (c *clusterInst) AddNode(opts mock.NewNodeOptions) (mock.ClusterNode, error) {
+	node, err := newClusterNode(c, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +106,7 @@ func (c *Cluster) AddNode(opts NewNodeOptions) (*ClusterNode, error) {
 }
 
 // AddBucket will add a new bucket to a cluster.
-func (c *Cluster) AddBucket(opts NewBucketOptions) (*Bucket, error) {
+func (c *clusterInst) AddBucket(opts mock.NewBucketOptions) (mock.Bucket, error) {
 	bucket, err := newBucket(c, opts)
 	if err != nil {
 		return nil, err
@@ -121,7 +122,7 @@ func (c *Cluster) AddBucket(opts NewBucketOptions) (*Bucket, error) {
 }
 
 // GetBucket will return a specific bucket from the cluster.
-func (c *Cluster) GetBucket(name string) *Bucket {
+func (c *clusterInst) GetBucket(name string) mock.Bucket {
 	for _, bucket := range c.buckets {
 		if bucket.Name() == name {
 			return bucket
@@ -131,7 +132,7 @@ func (c *Cluster) GetBucket(name string) *Bucket {
 }
 
 // IsFeatureEnabled will indicate whether this cluster has a specific feature enabled.
-func (c *Cluster) IsFeatureEnabled(feature ClusterFeature) bool {
+func (c *clusterInst) IsFeatureEnabled(feature mock.ClusterFeature) bool {
 	for _, supportedFeature := range c.enabledFeatures {
 		if supportedFeature == feature {
 			return true
@@ -141,12 +142,12 @@ func (c *Cluster) IsFeatureEnabled(feature ClusterFeature) bool {
 	return false
 }
 
-func (c *Cluster) updateConfig() {
+func (c *clusterInst) updateConfig() {
 	c.currentConfig = nil
 }
 
 // ConnectionString returns the basic non-TLS connection string for this cluster.
-func (c *Cluster) ConnectionString() string {
+func (c *clusterInst) ConnectionString() string {
 	nodesList := make([]string, 0)
 	for _, node := range c.nodes {
 		if node.kvService != nil {
@@ -158,21 +159,21 @@ func (c *Cluster) ConnectionString() string {
 }
 
 // KvInHooks returns the hook manager for incoming kv packets.
-func (c *Cluster) KvInHooks() *KvHookManager {
+func (c *clusterInst) KvInHooks() *hooks.KvHookManager {
 	return &c.kvInHooks
 }
 
 // KvOutHooks returns the hook manager for outgoing kv packets.
-func (c *Cluster) KvOutHooks() *KvHookManager {
+func (c *clusterInst) KvOutHooks() *hooks.KvHookManager {
 	return &c.kvOutHooks
 }
 
 // MgmtHooks returns the hook manager for management requests.
-func (c *Cluster) MgmtHooks() *MgmtHookManager {
+func (c *clusterInst) MgmtHooks() *hooks.MgmtHookManager {
 	return &c.mgmtHooks
 }
 
-func (c *Cluster) handleKvPacketIn(source *KvClient, pak *memd.Packet) {
+func (c *clusterInst) handleKvPacketIn(source *kvClient, pak *memd.Packet) {
 	log.Printf("received kv packet %p CMD:%s", source, pak.Command.Name())
 	if c.kvInHooks.Invoke(source, pak) {
 		// If we reached the end of the chain, it means nobody replied and we need
@@ -187,7 +188,7 @@ func (c *Cluster) handleKvPacketIn(source *KvClient, pak *memd.Packet) {
 	}
 }
 
-func (c *Cluster) handleKvPacketOut(source *KvClient, pak *memd.Packet) bool {
+func (c *clusterInst) handleKvPacketOut(source *kvClient, pak *memd.Packet) bool {
 	log.Printf("sending kv packet %p CMD:%s %+v", source, pak.Command.Name(), pak)
 	if !c.kvOutHooks.Invoke(source, pak) {
 		log.Printf("throwing away kv packet %p CMD:%s", source, pak.Command.Name())
@@ -196,30 +197,30 @@ func (c *Cluster) handleKvPacketOut(source *KvClient, pak *memd.Packet) bool {
 	return true
 }
 
-func (c *Cluster) handleMgmtRequest(source *MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (c *clusterInst) handleMgmtRequest(source *mgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received mgmt request %p %+v", source, req)
 	return c.mgmtHooks.Invoke(source, req)
 }
 
-func (c *Cluster) handleViewRequest(source *ViewService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (c *clusterInst) handleViewRequest(source *viewService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received view request %p %+v", source, req)
 	// TODO(brett19): Implement views request processing
 	return nil
 }
 
-func (c *Cluster) handleQueryRequest(source *QueryService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (c *clusterInst) handleQueryRequest(source *queryService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received query request %p %+v", source, req)
 	// TODO(brett19): Implement query request processing
 	return nil
 }
 
-func (c *Cluster) handleSearchRequest(source *SearchService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (c *clusterInst) handleSearchRequest(source *searchService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received search request %p %+v", source, req)
 	// TODO(brett19): Implement search request processing
 	return nil
 }
 
-func (c *Cluster) handleAnalyticsRequest(source *AnalyticsService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (c *clusterInst) handleAnalyticsRequest(source *analyticsService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received analytics request %p %+v", source, req)
 	// TODO(brett19): Implement analytics request processing
 	return nil

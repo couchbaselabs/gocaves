@@ -3,32 +3,17 @@ package mockimpl
 import (
 	"log"
 
+	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mockdb"
 	"github.com/google/uuid"
 )
 
-// BucketType specifies the type of bucket
-type BucketType uint
-
-// The following lists the possible bucket types
-const (
-	BucketTypeMemcached = BucketType(1)
-	BucketTypeCouchbase = BucketType(2)
-)
-
-// NewBucketOptions allows you to specify initial options for a new bucket
-type NewBucketOptions struct {
-	Name        string
-	Type        BucketType
-	NumReplicas uint
-}
-
-// Bucket represents an instance of a Bucket
-type Bucket struct {
+// bucketInst represents an instance of a bucketInst
+type bucketInst struct {
 	id          string
-	cluster     *Cluster
+	cluster     *clusterInst
 	name        string
-	bucketType  BucketType
+	bucketType  mock.BucketType
 	numReplicas uint
 	numVbuckets uint
 	store       *mockdb.Bucket
@@ -41,10 +26,10 @@ type Bucket struct {
 	// directly so we can avoid needing to have a cyclical dependancy.
 	vbMap [][]string
 
-	collManifest CollectionManifest
+	collManifest mock.CollectionManifest
 }
 
-func newBucket(parent *Cluster, opts NewBucketOptions) (*Bucket, error) {
+func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, error) {
 	// We currently always use a single replica here.  We use this 1 replica for all
 	// replicas that are needed, and it is potentially unused if the buckets replica
 	// count is 0.
@@ -58,7 +43,7 @@ func newBucket(parent *Cluster, opts NewBucketOptions) (*Bucket, error) {
 		return nil, err
 	}
 
-	bucket := &Bucket{
+	bucket := &bucketInst{
 		id:          uuid.New().String(),
 		cluster:     parent,
 		name:        opts.Name,
@@ -76,39 +61,44 @@ func newBucket(parent *Cluster, opts NewBucketOptions) (*Bucket, error) {
 }
 
 // ID returns the uuid of this bucket.
-func (b Bucket) ID() string {
+func (b bucketInst) ID() string {
 	return b.id
 }
 
 // Name returns the name of this bucket
-func (b Bucket) Name() string {
+func (b bucketInst) Name() string {
 	return b.name
 }
 
 // BucketType returns the type of bucket this is.
-func (b Bucket) BucketType() BucketType {
+func (b bucketInst) BucketType() mock.BucketType {
 	return b.bucketType
 }
 
 // NumReplicas returns the number of configured replicas for this bucket
-func (b Bucket) NumReplicas() uint {
+func (b bucketInst) NumReplicas() uint {
 	return b.numReplicas
 }
 
+// ConfigRev returns the current configuration revision for this bucket.
+func (b bucketInst) ConfigRev() uint {
+	return b.configRev
+}
+
 // CollectionManifest returns the collection manifest of this bucket.
-func (b Bucket) CollectionManifest() CollectionManifest {
+func (b bucketInst) CollectionManifest() mock.CollectionManifest {
 	return b.collManifest
 }
 
 // Store returns the data-store for this bucket.
-func (b Bucket) Store() *mockdb.Bucket {
+func (b bucketInst) Store() *mockdb.Bucket {
 	return b.store
 }
 
 // UpdateVbMap will update the vbmap such that all vbuckets are assigned to the
 // specific nodes which are passed in.  Note that this rebalance is guarenteed to
 // be very explicit such that vbNode = (vbId % numNode), and replicas are just ++.
-func (b *Bucket) UpdateVbMap(nodeList []string) {
+func (b *bucketInst) UpdateVbMap(nodeList []string) {
 	numVbuckets := b.numVbuckets
 	numDataCopies := b.numReplicas + 1
 
@@ -138,15 +128,12 @@ func (b *Bucket) UpdateVbMap(nodeList []string) {
 	b.updateConfig()
 }
 
-func (b *Bucket) updateConfig() {
+func (b *bucketInst) updateConfig() {
 	b.configRev++
-
-	// This is just for testing
-	b.GetConfig(nil)
 }
 
 // GetVbServerInfo returns the vb nodes, then the vb map, then the ordered list of all nodes
-func (b *Bucket) GetVbServerInfo(reqNode *ClusterNode) ([]*ClusterNode, [][]int, []*ClusterNode) {
+func (b *bucketInst) GetVbServerInfo(reqNode mock.ClusterNode) ([]mock.ClusterNode, [][]int, []mock.ClusterNode) {
 	allNodes := b.cluster.nodes
 
 	var nodeList uniqueClusterNodeList
@@ -160,7 +147,7 @@ func (b *Bucket) GetVbServerInfo(reqNode *ClusterNode) ([]*ClusterNode, [][]int,
 	}
 
 	// Grab the KV server list before we add the remaining nodes.
-	kvNodes := []*ClusterNode(nodeList)
+	kvNodes := []mock.ClusterNode(nodeList)
 
 	// Add the remaining nodes for the nodesExt and such.
 	for _, node := range allNodes {

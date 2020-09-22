@@ -1,19 +1,21 @@
-package mockimpl
+package svcimpls
 
 import (
 	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbaselabs/gocaves/hooks"
+	"github.com/couchbaselabs/gocaves/mock"
 )
 
 type kvImplCccp struct {
 }
 
-func (x *kvImplCccp) Register(hooks *KvHookManager) {
+func (x *kvImplCccp) Register(hooks *hooks.KvHookManager) {
 	reqExpects := hooks.Expect().Magic(memd.CmdMagicReq)
 
 	reqExpects.Cmd(memd.CmdGetClusterConfig).Handler(x.handleGetClusterConfigReq)
 }
 
-func (x *kvImplCccp) handleGetClusterConfigReq(source *KvClient, pak *memd.Packet, next func()) {
+func (x *kvImplCccp) handleGetClusterConfigReq(source mock.KvClient, pak *memd.Packet, next func()) {
 	selectedBucket := source.SelectedBucket()
 	if selectedBucket == nil {
 		// Send a global terse configuration
@@ -22,7 +24,7 @@ func (x *kvImplCccp) handleGetClusterConfigReq(source *KvClient, pak *memd.Packe
 		return
 	}
 
-	configBytes := selectedBucket.GetTerseConfig(source.Source().Node())
+	configBytes := GenTerseBucketConfig(selectedBucket, source.Source().Node())
 	source.WritePacket(&memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdGetClusterConfig,

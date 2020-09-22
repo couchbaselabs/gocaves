@@ -2,14 +2,15 @@ package mockimpl
 
 import (
 	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mockimpl/servers"
 	"github.com/couchbaselabs/gocaves/scramserver"
 )
 
-// KvClient represents all the state about a connected kv client.
-type KvClient struct {
+// kvClient represents all the state about a connected kv client.
+type kvClient struct {
 	client  *servers.MemdClient
-	service *KvService
+	service *kvService
 
 	authenticatedUserName string
 	selectedBucketName    string
@@ -17,42 +18,42 @@ type KvClient struct {
 }
 
 // ScramServer returns a SCRAM server object specific to this user.
-func (c *KvClient) ScramServer() *scramserver.ScramServer {
+func (c *kvClient) ScramServer() *scramserver.ScramServer {
 	return &c.scramServer
 }
 
 // SetAuthenticatedUserName sets the name of the user who is authenticated.
-func (c *KvClient) SetAuthenticatedUserName(userName string) {
+func (c *kvClient) SetAuthenticatedUserName(userName string) {
 	c.authenticatedUserName = userName
 }
 
 // AuthenticatedUserName gets the name of the user who is authenticated.
-func (c *KvClient) AuthenticatedUserName() string {
+func (c *kvClient) AuthenticatedUserName() string {
 	return c.authenticatedUserName
 }
 
 // SetSelectedBucketName sets the currently selected bucket's name.
-func (c *KvClient) SetSelectedBucketName(bucketName string) {
+func (c *kvClient) SetSelectedBucketName(bucketName string) {
 	c.selectedBucketName = bucketName
 }
 
 // SelectedBucketName returns the currently selected bucket's name.
-func (c *KvClient) SelectedBucketName() string {
+func (c *kvClient) SelectedBucketName() string {
 	return c.selectedBucketName
 }
 
 // SelectedBucket returns the currently selected bucket.
-func (c *KvClient) SelectedBucket() *Bucket {
+func (c *kvClient) SelectedBucket() mock.Bucket {
 	return c.service.clusterNode.cluster.GetBucket(c.selectedBucketName)
 }
 
 // Source returns the KvService which owns this client.
-func (c *KvClient) Source() *KvService {
+func (c *kvClient) Source() mock.KvService {
 	return c.service
 }
 
 // WritePacket tries to write data to the underlying connection.
-func (c *KvClient) WritePacket(pak *memd.Packet) error {
+func (c *kvClient) WritePacket(pak *memd.Packet) error {
 	if !c.service.clusterNode.cluster.handleKvPacketOut(c, pak) {
 		return nil
 	}
@@ -60,13 +61,13 @@ func (c *KvClient) WritePacket(pak *memd.Packet) error {
 }
 
 // Close attempts to close the connection.
-func (c *KvClient) Close() error {
+func (c *kvClient) Close() error {
 	return c.client.Close()
 }
 
-// KvService represents an instance of the kv service.
-type KvService struct {
-	clusterNode *ClusterNode
+// kvService represents an instance of the kv service.
+type kvService struct {
+	clusterNode *clusterNodeInst
 	server      *servers.MemdServer
 }
 
@@ -75,8 +76,8 @@ type newKvServiceOptions struct {
 }
 
 // newKvService instantiates a new instance of the kv service.
-func newKvService(parent *ClusterNode, opts newKvServiceOptions) (*KvService, error) {
-	svc := &KvService{
+func newKvService(parent *clusterNodeInst, opts newKvServiceOptions) (*kvService, error) {
+	svc := &kvService{
 		clusterNode: parent,
 	}
 
@@ -96,25 +97,25 @@ func newKvService(parent *ClusterNode, opts newKvServiceOptions) (*KvService, er
 }
 
 // Node returns the ClusterNode which owns this service.
-func (s *KvService) Node() *ClusterNode {
+func (s *kvService) Node() mock.ClusterNode {
 	return s.clusterNode
 }
 
 // Hostname returns the hostname where this service can be accessed.
-func (s *KvService) Hostname() string {
+func (s *kvService) Hostname() string {
 	return "127.0.0.1"
 }
 
 // ListenPort returns the port this service is listening on.
-func (s *KvService) ListenPort() int {
+func (s *kvService) ListenPort() int {
 	return s.server.ListenPort()
 }
 
 // GetAllClients returns a list of all the clients connected to this service.
-func (s *KvService) GetAllClients() []*KvClient {
+func (s *kvService) GetAllClients() []mock.KvClient {
 	allClients := s.server.GetAllClients()
 
-	var allKvClients []*KvClient
+	var allKvClients []mock.KvClient
 	for _, client := range allClients {
 		kvCli := s.getKvClient(client)
 		allKvClients = append(allKvClients, kvCli)
@@ -124,28 +125,28 @@ func (s *KvService) GetAllClients() []*KvClient {
 }
 
 // Close will shut down this service once it is no longer needed.
-func (s *KvService) Close() error {
+func (s *kvService) Close() error {
 	return s.server.Close()
 }
 
-func (s *KvService) getKvClient(cli *servers.MemdClient) *KvClient {
-	var kvCli *KvClient
+func (s *kvService) getKvClient(cli *servers.MemdClient) *kvClient {
+	var kvCli *kvClient
 	cli.GetContext(&kvCli)
 	return kvCli
 }
 
-func (s *KvService) handleNewMemdClient(cli *servers.MemdClient) {
+func (s *kvService) handleNewMemdClient(cli *servers.MemdClient) {
 	kvCli := s.getKvClient(cli)
 	kvCli.client = cli
 	kvCli.service = s
 }
 
-func (s *KvService) handleLostMemdClient(cli *servers.MemdClient) {
+func (s *kvService) handleLostMemdClient(cli *servers.MemdClient) {
 	kvCli := s.getKvClient(cli)
 	kvCli.client = nil
 }
 
-func (s *KvService) handleMemdPacket(cli *servers.MemdClient, pak *memd.Packet) {
+func (s *kvService) handleMemdPacket(cli *servers.MemdClient, pak *memd.Packet) {
 	kvCli := s.getKvClient(cli)
 	if kvCli.client == nil {
 		return

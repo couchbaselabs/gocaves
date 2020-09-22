@@ -5,23 +5,17 @@ import (
 	"github.com/couchbaselabs/gocaves/mockimpl/servers"
 )
 
-// QueryRequest represents a single request received by the Query service.
-type QueryRequest struct {
-	Source  *QueryService
-	Request mock.HTTPRequest
-}
-
-// QueryService represents a Querys service running somewhere in the cluster.
-type QueryService struct {
-	clusterNode *ClusterNode
+// queryService represents a Querys service running somewhere in the cluster.
+type queryService struct {
+	clusterNode *clusterNodeInst
 	server      *servers.HTTPServer
 }
 
 type newQueryServiceOptions struct {
 }
 
-func newQueryService(parent *ClusterNode, opts newQueryServiceOptions) (*QueryService, error) {
-	svc := &QueryService{
+func newQueryService(parent *clusterNodeInst, opts newQueryServiceOptions) (*queryService, error) {
+	svc := &queryService{
 		clusterNode: parent,
 	}
 
@@ -40,25 +34,25 @@ func newQueryService(parent *ClusterNode, opts newQueryServiceOptions) (*QuerySe
 }
 
 // Node returns the node which owns this service.
-func (s *QueryService) Node() *ClusterNode {
+func (s *queryService) Node() mock.ClusterNode {
 	return s.clusterNode
 }
 
 // Hostname returns the hostname where this service can be accessed.
-func (s *QueryService) Hostname() string {
+func (s *queryService) Hostname() string {
 	return "127.0.0.1"
 }
 
 // ListenPort returns the port this service is listening on.
-func (s *QueryService) ListenPort() int {
+func (s *queryService) ListenPort() int {
 	return s.server.ListenPort()
 }
 
-func (s *QueryService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
+func (s *queryService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
 	return s.clusterNode.cluster.handleQueryRequest(s, req)
 }
 
 // Close will shut down this service once it is no longer needed.
-func (s *QueryService) Close() error {
+func (s *queryService) Close() error {
 	return s.server.Close()
 }

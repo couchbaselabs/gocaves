@@ -1,22 +1,33 @@
-package mockimpl
+package hooks
 
 import (
 	"testing"
 
+	tmock "github.com/stretchr/testify/mock"
+
 	"github.com/couchbaselabs/gocaves/mock"
 )
+
+type fakeMgmtService struct {
+	tmock.Mock
+}
+
+func (m *fakeMgmtService) Node() mock.ClusterNode { return nil }
+func (m *fakeMgmtService) Hostname() string       { return "" }
+func (m *fakeMgmtService) ListenPort() int        { return 0 }
+func (m *fakeMgmtService) Close() error           { return nil }
 
 func TestMgmtHooksBasic(t *testing.T) {
 	hookInvokes := make([]int, 0)
 
-	fakeSource := &MgmtService{}
+	fakeSource := mock.MgmtService(&fakeMgmtService{})
 	fakeRequest := &mock.HTTPRequest{}
 	fakeResponse1 := &mock.HTTPResponse{}
 	fakeResponse2 := &mock.HTTPResponse{}
 	fakeResponse3 := &mock.HTTPResponse{}
 
 	var hooks MgmtHookManager
-	hooks.Push(func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
+	hooks.Push(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		hookInvokes = append(hookInvokes, 1)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")
@@ -30,7 +41,7 @@ func TestMgmtHooksBasic(t *testing.T) {
 		}
 		return fakeResponse1
 	})
-	hooks.Push(func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
+	hooks.Push(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		hookInvokes = append(hookInvokes, 2)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")
@@ -44,7 +55,7 @@ func TestMgmtHooksBasic(t *testing.T) {
 		}
 		return fakeResponse2
 	})
-	hooks.Push(func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
+	hooks.Push(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		hookInvokes = append(hookInvokes, 3)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")

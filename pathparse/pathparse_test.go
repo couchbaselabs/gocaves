@@ -1,11 +1,11 @@
-package mockimpl
+package pathparse
 
 import (
 	"testing"
 )
 
 func TestPathParser(t *testing.T) {
-	x := NewPathParser("/test/*/lol/*/nope/**/*/*/yay")
+	x := NewParser("/test/*/lol/*/nope/**/*/*/yay")
 
 	a := x.ParseParts("/test/0/lol/1/nope/haha/we/win/3/4/yay")
 	if a == nil {

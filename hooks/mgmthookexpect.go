@@ -1,17 +1,18 @@
-package mockimpl
+package hooks
 
 import (
 	"errors"
 	"sync"
 
 	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/pathparse"
 )
 
 // MgmtHookExpect provides a nicer way to configure mgmt hooks.
 type MgmtHookExpect struct {
 	parent       *MgmtHookManager
 	expectMethod string
-	expectPath   *PathParser
+	expectPath   *pathparse.Parser
 }
 
 // Method specifies a specific method which is expected.
@@ -22,13 +23,13 @@ func (e MgmtHookExpect) Method(method string) *MgmtHookExpect {
 
 // Path specifies a specific path which is expected.
 func (e MgmtHookExpect) Path(path string) *MgmtHookExpect {
-	e.expectPath = NewPathParser(path)
+	e.expectPath = pathparse.NewParser(path)
 	return &e
 }
 
 // Handler specifies the handler to invoke if the expectations are met.
-func (e MgmtHookExpect) Handler(fn func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse) *MgmtHookExpect {
-	e.parent.Push(func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
+func (e MgmtHookExpect) Handler(fn func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse) *MgmtHookExpect {
+	e.parent.Push(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		if e.expectMethod != "" && req.Method != e.expectMethod {
 			return next()
 		}
@@ -44,8 +45,8 @@ func (e MgmtHookExpect) Handler(fn func(source *MgmtService, req *mock.HTTPReque
 }
 
 // Wait waits until the specific expectation is triggered.
-func (e MgmtHookExpect) Wait(checkFn func(*MgmtService, *mock.HTTPRequest) bool) (*MgmtService, *mock.HTTPRequest) {
-	var sourceOut *MgmtService
+func (e MgmtHookExpect) Wait(checkFn func(mock.MgmtService, *mock.HTTPRequest) bool) (mock.MgmtService, *mock.HTTPRequest) {
+	var sourceOut mock.MgmtService
 	var reqOut *mock.HTTPRequest
 	var panicErr error
 
@@ -56,7 +57,7 @@ func (e MgmtHookExpect) Wait(checkFn func(*MgmtService, *mock.HTTPRequest) bool)
 		panicErr = errors.New("wait ended due to destroyed hook manager")
 		waitGrp.Done()
 	})
-	e.Handler(func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
+	e.Handler(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		if checkFn(source, req) {
 			sourceOut = source
 			reqOut = req

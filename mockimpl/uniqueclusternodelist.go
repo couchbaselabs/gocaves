@@ -1,16 +1,18 @@
 package mockimpl
 
-type uniqueClusterNodeList []*ClusterNode
+import "github.com/couchbaselabs/gocaves/mock"
 
-func (l *uniqueClusterNodeList) GetByID(allNodes []*ClusterNode, id string) int {
+type uniqueClusterNodeList []mock.ClusterNode
+
+func (l *uniqueClusterNodeList) GetByID(allNodes []*clusterNodeInst, id string) int {
 	for nodeListIdx, node := range *l {
-		if node.id == id {
+		if node.ID() == id {
 			return nodeListIdx
 		}
 	}
 
 	for _, node := range allNodes {
-		if node.id == id {
+		if node.ID() == id {
 			nodeListIdx := len(*l)
 			*l = append(*l, node)
 			return nodeListIdx

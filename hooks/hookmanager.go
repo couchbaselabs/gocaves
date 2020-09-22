@@ -1,4 +1,4 @@
-package mockimpl
+package hooks
 
 // KvHookManager implements a tree of hooks which can handle a KV packet.
 type hookManager struct {
