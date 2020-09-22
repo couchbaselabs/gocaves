@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 
 	"github.com/couchbase/gocbcore/v9/memd"
-	"github.com/couchbaselabs/gocaves/mockimpl/store"
+	"github.com/couchbaselabs/gocaves/mockdb"
 )
 
 type kvImplCrud struct {
@@ -37,7 +37,7 @@ func (x *kvImplCrud) handleSetRequest(source *KvClient, pak *memd.Packet, next f
 	}
 
 	// TODO(brett19): The xattr behaviour here is wrong, it should be modifying the existing doc.
-	doc := &store.Document{
+	doc := &mockdb.Document{
 		VbID:         uint(pak.Vbucket),
 		CollectionID: uint(pak.CollectionID),
 		Key:          pak.Key,

@@ -3,7 +3,7 @@ package mockimpl
 import (
 	"log"
 
-	"github.com/couchbaselabs/gocaves/mockimpl/store"
+	"github.com/couchbaselabs/gocaves/mockdb"
 	"github.com/google/uuid"
 )
 
@@ -31,7 +31,7 @@ type Bucket struct {
 	bucketType  BucketType
 	numReplicas uint
 	numVbuckets uint
-	store       *store.Bucket
+	store       *mockdb.Bucket
 	configRev   uint
 
 	// vbMap is an array for each vbucket, containing an array for
@@ -48,7 +48,7 @@ func newBucket(parent *Cluster, opts NewBucketOptions) (*Bucket, error) {
 	// We currently always use a single replica here.  We use this 1 replica for all
 	// replicas that are needed, and it is potentially unused if the buckets replica
 	// count is 0.
-	bucketStore, err := store.NewBucket(store.BucketConfig{
+	bucketStore, err := mockdb.NewBucket(mockdb.BucketConfig{
 		Chrono:         parent.chrono,
 		NumReplicas:    1,
 		NumVbuckets:    parent.numVbuckets,
@@ -101,7 +101,7 @@ func (b Bucket) CollectionManifest() CollectionManifest {
 }
 
 // Store returns the data-store for this bucket.
-func (b Bucket) Store() *store.Bucket {
+func (b Bucket) Store() *mockdb.Bucket {
 	return b.store
 }
 
