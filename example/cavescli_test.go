@@ -39,7 +39,12 @@ func newCavesClient() (*cavesClient, error) {
 	cavesProc.Dir = "../"
 	cavesProc.Stdout = os.Stdin
 	cavesProc.Stderr = os.Stderr
-	go cavesProc.Run()
+	go func() {
+		err := cavesProc.Run()
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	log.Printf("Started CAVES")
 
