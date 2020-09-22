@@ -19,11 +19,13 @@ func (x *kvImplAuth) Register(hooks *KvHookManager) {
 	reqExpects.Cmd(memd.CmdSelectBucket).Handler(x.handleSelectBucketRequest)
 }
 
-// TODO(brett19): Implement SCRAM authentication here...
-
 func (x *kvImplAuth) handleSASLListMechsRequest(source *KvClient, pak *memd.Packet, next func()) {
+	// TODO(brett19): Implement actual auth mechanism configuration support.
 	supportedMechs := []string{
 		"PLAIN",
+		"SCRAM_SHA1",
+		"SCRAM_SHA256",
+		"SCRAM_SHA512",
 	}
 
 	supportedBytes := []byte(strings.Join(supportedMechs, " "))
@@ -37,44 +39,14 @@ func (x *kvImplAuth) handleSASLListMechsRequest(source *KvClient, pak *memd.Pack
 	})
 }
 
-func (x *kvImplAuth) handleSASLAuthRequest(source *KvClient, pak *memd.Packet, next func()) {
-	authMech := string(pak.Key)
+func (x *kvImplAuth) handleAuthClient(source *KvClient, pak *memd.Packet, mech, username, password string) {
+	log.Printf("AUTH ATTEMPT: %s, %s, %s", mech, username, password)
 
-	log.Printf("AUTH MECH: %+v", authMech)
-
-	if authMech != "PLAIN" {
+	// TODO(brett19): Need to implement password validation here...
+	if username != "Administrator" {
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
-			Command: memd.CmdSASLAuth,
-			Opaque:  pak.Opaque,
-			Status:  memd.StatusAuthError,
-		})
-		return
-	}
-
-	authPieces := strings.Split(string(pak.Value), string([]byte{0}))
-	log.Printf("AUTH PIECES: %+v", authPieces)
-
-	if len(authPieces) != 3 {
-		source.WritePacket(&memd.Packet{
-			Magic:   memd.CmdMagicRes,
-			Command: memd.CmdSASLAuth,
-			Opaque:  pak.Opaque,
-			Status:  memd.StatusAuthError,
-		})
-		return
-	}
-
-	username := authPieces[1]
-	password := authPieces[2]
-
-	log.Printf("Got Auth Request: %s/%s", username, password)
-
-	// TODO(brett19): Implement proper authentication...
-	if username != "Administrator" || password != "password" {
-		source.WritePacket(&memd.Packet{
-			Magic:   memd.CmdMagicRes,
-			Command: memd.CmdSASLAuth,
+			Command: pak.Command,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusAuthError,
 		})
@@ -85,14 +57,115 @@ func (x *kvImplAuth) handleSASLAuthRequest(source *KvClient, pak *memd.Packet, n
 
 	source.WritePacket(&memd.Packet{
 		Magic:   memd.CmdMagicRes,
-		Command: memd.CmdSASLAuth,
+		Command: pak.Command,
 		Opaque:  pak.Opaque,
 		Status:  memd.StatusSuccess,
 	})
 }
 
+func (x *kvImplAuth) handleSASLAuthRequest(source *KvClient, pak *memd.Packet, next func()) {
+	authMech := string(pak.Key)
+
+	log.Printf("AUTH START: %+v, %s", authMech, pak.Value)
+
+	switch authMech {
+	case "SCRAM-SHA512":
+		fallthrough
+	case "SCRAM-SHA256":
+		fallthrough
+	case "SCRAM-SHA1":
+		scram := source.ScramServer()
+		outBytes, err := scram.Start(pak.Value)
+		if err != nil {
+			// SASL failure
+			// TODO(brett19): Provide better diagnostics here?
+			source.WritePacket(&memd.Packet{
+				Magic:   memd.CmdMagicRes,
+				Command: memd.CmdSASLAuth,
+				Opaque:  pak.Opaque,
+				Status:  memd.StatusAuthError,
+			})
+			return
+		}
+
+		if outBytes == nil {
+			// SASL already completed
+			x.handleAuthClient(source, pak, authMech, scram.Username(), scram.Password())
+			return
+		}
+
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: memd.CmdSASLAuth,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusAuthContinue,
+			Value:   outBytes,
+		})
+	case "PLAIN":
+		authPieces := strings.Split(string(pak.Value), string([]byte{0}))
+		x.handleAuthClient(source, pak, authMech, authPieces[1], authPieces[2])
+		return
+	}
+
+	// Unsupported mechanism!
+	source.WritePacket(&memd.Packet{
+		Magic:   memd.CmdMagicRes,
+		Command: memd.CmdSASLAuth,
+		Opaque:  pak.Opaque,
+		Status:  memd.StatusAuthError,
+	})
+}
+
 func (x *kvImplAuth) handleSASLStepRequest(source *KvClient, pak *memd.Packet, next func()) {
-	next()
+	authMech := string(pak.Key)
+
+	log.Printf("AUTH STEP: %+v, %s", authMech, pak.Value)
+
+	switch authMech {
+	case "SCRAM-SHA512":
+		fallthrough
+	case "SCRAM-SHA256":
+		fallthrough
+	case "SCRAM-SHA1":
+		// These are all accepted
+	case "PLAIN":
+		// Unsupported mechanism!
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: memd.CmdSASLStep,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusAuthError,
+		})
+		return
+	}
+
+	scram := source.ScramServer()
+	outBytes, err := scram.Step(pak.Value)
+	if err != nil {
+		// SASL failure
+		// TODO(brett19): Provide better diagnostics here?
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: memd.CmdSASLStep,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusAuthError,
+		})
+		return
+	}
+
+	if outBytes == nil {
+		// SASL completed
+		x.handleAuthClient(source, pak, authMech, scram.Username(), scram.Password())
+		return
+	}
+
+	source.WritePacket(&memd.Packet{
+		Magic:   memd.CmdMagicRes,
+		Command: memd.CmdSASLStep,
+		Opaque:  pak.Opaque,
+		Status:  memd.StatusAuthContinue,
+		Value:   outBytes,
+	})
 }
 
 func (x *kvImplAuth) handleSelectBucketRequest(source *KvClient, pak *memd.Packet, next func()) {

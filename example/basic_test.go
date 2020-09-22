@@ -35,9 +35,6 @@ func TestBasic(t *testing.T) {
 			Username: "Administrator",
 			Password: "password",
 		},
-		SecurityConfig: gocb.SecurityConfig{
-			AllowedSaslMechanisms: []gocb.SaslMechanism{gocb.PlainSaslMechanism},
-		},
 	})
 	if err != nil {
 		t.Fatalf("failed to connect to caves cluster: %s", err)

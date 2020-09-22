@@ -3,6 +3,7 @@ package mockimpl
 import (
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mockimpl/servers"
+	"github.com/couchbaselabs/gocaves/scramserver"
 )
 
 // KvClient represents all the state about a connected kv client.
@@ -12,6 +13,12 @@ type KvClient struct {
 
 	authenticatedUserName string
 	selectedBucketName    string
+	scramServer           scramserver.ScramServer
+}
+
+// ScramServer returns a SCRAM server object specific to this user.
+func (c *KvClient) ScramServer() *scramserver.ScramServer {
+	return &c.scramServer
 }
 
 // SetAuthenticatedUserName sets the name of the user who is authenticated.
