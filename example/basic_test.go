@@ -9,7 +9,7 @@ import (
 )
 
 func fakeFunc() {
-	// We secretely have a fake function which depends on the CAVES
+	// We secretly have a fake function which depends on the CAVES
 	// command line such that build errors occur here rather than when
 	// we try to actually start up CAVES...
 	cmd.Start()
@@ -28,14 +28,15 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("failed to get connstr: %s", err)
 	}
 
-	connStr = connStr + "?auth_mechanisms=PLAIN"
-
 	t.Logf("got connection string: %s", connStr)
 
 	cluster, err := gocb.Connect(connStr, gocb.ClusterOptions{
 		Authenticator: gocb.PasswordAuthenticator{
 			Username: "Administrator",
 			Password: "password",
+		},
+		SecurityConfig: gocb.SecurityConfig{
+			AllowedSaslMechanisms: []gocb.SaslMechanism{gocb.PlainSaslMechanism},
 		},
 	})
 	if err != nil {
