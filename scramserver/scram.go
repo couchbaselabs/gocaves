@@ -4,23 +4,26 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strconv"
 )
 
-// ScramServer is a server implementation of SCRAM auth.
-type ScramServer struct {
+// scramServer is a server implementation of SCRAM auth.
+type scramServer struct {
 	n           []byte
 	out         bytes.Buffer
 	authMsg     bytes.Buffer
 	clientNonce []byte
+
+	Username string
 }
 
 var b64 = base64.StdEncoding
 var salt = []byte("somesortofsalt")
 
-// NewScramServer creates a new ScramServer
-func NewScramServer() (*ScramServer, error) {
+// newScramServer creates a new ScramServer
+func newScramServer() (*scramServer, error) {
 	const nonceLen = 6
 	buf := make([]byte, nonceLen+b64.EncodedLen(nonceLen))
 	if _, err := rand.Read(buf[:nonceLen]); err != nil {
@@ -29,7 +32,7 @@ func NewScramServer() (*ScramServer, error) {
 
 	n := buf[nonceLen:]
 	b64.Encode(n, buf[:nonceLen])
-	s := &ScramServer{
+	s := &scramServer{
 		n: n,
 	}
 	s.out.Grow(256)
@@ -38,7 +41,7 @@ func NewScramServer() (*ScramServer, error) {
 }
 
 // Start performs the first step of the process, given request data from a client.
-func (s *ScramServer) Start(in []byte) (string, error) {
+func (s *scramServer) Start(in []byte) (string, error) {
 	fields := bytes.Split(in, []byte(","))
 	if len(fields) != 4 {
 		return "", fmt.Errorf("expected 4 fields in first SCRAM-SHA-1 client message, got %d: %q", len(fields), in)
@@ -73,7 +76,7 @@ func (s *ScramServer) Start(in []byte) (string, error) {
 }
 
 // Step1 performs the first "step".
-func (s *ScramServer) Step1(in []byte) error {
+func (s *scramServer) Step1(in []byte) error {
 	fields := bytes.Split(in, []byte(","))
 	if len(fields) != 3 {
 		return fmt.Errorf("expected 3 fields in first SCRAM-SHA-1 client message, got %d: %q", len(fields), in)
@@ -93,6 +96,58 @@ func (s *ScramServer) Step1(in []byte) error {
 }
 
 // Out returns the current data buffer which can be sent to the client.
-func (s *ScramServer) Out() []byte {
+func (s *scramServer) Out() []byte {
 	return s.out.Bytes()
+}
+
+// ScramServer is a server implementation of SCRAM auth with a slightly improved interface.
+type ScramServer struct {
+	srv      *scramServer
+	username string
+	password string
+}
+
+// Start performs the first step of the SCRAM process.  Returns nil if SCRAM completes.
+func (s *ScramServer) Start(in []byte) ([]byte, error) {
+	srv, err := newScramServer()
+	if err != nil {
+		return nil, err
+	}
+
+	username, err := srv.Start(in)
+	if err != nil {
+		return nil, err
+	}
+
+	s.srv = srv
+	s.username = username
+	return srv.Out(), nil
+}
+
+// Step performs one step of the SCRAM process. Returns nil if SCRAM completes.
+func (s *ScramServer) Step(in []byte) ([]byte, error) {
+	if s.srv == nil {
+		return nil, errors.New("scram must be started first")
+	}
+
+	// We blindly call Step1 here since other steps aren't possible to achieve
+	// since we clear out the srv after step 1 completes.
+	err := s.srv.Step1(in)
+	if err != nil {
+		s.srv = nil
+		return nil, err
+	}
+
+	s.srv = nil
+	return nil, nil
+}
+
+// Username returns the password which was produced by SCRAM.
+func (s *ScramServer) Username() string {
+	return s.username
+}
+
+// Password returns the password which was produced by SCRAM.
+func (s *ScramServer) Password() string {
+	return s.password
 }
