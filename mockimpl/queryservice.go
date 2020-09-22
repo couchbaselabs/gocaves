@@ -1,11 +1,14 @@
 package mockimpl
 
-import "github.com/couchbaselabs/gocaves/mockimpl/servers"
+import (
+	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mockimpl/servers"
+)
 
 // QueryRequest represents a single request received by the Query service.
 type QueryRequest struct {
 	Source  *QueryService
-	Request servers.HTTPRequest
+	Request mock.HTTPRequest
 }
 
 // QueryService represents a Querys service running somewhere in the cluster.
@@ -51,7 +54,7 @@ func (s *QueryService) ListenPort() int {
 	return s.server.ListenPort()
 }
 
-func (s *QueryService) handleNewRequest(req *servers.HTTPRequest) *servers.HTTPResponse {
+func (s *QueryService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
 	return s.clusterNode.cluster.handleQueryRequest(s, req)
 }
 

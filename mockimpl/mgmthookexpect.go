@@ -4,7 +4,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/couchbaselabs/gocaves/mockimpl/servers"
+	"github.com/couchbaselabs/gocaves/mock"
 )
 
 // MgmtHookExpect provides a nicer way to configure mgmt hooks.
@@ -27,8 +27,8 @@ func (e MgmtHookExpect) Path(path string) *MgmtHookExpect {
 }
 
 // Handler specifies the handler to invoke if the expectations are met.
-func (e MgmtHookExpect) Handler(fn func(source *MgmtService, req *servers.HTTPRequest, next func() *servers.HTTPResponse) *servers.HTTPResponse) *MgmtHookExpect {
-	e.parent.Push(func(source *MgmtService, req *servers.HTTPRequest, next func() *servers.HTTPResponse) *servers.HTTPResponse {
+func (e MgmtHookExpect) Handler(fn func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse) *MgmtHookExpect {
+	e.parent.Push(func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		if e.expectMethod != "" && req.Method != e.expectMethod {
 			return next()
 		}
@@ -44,9 +44,9 @@ func (e MgmtHookExpect) Handler(fn func(source *MgmtService, req *servers.HTTPRe
 }
 
 // Wait waits until the specific expectation is triggered.
-func (e MgmtHookExpect) Wait(checkFn func(*MgmtService, *servers.HTTPRequest) bool) (*MgmtService, *servers.HTTPRequest) {
+func (e MgmtHookExpect) Wait(checkFn func(*MgmtService, *mock.HTTPRequest) bool) (*MgmtService, *mock.HTTPRequest) {
 	var sourceOut *MgmtService
-	var reqOut *servers.HTTPRequest
+	var reqOut *mock.HTTPRequest
 	var panicErr error
 
 	var waitGrp sync.WaitGroup
@@ -56,7 +56,7 @@ func (e MgmtHookExpect) Wait(checkFn func(*MgmtService, *servers.HTTPRequest) bo
 		panicErr = errors.New("wait ended due to destroyed hook manager")
 		waitGrp.Done()
 	})
-	e.Handler(func(source *MgmtService, req *servers.HTTPRequest, next func() *servers.HTTPResponse) *servers.HTTPResponse {
+	e.Handler(func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		if checkFn(source, req) {
 			sourceOut = source
 			reqOut = req

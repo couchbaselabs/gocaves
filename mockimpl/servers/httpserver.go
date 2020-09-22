@@ -1,72 +1,30 @@
 package servers
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
-	"net/url"
+
+	"github.com/couchbaselabs/gocaves/mock"
 )
-
-// HTTPRequest encapsulates an HTTP request.
-type HTTPRequest struct {
-	Method string
-	URL    *url.URL
-	Header http.Header
-	Body   io.Reader
-}
-
-// PeekBody will return the full body and swap the reader with a
-// new one which will allow other users to continue to use it.
-func (r *HTTPRequest) PeekBody() []byte {
-	data, _ := ioutil.ReadAll(r.Body)
-	r.Body = bytes.NewReader(data)
-	return data
-}
-
-// HTTPResponse encapsulates an HTTP response.
-type HTTPResponse struct {
-	StatusCode int
-	Header     http.Header
-	Body       io.Reader
-}
-
-// PeekBody will return the full body and swap the reader with a
-// new one which will allow other users to continue to use it.
-func (r *HTTPResponse) PeekBody() []byte {
-	data, _ := ioutil.ReadAll(r.Body)
-	r.Body = bytes.NewReader(data)
-	return data
-}
-
-// WithJSONBody sets the body of the response to a specific JSON value
-// NOTE: This does not set headers or status code.
-// NOTE: This returns a copy of the object.
-func (r HTTPResponse) WithJSONBody(val interface{}) *HTTPResponse {
-	data, _ := json.Marshal(val)
-	r.Body = bytes.NewReader(data)
-	return &r
-}
 
 // HTTPServerHandlers provides all the handlers for the http server
 type HTTPServerHandlers struct {
-	NewRequestHandler func(*HTTPRequest) *HTTPResponse
+	NewRequestHandler func(*mock.HTTPRequest) *mock.HTTPResponse
 }
 
 // HTTPServer is a generic implementation of an HTTP server used by
 // the various HTTP servers in this mock.
 type HTTPServer struct {
-	serviceName string
-	listenPort  int
-	localAddr   string
-	listener    net.Listener
-	handlers    HTTPServerHandlers
-	server      *http.Server
+	name       string
+	listenPort int
+	localAddr  string
+	listener   net.Listener
+	handlers   HTTPServerHandlers
+	server     *http.Server
 }
 
 // NewHTTPServiceOptions enables the specification of default options for a new http server.
@@ -78,8 +36,8 @@ type NewHTTPServiceOptions struct {
 // NewHTTPServer instantiates a new instance of the memd server.
 func NewHTTPServer(opts NewHTTPServiceOptions) (*HTTPServer, error) {
 	svc := &HTTPServer{
-		serviceName: opts.Name,
-		handlers:    opts.Handlers,
+		name:     opts.Name,
+		handlers: opts.Handlers,
 	}
 
 	err := svc.start()
@@ -90,12 +48,12 @@ func NewHTTPServer(opts NewHTTPServiceOptions) (*HTTPServer, error) {
 	return svc, nil
 }
 
-// ServiceName returns the name of this service
-func (s *HTTPServer) ServiceName() string {
-	if s.serviceName == "" {
+// serviceName returns the name of this service
+func (s *HTTPServer) serviceName() string {
+	if s.name == "" {
 		return "Unknown Service"
 	}
-	return s.serviceName
+	return s.name
 }
 
 // ListenPort returns the port this server is listening on.
@@ -112,7 +70,7 @@ func (s *HTTPServer) start() error {
 
 	lsnr, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		log.Printf("failed to start listening for http `%s` server: %s", s.ServiceName(), err)
+		log.Printf("failed to start listening for http `%s` server: %s", s.serviceName(), err)
 		return err
 	}
 
@@ -127,11 +85,11 @@ func (s *HTTPServer) start() error {
 	}
 	s.server = srv
 
-	log.Printf("starting listener for %s (http) server on port %d", s.ServiceName(), s.listenPort)
+	log.Printf("starting listener for %s (http) server on port %d", s.serviceName(), s.listenPort)
 	go func() {
 		err := srv.Serve(s.listener)
 		if err != nil {
-			log.Printf("listener for http `%s` failed to serve: %s", s.ServiceName(), err)
+			log.Printf("listener for http `%s` failed to serve: %s", s.serviceName(), err)
 		}
 	}()
 
@@ -141,13 +99,13 @@ func (s *HTTPServer) start() error {
 // Close will stop this HTTP server
 func (s *HTTPServer) Close() error {
 	if s.server == nil {
-		log.Printf("attempted to stop a stopped http `%s` server", s.ServiceName())
+		log.Printf("attempted to stop a stopped http `%s` server", s.serviceName())
 		return errors.New("cannot stop a stopped server")
 	}
 
 	err := s.server.Close()
 	if err != nil {
-		log.Printf("failed to stop listening for http `%s` server: %s", s.ServiceName(), err)
+		log.Printf("failed to stop listening for http `%s` server: %s", s.serviceName(), err)
 		return err
 	}
 
@@ -157,7 +115,7 @@ func (s *HTTPServer) Close() error {
 }
 
 func (s *HTTPServer) handleHTTP(w http.ResponseWriter, req *http.Request) {
-	resp := s.handlers.NewRequestHandler(&HTTPRequest{
+	resp := s.handlers.NewRequestHandler(&mock.HTTPRequest{
 		Method: req.Method,
 		URL:    req.URL,
 		Header: req.Header,

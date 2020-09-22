@@ -3,20 +3,20 @@ package mockimpl
 import (
 	"testing"
 
-	"github.com/couchbaselabs/gocaves/mockimpl/servers"
+	"github.com/couchbaselabs/gocaves/mock"
 )
 
 func TestMgmtHooksBasic(t *testing.T) {
 	hookInvokes := make([]int, 0)
 
 	fakeSource := &MgmtService{}
-	fakeRequest := &servers.HTTPRequest{}
-	fakeResponse1 := &servers.HTTPResponse{}
-	fakeResponse2 := &servers.HTTPResponse{}
-	fakeResponse3 := &servers.HTTPResponse{}
+	fakeRequest := &mock.HTTPRequest{}
+	fakeResponse1 := &mock.HTTPResponse{}
+	fakeResponse2 := &mock.HTTPResponse{}
+	fakeResponse3 := &mock.HTTPResponse{}
 
 	var hooks MgmtHookManager
-	hooks.Push(func(source *MgmtService, req *servers.HTTPRequest, next func() *servers.HTTPResponse) *servers.HTTPResponse {
+	hooks.Push(func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		hookInvokes = append(hookInvokes, 1)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")
@@ -30,7 +30,7 @@ func TestMgmtHooksBasic(t *testing.T) {
 		}
 		return fakeResponse1
 	})
-	hooks.Push(func(source *MgmtService, req *servers.HTTPRequest, next func() *servers.HTTPResponse) *servers.HTTPResponse {
+	hooks.Push(func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		hookInvokes = append(hookInvokes, 2)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")
@@ -44,7 +44,7 @@ func TestMgmtHooksBasic(t *testing.T) {
 		}
 		return fakeResponse2
 	})
-	hooks.Push(func(source *MgmtService, req *servers.HTTPRequest, next func() *servers.HTTPResponse) *servers.HTTPResponse {
+	hooks.Push(func(source *MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		hookInvokes = append(hookInvokes, 3)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")

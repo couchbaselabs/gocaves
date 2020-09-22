@@ -1,11 +1,14 @@
 package mockimpl
 
-import "github.com/couchbaselabs/gocaves/mockimpl/servers"
+import (
+	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mockimpl/servers"
+)
 
 // AnalyticsRequest represents a single request received by the analytics service.
 type AnalyticsRequest struct {
 	Source  *MgmtService
-	Request servers.HTTPRequest
+	Request mock.HTTPRequest
 }
 
 // AnalyticsService represents a analytics service running somewhere in the cluster.
@@ -51,7 +54,7 @@ func (s *AnalyticsService) ListenPort() int {
 	return s.server.ListenPort()
 }
 
-func (s *AnalyticsService) handleNewRequest(req *servers.HTTPRequest) *servers.HTTPResponse {
+func (s *AnalyticsService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
 	return s.clusterNode.cluster.handleAnalyticsRequest(s, req)
 }
 

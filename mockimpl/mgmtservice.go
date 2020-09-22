@@ -1,11 +1,14 @@
 package mockimpl
 
-import "github.com/couchbaselabs/gocaves/mockimpl/servers"
+import (
+	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mockimpl/servers"
+)
 
 // MgmtRequest represents a single request received by the management service.
 type MgmtRequest struct {
 	Source  *MgmtService
-	Request servers.HTTPRequest
+	Request mock.HTTPRequest
 }
 
 // MgmtService represents a management service running somewhere in the cluster.
@@ -51,7 +54,7 @@ func (s *MgmtService) ListenPort() int {
 	return s.server.ListenPort()
 }
 
-func (s *MgmtService) handleNewRequest(req *servers.HTTPRequest) *servers.HTTPResponse {
+func (s *MgmtService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
 	return s.clusterNode.cluster.handleMgmtRequest(s, req)
 }
 

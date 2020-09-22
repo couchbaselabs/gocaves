@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/couchbase/gocbcore/v9/memd"
-	"github.com/couchbaselabs/gocaves/mockimpl/servers"
+	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mocktime"
 	"github.com/google/uuid"
 )
@@ -196,30 +196,30 @@ func (c *Cluster) handleKvPacketOut(source *KvClient, pak *memd.Packet) bool {
 	return true
 }
 
-func (c *Cluster) handleMgmtRequest(source *MgmtService, req *servers.HTTPRequest) *servers.HTTPResponse {
+func (c *Cluster) handleMgmtRequest(source *MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received mgmt request %p %+v", source, req)
 	return c.mgmtHooks.Invoke(source, req)
 }
 
-func (c *Cluster) handleViewRequest(source *ViewService, req *servers.HTTPRequest) *servers.HTTPResponse {
+func (c *Cluster) handleViewRequest(source *ViewService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received view request %p %+v", source, req)
 	// TODO(brett19): Implement views request processing
 	return nil
 }
 
-func (c *Cluster) handleQueryRequest(source *QueryService, req *servers.HTTPRequest) *servers.HTTPResponse {
+func (c *Cluster) handleQueryRequest(source *QueryService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received query request %p %+v", source, req)
 	// TODO(brett19): Implement query request processing
 	return nil
 }
 
-func (c *Cluster) handleSearchRequest(source *SearchService, req *servers.HTTPRequest) *servers.HTTPResponse {
+func (c *Cluster) handleSearchRequest(source *SearchService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received search request %p %+v", source, req)
 	// TODO(brett19): Implement search request processing
 	return nil
 }
 
-func (c *Cluster) handleAnalyticsRequest(source *AnalyticsService, req *servers.HTTPRequest) *servers.HTTPResponse {
+func (c *Cluster) handleAnalyticsRequest(source *AnalyticsService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received analytics request %p %+v", source, req)
 	// TODO(brett19): Implement analytics request processing
 	return nil

@@ -1,11 +1,14 @@
 package mockimpl
 
-import "github.com/couchbaselabs/gocaves/mockimpl/servers"
+import (
+	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mockimpl/servers"
+)
 
 // SearchRequest represents a single request received by the view service.
 type SearchRequest struct {
 	Source  *SearchService
-	Request servers.HTTPRequest
+	Request mock.HTTPRequest
 }
 
 // SearchService represents a views service running somewhere in the cluster.
@@ -51,7 +54,7 @@ func (s *SearchService) ListenPort() int {
 	return s.server.ListenPort()
 }
 
-func (s *SearchService) handleNewRequest(req *servers.HTTPRequest) *servers.HTTPResponse {
+func (s *SearchService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
 	return s.clusterNode.cluster.handleSearchRequest(s, req)
 }
 
