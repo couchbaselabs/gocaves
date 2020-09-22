@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"os"
 
 	"github.com/couchbaselabs/gocaves/api"
@@ -82,7 +84,30 @@ func startMockMode() {
 }
 
 func startSDKLinkedMode() {
+	sdkPort := *controlPortFlag
+	linkAddr := *linkAddrFlag
 
+	srvConn, err := net.Dial("tcp", linkAddr)
+	if err != nil {
+		log.Printf("failed to connect to caves server: %s", err)
+		return
+	}
+
+	cliConn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", sdkPort))
+	if err != nil {
+		log.Printf("failed to connect to the sdk: %s", err)
+		return
+	}
+
+	go func() {
+		io.Copy(srvConn, cliConn)
+		cliConn.Close()
+		srvConn.Close()
+	}()
+
+	io.Copy(cliConn, srvConn)
+	cliConn.Close()
+	srvConn.Close()
 }
 
 func startSDKMode() {
@@ -93,7 +118,7 @@ func startSDKMode() {
 		Handler: handleAPIRequest,
 	})
 	if err != nil {
-		log.Printf("failed to connect to the sdk")
+		log.Printf("failed to connect to the sdk: %s", err)
 		return
 	}
 
