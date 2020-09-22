@@ -57,7 +57,7 @@ func (s *scramServer) Start(in []byte) (string, error) {
 		return "", fmt.Errorf("client sent an invalid SCRAM-SHA-1 nonce: %q", fields[3])
 	}
 
-	username := make([]byte, b64.DecodedLen(len(fields[2][2:])))
+	username := fields[2][2:]
 
 	s.clientNonce = fields[3][2:]
 	s.out.WriteString("r=")
