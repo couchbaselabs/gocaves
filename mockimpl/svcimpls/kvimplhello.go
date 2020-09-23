@@ -15,7 +15,6 @@ func (x *kvImplHello) Register(hooks *hooks.KvHookManager) {
 	reqExpects := hooks.Expect().Magic(memd.CmdMagicReq)
 
 	reqExpects.Cmd(memd.CmdHello).Handler(x.handleHelloRequest)
-	reqExpects.Cmd(memd.CmdGetErrorMap).Handler(x.handleGetErrorMap)
 }
 
 func (x *kvImplHello) handleHelloRequest(source mock.KvClient, pak *memd.Packet, next func()) {
@@ -42,15 +41,5 @@ func (x *kvImplHello) handleHelloRequest(source mock.KvClient, pak *memd.Packet,
 		Opaque:  pak.Opaque,
 		Value:   enabledBytes,
 		Status:  memd.StatusSuccess,
-	})
-}
-
-func (x *kvImplHello) handleGetErrorMap(source mock.KvClient, pak *memd.Packet, next func()) {
-	// TODO(brett19): Implement some semblance of a realistic error map...
-	source.WritePacket(&memd.Packet{
-		Magic:   memd.CmdMagicRes,
-		Command: memd.CmdGetErrorMap,
-		Opaque:  pak.Opaque,
-		Status:  memd.StatusUnknownCommand,
 	})
 }

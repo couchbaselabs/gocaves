@@ -20,7 +20,7 @@ type ErrorMapError struct {
 }
 
 func NewErrorMap() (*ErrorMap, error) {
-	b, err := ioutil.ReadFile("data/err_map65.json")
+	b, err := ioutil.ReadFile("mock/data/err_map70.json")
 	if err != nil {
 		return nil, err
 	}
