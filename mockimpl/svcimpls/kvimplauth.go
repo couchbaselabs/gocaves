@@ -77,7 +77,7 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 		fallthrough
 	case "SCRAM-SHA1":
 		scram := source.ScramServer()
-		outBytes, err := scram.Start(pak.Value)
+		outBytes, err := scram.Start(pak.Value, authMech)
 		if err != nil {
 			// SASL failure
 			// TODO(brett19): Provide better diagnostics here?
@@ -96,6 +96,8 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 			return
 		}
 
+		// TODO: lookup of the username here to get password which scram server will then salt
+		scram.SetPassword("password")
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: memd.CmdSASLAuth,
@@ -166,7 +168,7 @@ func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packe
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdSASLStep,
 		Opaque:  pak.Opaque,
-		Status:  memd.StatusAuthContinue,
+		Status:  memd.StatusSuccess,
 		Value:   outBytes,
 	})
 }

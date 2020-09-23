@@ -17,14 +17,14 @@ func (x *kvImplCccp) Register(hooks *hooks.KvHookManager) {
 
 func (x *kvImplCccp) handleGetClusterConfigReq(source mock.KvClient, pak *memd.Packet, next func()) {
 	selectedBucket := source.SelectedBucket()
+	var configBytes []byte
 	if selectedBucket == nil {
 		// Send a global terse configuration
-		//TODO(brett19): Implement cluster-level CCCP
-		next()
-		return
+		configBytes = GenClusterConfig(source.Source().Node().Cluster(), source.Source().Node())
+	} else {
+		configBytes = GenTerseBucketConfig(selectedBucket, source.Source().Node())
 	}
 
-	configBytes := GenTerseBucketConfig(selectedBucket, source.Source().Node())
 	source.WritePacket(&memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdGetClusterConfig,

@@ -15,7 +15,7 @@ type kvClient struct {
 
 	authenticatedUserName string
 	selectedBucketName    string
-	scramServer           scramserver.ScramServer
+	// scramServer           scramserver.ScramServer
 }
 
 // IsTLS returns whether this client is connected via TLS
@@ -26,7 +26,9 @@ func (c *kvClient) IsTLS() bool {
 
 // ScramServer returns a SCRAM server object specific to this user.
 func (c *kvClient) ScramServer() *scramserver.ScramServer {
-	return &c.scramServer
+	var scramServer *scramserver.ScramServer
+	c.client.GetContext(&scramServer)
+	return scramServer
 }
 
 // SetAuthenticatedUserName sets the name of the user who is authenticated.
