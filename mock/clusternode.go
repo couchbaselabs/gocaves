@@ -30,4 +30,7 @@ type ClusterNode interface {
 
 	// AnalyticsService returns the analytics service for this node.
 	AnalyticsService() AnalyticsService
+
+	// ErrorMap returns the error map for this node.
+	ErrorMap() *ErrorMap
 }

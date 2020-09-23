@@ -11,6 +11,7 @@ import (
 type clusterNodeInst struct {
 	cluster *clusterInst
 	id      string
+	errMap  *mock.ErrorMap
 
 	kvService        *kvService
 	mgmtService      *mgmtService
@@ -25,6 +26,14 @@ func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNode
 	node := &clusterNodeInst{
 		id:      uuid.New().String(),
 		cluster: parent,
+	}
+
+	var err error
+	node.errMap, err = mock.NewErrorMap()
+	if err != nil {
+		log.Printf("cluster node failed to load error map: %s", err)
+		node.cleanup()
+		return nil, err
 	}
 
 	if serviceTypeListContains(opts.EnabledServices, mock.ServiceTypeKeyValue) {
@@ -135,6 +144,11 @@ func (n *clusterNodeInst) SearchService() mock.SearchService {
 // AnalyticsService returns the analytics service for this node.
 func (n *clusterNodeInst) AnalyticsService() mock.AnalyticsService {
 	return n.analyticsService
+}
+
+// ErrorMap returns the error map for this node.
+func (n *clusterNodeInst) ErrorMap() *mock.ErrorMap {
+	return n.errMap
 }
 
 func (n *clusterNodeInst) cleanup() {
