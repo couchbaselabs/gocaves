@@ -10,6 +10,7 @@ import (
 
 // HTTPRequest encapsulates an HTTP request.
 type HTTPRequest struct {
+	IsTLS  bool
 	Method string
 	URL    *url.URL
 	Header http.Header

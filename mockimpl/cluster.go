@@ -1,6 +1,7 @@
 package mockimpl
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
 	"strings"
@@ -21,11 +22,10 @@ type clusterInst struct {
 	numVbuckets     uint
 	chrono          *mocktime.Chrono
 	replicaLatency  time.Duration
+	tlsConfig       *tls.Config
 
 	buckets []*bucketInst
 	nodes   []*clusterNodeInst
-
-	currentConfig []byte
 
 	kvInHooks  hooks.KvHookManager
 	kvOutHooks hooks.KvHookManager
@@ -44,6 +44,29 @@ func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 		opts.ReplicaLatency = 50 * time.Millisecond
 	}
 
+	// TODO(brett19): Improve cluster/node certificate setup.
+	// We Need to generate these dynamically, provide accessors so each node
+	// can have its own individual certificates and such that we can generate
+	// client-certificate authentication test certificates.  This should
+	// probably be wrapped in its own testable package or something.
+	certPem := []byte(`-----BEGIN CERTIFICATE-----
+	MIIBhTCCASugAwIBAgIQIRi6zePL6mKjOipn+dNuaTAKBggqhkjOPQQDAjASMRAw
+	DgYDVQQKEwdBY21lIENvMB4XDTE3MTAyMDE5NDMwNloXDTE4MTAyMDE5NDMwNlow
+	EjEQMA4GA1UEChMHQWNtZSBDbzBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABD0d
+	7VNhbWvZLWPuj/RtHFjvtJBEwOkhbN/BnnE8rnZR8+sbwnc/KhCk3FhnpHZnQz7B
+	5aETbbIgmuvewdjvSBSjYzBhMA4GA1UdDwEB/wQEAwICpDATBgNVHSUEDDAKBggr
+	BgEFBQcDATAPBgNVHRMBAf8EBTADAQH/MCkGA1UdEQQiMCCCDmxvY2FsaG9zdDo1
+	NDUzgg4xMjcuMC4wLjE6NTQ1MzAKBggqhkjOPQQDAgNIADBFAiEA2zpJEPQyz6/l
+	Wf86aX6PepsntZv2GYlA5UpabfT2EZICICpJ5h/iI+i341gBmLiAFQOyTDT+/wQc
+	6MF9+Yw1Yy0t
+	-----END CERTIFICATE-----`)
+	keyPem := []byte(`-----BEGIN EC PRIVATE KEY-----
+	MHcCAQEEIIrYSSNQFaA2Hwf1duRSxKtLYX5CB04fSeQ6tF1aY/PuoAoGCCqGSM49
+	AwEHoUQDQgAEPR3tU2Fta9ktY+6P9G0cWO+0kETA6SFs38GecTyudlHz6xvCdz8q
+	EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
+	-----END EC PRIVATE KEY-----`)
+	cert, _ := tls.X509KeyPair(certPem, keyPem)
+
 	cluster := &clusterInst{
 		id:              uuid.New().String(),
 		enabledFeatures: opts.EnabledFeatures,
@@ -52,6 +75,9 @@ func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 		replicaLatency:  opts.ReplicaLatency,
 		buckets:         nil,
 		nodes:           nil,
+		tlsConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		},
 	}
 
 	// Since it doesn't make sense to have no nodes in a cluster, we force
@@ -143,7 +169,6 @@ func (c *clusterInst) IsFeatureEnabled(feature mock.ClusterFeature) bool {
 }
 
 func (c *clusterInst) updateConfig() {
-	c.currentConfig = nil
 }
 
 // ConnectionString returns the basic non-TLS connection string for this cluster.

@@ -9,6 +9,7 @@ import (
 type analyticsService struct {
 	clusterNode *clusterNodeInst
 	server      *servers.HTTPServer
+	tlsServer   *servers.HTTPServer
 }
 
 type newAnalyticsServiceOptions struct {
@@ -30,6 +31,20 @@ func newAnalyticsService(parent *clusterNodeInst, opts newAnalyticsServiceOption
 	}
 	svc.server = srv
 
+	if parent.cluster.IsFeatureEnabled(mock.ClusterFeatureTLS) {
+		tlsSrv, err := servers.NewHTTPServer(servers.NewHTTPServiceOptions{
+			Name: "analytics",
+			Handlers: servers.HTTPServerHandlers{
+				NewRequestHandler: svc.handleNewRequest,
+			},
+			TLSConfig: parent.cluster.tlsConfig,
+		})
+		if err != nil {
+			return nil, err
+		}
+		svc.tlsServer = tlsSrv
+	}
+
 	return svc, nil
 }
 
@@ -45,7 +60,18 @@ func (s *analyticsService) Hostname() string {
 
 // ListenPort returns the port this service is listening on.
 func (s *analyticsService) ListenPort() int {
+	if s.server == nil {
+		return -1
+	}
 	return s.server.ListenPort()
+}
+
+// ListenPortTLS returns the TLS port this service is listening on.
+func (s *analyticsService) ListenPortTLS() int {
+	if s.tlsServer == nil {
+		return -1
+	}
+	return s.tlsServer.ListenPort()
 }
 
 func (s *analyticsService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
@@ -54,5 +80,12 @@ func (s *analyticsService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPRes
 
 // Close will shut down this service once it is no longer needed.
 func (s *analyticsService) Close() error {
-	return s.server.Close()
+	var errOut error
+	if s.server != nil {
+		errOut = s.server.Close()
+	}
+	if s.tlsServer != nil {
+		errOut = s.tlsServer.Close()
+	}
+	return errOut
 }

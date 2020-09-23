@@ -105,9 +105,11 @@ func TestClusterConfig70(t *testing.T) {
 	testConfig := testReadJSONFile(t, "testdata/cluster_config_70.json")
 
 	cluster, _ := NewCluster(mock.NewClusterOptions{
-		EnabledFeatures: []mock.ClusterFeature{},
-		NumVbuckets:     1024,
-		InitialNode:     mock.NewNodeOptions{},
+		EnabledFeatures: []mock.ClusterFeature{
+			mock.ClusterFeatureTLS,
+		},
+		NumVbuckets: 1024,
+		InitialNode: mock.NewNodeOptions{},
 	})
 
 	configBytes := svcimpls.GenClusterConfig(cluster, nil)
@@ -122,9 +124,11 @@ func TestBucketConfig70(t *testing.T) {
 	testConfig := testReadJSONFile(t, "testdata/bucket_config_70.json")
 
 	cluster, _ := NewCluster(mock.NewClusterOptions{
-		EnabledFeatures: []mock.ClusterFeature{},
-		NumVbuckets:     1024,
-		InitialNode:     mock.NewNodeOptions{},
+		EnabledFeatures: []mock.ClusterFeature{
+			mock.ClusterFeatureTLS,
+		},
+		NumVbuckets: 1024,
+		InitialNode: mock.NewNodeOptions{},
 	})
 
 	bucket, _ := cluster.AddBucket(mock.NewBucketOptions{
@@ -145,9 +149,11 @@ func TestBucketTerseConfig70(t *testing.T) {
 	testConfig := testReadJSONFile(t, "testdata/bucket_terseconfig_70.json")
 
 	cluster, _ := NewCluster(mock.NewClusterOptions{
-		EnabledFeatures: []mock.ClusterFeature{},
-		NumVbuckets:     1024,
-		InitialNode:     mock.NewNodeOptions{},
+		EnabledFeatures: []mock.ClusterFeature{
+			mock.ClusterFeatureTLS,
+		},
+		NumVbuckets: 1024,
+		InitialNode: mock.NewNodeOptions{},
 	})
 
 	bucket, _ := cluster.AddBucket(mock.NewBucketOptions{

@@ -15,6 +15,7 @@ type fakeMgmtService struct {
 func (m *fakeMgmtService) Node() mock.ClusterNode { return nil }
 func (m *fakeMgmtService) Hostname() string       { return "" }
 func (m *fakeMgmtService) ListenPort() int        { return 0 }
+func (m *fakeMgmtService) ListenPortTLS() int     { return 0 }
 func (m *fakeMgmtService) Close() error           { return nil }
 
 func TestMgmtHooksBasic(t *testing.T) {

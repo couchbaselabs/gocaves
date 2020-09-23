@@ -1,6 +1,7 @@
 package servers
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -25,19 +26,22 @@ type HTTPServer struct {
 	listener   net.Listener
 	handlers   HTTPServerHandlers
 	server     *http.Server
+	tlsConfig  *tls.Config
 }
 
 // NewHTTPServiceOptions enables the specification of default options for a new http server.
 type NewHTTPServiceOptions struct {
-	Name     string
-	Handlers HTTPServerHandlers
+	Name      string
+	Handlers  HTTPServerHandlers
+	TLSConfig *tls.Config
 }
 
 // NewHTTPServer instantiates a new instance of the memd server.
 func NewHTTPServer(opts NewHTTPServiceOptions) (*HTTPServer, error) {
 	svc := &HTTPServer{
-		name:     opts.Name,
-		handlers: opts.Handlers,
+		name:      opts.Name,
+		handlers:  opts.Handlers,
+		tlsConfig: opts.TLSConfig,
 	}
 
 	err := svc.start()
@@ -63,14 +67,21 @@ func (s *HTTPServer) ListenPort() int {
 
 // Start will start this HTTP server
 func (s *HTTPServer) start() error {
-	// Generate a listen address, listenPort defaults to 0, which means by default
-	// we will be using a random port, future attempts to start this same server
-	// should however reuse the same port that we originally had used.
 	listenAddr := fmt.Sprintf(":%d", s.listenPort)
 
-	lsnr, err := net.Listen("tcp", listenAddr)
+	var lsnr net.Listener
+	var err error
+	if s.tlsConfig != nil {
+		lsnr, err = tls.Listen("tcp", listenAddr, s.tlsConfig)
+	} else {
+		lsnr, err = net.Listen("tcp", listenAddr)
+	}
 	if err != nil {
-		log.Printf("failed to start listening for http `%s` server: %s", s.serviceName(), err)
+		if s.tlsConfig != nil {
+			log.Printf("failed to start listening for http `%s` TLS server: %s", s.serviceName(), err)
+		} else {
+			log.Printf("failed to start listening for http `%s` server: %s", s.serviceName(), err)
+		}
 		return err
 	}
 
@@ -116,6 +127,7 @@ func (s *HTTPServer) Close() error {
 
 func (s *HTTPServer) handleHTTP(w http.ResponseWriter, req *http.Request) {
 	resp := s.handlers.NewRequestHandler(&mock.HTTPRequest{
+		IsTLS:  s.tlsConfig != nil,
 		Method: req.Method,
 		URL:    req.URL,
 		Header: req.Header,

@@ -11,18 +11,25 @@ import (
 func GenClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBucket mock.Bucket) []byte {
 	config := make(map[string]interface{})
 
-	// TODO(brett19): Add the right handling here for TLS.
 	if forBucket != nil {
 		// This is inexplicably URL encoded for god knows what reason
-		config["couchApiBase"] = fmt.Sprintf("http://%s:%d/%s%%2B%s",
-			n.ViewService().Hostname(), n.ViewService().ListenPort(), forBucket.Name(), forBucket.ID())
-		config["couchApiBaseHTTPS"] = fmt.Sprintf("http://%s:%d/%s%%2B%s",
-			"invalid-address", 0, forBucket.Name(), forBucket.ID())
+		if n.ViewService() != nil && n.ViewService().ListenPort() > 0 {
+			config["couchApiBase"] = fmt.Sprintf("http://%s:%d/%s%%2B%s",
+				n.ViewService().Hostname(), n.ViewService().ListenPort(), forBucket.Name(), forBucket.ID())
+		}
+		if n.ViewService() != nil && n.ViewService().ListenPortTLS() > 0 {
+			config["couchApiBaseHTTPS"] = fmt.Sprintf("http://%s:%d/%s%%2B%s",
+				n.ViewService().Hostname(), n.ViewService().ListenPortTLS(), forBucket.Name(), forBucket.ID())
+		}
 	} else {
-		config["couchApiBase"] = fmt.Sprintf("http://%s:%d/",
-			n.ViewService().Hostname(), n.ViewService().ListenPort())
-		config["couchApiBaseHTTPS"] = fmt.Sprintf("http://%s:%d/",
-			"invalid-address", 0)
+		if n.ViewService() != nil && n.ViewService().ListenPort() > 0 {
+			config["couchApiBase"] = fmt.Sprintf("http://%s:%d/",
+				n.ViewService().Hostname(), n.ViewService().ListenPort())
+		}
+		if n.ViewService() != nil && n.ViewService().ListenPortTLS() > 0 {
+			config["couchApiBaseHTTPS"] = fmt.Sprintf("http://%s:%d/",
+				n.ViewService().Hostname(), n.ViewService().ListenPortTLS())
+		}
 	}
 
 	// TODO(brett19): Generate something reasonable for the otpNode field
@@ -53,13 +60,11 @@ func GenClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBucke
 	}
 
 	if n.MgmtService() != nil {
-		// TODO(brett19): Add SSL support for mgmt here
-		servicePorts["httpsMgmt"] = 32767
+		servicePorts["httpsMgmt"] = n.MgmtService().ListenPortTLS()
 	}
 
 	if n.ViewService() != nil {
-		// TODO(brett19): Add SSL support for views here
-		servicePorts["httpsCAPI"] = 32767
+		servicePorts["httpsCAPI"] = n.ViewService().ListenPortTLS()
 	}
 
 	if n.QueryService() != nil {
@@ -136,14 +141,17 @@ func GenClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBucke
 func GenTerseClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBucket mock.Bucket) []byte {
 	config := make(map[string]interface{})
 
-	// TODO(brett19): Add the right stuff here for views.
 	if forBucket != nil {
 		// This is inexplicably URL encoded for god knows what reason
-		config["couchApiBase"] = fmt.Sprintf("http://%s:%d/%s%%2B%s",
-			"invalid-address", 0, forBucket.Name(), forBucket.ID())
+		if n.ViewService() != nil && n.ViewService().ListenPort() > 0 {
+			config["couchApiBase"] = fmt.Sprintf("http://%s:%d/%s%%2B%s",
+				n.ViewService().Hostname(), n.ViewService().ListenPort(), forBucket.Name(), forBucket.ID())
+		}
 	} else {
-		config["couchApiBase"] = fmt.Sprintf("http://%s:%d/",
-			"invalid-address", 0)
+		if n.ViewService() != nil && n.ViewService().ListenPort() > 0 {
+			config["couchApiBase"] = fmt.Sprintf("http://%s:%d/",
+				n.ViewService().Hostname(), n.ViewService().ListenPort())
+		}
 	}
 
 	config["hostname"] = fmt.Sprintf("%s:%d", n.MgmtService().Hostname(), n.MgmtService().ListenPort())
@@ -176,39 +184,39 @@ func GenExtClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBu
 		"projector":          32767,
 	}
 
-	if n.KvService() != nil {
+	if n.KvService() != nil && n.KvService().ListenPort() > 0 {
 		servicePorts["kv"] = n.KvService().ListenPort()
-
-		// TODO(brett19): Add SSL support for kv service here
-		servicePorts["kvSSL"] = 32767
+	}
+	if n.KvService() != nil && n.KvService().ListenPortTLS() > 0 {
+		servicePorts["kvSSL"] = n.KvService().ListenPortTLS()
 	}
 
-	if n.MgmtService() != nil {
+	if n.MgmtService() != nil && n.MgmtService().ListenPort() > 0 {
 		servicePorts["mgmt"] = n.MgmtService().ListenPort()
-
-		// TODO(brett19): Add SSL support for mgmt service here
-		servicePorts["mgmtSSL"] = 32767
+	}
+	if n.MgmtService() != nil && n.MgmtService().ListenPortTLS() > 0 {
+		servicePorts["mgmtSSL"] = n.MgmtService().ListenPortTLS()
 	}
 
-	if n.ViewService() != nil {
+	if n.ViewService() != nil && n.ViewService().ListenPort() > 0 {
 		servicePorts["capi"] = n.ViewService().ListenPort()
-
-		// TODO(brett19): Add SSL support for views service here
-		servicePorts["capiSSL"] = 32767
+	}
+	if n.ViewService() != nil && n.ViewService().ListenPortTLS() > 0 {
+		servicePorts["capiSSL"] = n.ViewService().ListenPortTLS()
 	}
 
-	if n.QueryService() != nil {
+	if n.QueryService() != nil && n.QueryService().ListenPort() > 0 {
 		servicePorts["n1ql"] = n.QueryService().ListenPort()
-
-		// TODO(brett19): Add SSL support for n1ql service here
-		servicePorts["n1qlSSL"] = 32767
+	}
+	if n.QueryService() != nil && n.QueryService().ListenPortTLS() > 0 {
+		servicePorts["n1qlSSL"] = n.QueryService().ListenPortTLS()
 	}
 
-	if n.AnalyticsService() != nil {
+	if n.AnalyticsService() != nil && n.AnalyticsService().ListenPort() > 0 {
 		servicePorts["cbas"] = n.AnalyticsService().ListenPort()
-
-		// TODO(brett19): Add SSL support for analytics service here
-		servicePorts["cbasSSL"] = 32767
+	}
+	if n.AnalyticsService() != nil && n.AnalyticsService().ListenPortTLS() > 0 {
+		servicePorts["cbasSSL"] = n.AnalyticsService().ListenPortTLS()
 	}
 
 	config["services"] = servicePorts

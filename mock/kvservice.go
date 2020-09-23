@@ -11,6 +11,9 @@ type KvService interface {
 	// ListenPort returns the port this service is listening on.
 	ListenPort() int
 
+	// ListenPortTLS returns the TLS port this service is listening on.
+	ListenPortTLS() int
+
 	// GetAllClients returns a list of all the clients connected to this service.
 	GetAllClients() []KvClient
 

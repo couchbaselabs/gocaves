@@ -11,6 +11,9 @@ type AnalyticsService interface {
 	// ListenPort returns the port this service is listening on.
 	ListenPort() int
 
+	// ListenPortTLS returns the TLS port this service is listening on.
+	ListenPortTLS() int
+
 	// Close will shut down this service once it is no longer needed.
 	Close() error
 }

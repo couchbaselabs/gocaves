@@ -9,6 +9,7 @@ import (
 type viewService struct {
 	clusterNode *clusterNodeInst
 	server      *servers.HTTPServer
+	tlsServer   *servers.HTTPServer
 }
 
 type newViewServiceOptions struct {
@@ -30,6 +31,20 @@ func newViewService(parent *clusterNodeInst, opts newViewServiceOptions) (*viewS
 	}
 	svc.server = srv
 
+	if parent.cluster.IsFeatureEnabled(mock.ClusterFeatureTLS) {
+		tlsSrv, err := servers.NewHTTPServer(servers.NewHTTPServiceOptions{
+			Name: "view",
+			Handlers: servers.HTTPServerHandlers{
+				NewRequestHandler: svc.handleNewRequest,
+			},
+			TLSConfig: parent.cluster.tlsConfig,
+		})
+		if err != nil {
+			return nil, err
+		}
+		svc.tlsServer = tlsSrv
+	}
+
 	return svc, nil
 }
 
@@ -45,7 +60,18 @@ func (s *viewService) Hostname() string {
 
 // ListenPort returns the port this service is listening on.
 func (s *viewService) ListenPort() int {
+	if s.server == nil {
+		return -1
+	}
 	return s.server.ListenPort()
+}
+
+// ListenPortTLS returns the TLS port this service is listening on.
+func (s *viewService) ListenPortTLS() int {
+	if s.tlsServer == nil {
+		return -1
+	}
+	return s.tlsServer.ListenPort()
 }
 
 func (s *viewService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
@@ -54,5 +80,12 @@ func (s *viewService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse
 
 // Close will shut down this service once it is no longer needed.
 func (s *viewService) Close() error {
-	return s.server.Close()
+	var errOut error
+	if s.server != nil {
+		errOut = s.server.Close()
+	}
+	if s.tlsServer != nil {
+		errOut = s.tlsServer.Close()
+	}
+	return errOut
 }

@@ -1,6 +1,8 @@
 package servers
 
 import (
+	"crypto/tls"
+	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -22,19 +24,22 @@ type MemdServer struct {
 	localAddr  string
 	listener   net.Listener
 	handlers   MemdServerHandlers
+	tlsConfig  *tls.Config
 
 	clients []*MemdClient
 }
 
 // NewMemdServerOptions enables the specification of default options for a new memd server.
 type NewMemdServerOptions struct {
-	Handlers MemdServerHandlers
+	TLSConfig *tls.Config
+	Handlers  MemdServerHandlers
 }
 
 // NewMemdService instantiates a new instance of the memd server.
 func NewMemdService(opts NewMemdServerOptions) (*MemdServer, error) {
 	svc := &MemdServer{
-		handlers: opts.Handlers,
+		handlers:  opts.Handlers,
+		tlsConfig: opts.TLSConfig,
 	}
 
 	err := svc.start()
@@ -51,8 +56,21 @@ func (s *MemdServer) ListenPort() int {
 }
 
 func (s *MemdServer) start() error {
-	lsnr, err := net.Listen("tcp", ":0")
+	listenAddr := fmt.Sprintf(":%d", s.listenPort)
+
+	var lsnr net.Listener
+	var err error
+	if s.tlsConfig != nil {
+		lsnr, err = tls.Listen("tcp", listenAddr, s.tlsConfig)
+	} else {
+		lsnr, err = net.Listen("tcp", listenAddr)
+	}
 	if err != nil {
+		if s.tlsConfig != nil {
+			log.Printf("failed to start listening for kv (memd) TLS server: %s", err)
+		} else {
+			log.Printf("failed to start listening for kv (memd) server: %s", err)
+		}
 		return err
 	}
 
@@ -62,7 +80,11 @@ func (s *MemdServer) start() error {
 	s.listenPort = tcpAddr.Port
 	s.localAddr = addr.String()
 
-	log.Printf("starting listener for kv (memd) server on port %d", s.listenPort)
+	if s.tlsConfig != nil {
+		log.Printf("starting listener for kv (memd) TLS server on port %d", s.listenPort)
+	} else {
+		log.Printf("starting listener for kv (memd) server on port %d", s.listenPort)
+	}
 
 	go func() {
 		for {
