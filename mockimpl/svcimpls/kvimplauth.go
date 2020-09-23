@@ -103,6 +103,7 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 			Status:  memd.StatusAuthContinue,
 			Value:   outBytes,
 		})
+		return
 	case "PLAIN":
 		authPieces := strings.Split(string(pak.Value), string([]byte{0}))
 		x.handleAuthClient(source, pak, authMech, authPieces[1], authPieces[2])
