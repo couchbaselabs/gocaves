@@ -4,20 +4,17 @@ import (
 	"encoding/binary"
 
 	"github.com/couchbase/gocbcore/v9/memd"
-	"github.com/couchbaselabs/gocaves/hooks"
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
 type kvImplHello struct {
 }
 
-func (x *kvImplHello) Register(hooks *hooks.KvHookManager) {
-	reqExpects := hooks.Expect().Magic(memd.CmdMagicReq)
-
-	reqExpects.Cmd(memd.CmdHello).Handler(x.handleHelloRequest)
+func (x *kvImplHello) Register(h *hookHelper) {
+	h.RegisterKvHandler(memd.CmdHello, x.handleHelloRequest)
 }
 
-func (x *kvImplHello) handleHelloRequest(source mock.KvClient, pak *memd.Packet, next func()) {
+func (x *kvImplHello) handleHelloRequest(source mock.KvClient, pak *memd.Packet) {
 	enabledFeatures := make([]memd.HelloFeature, 0)
 
 	numFeatures := len(pak.Value) / 2

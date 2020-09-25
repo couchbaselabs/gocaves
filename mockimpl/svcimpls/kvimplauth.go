@@ -5,23 +5,20 @@ import (
 	"strings"
 
 	"github.com/couchbase/gocbcore/v9/memd"
-	"github.com/couchbaselabs/gocaves/hooks"
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
 type kvImplAuth struct {
 }
 
-func (x *kvImplAuth) Register(hooks *hooks.KvHookManager) {
-	reqExpects := hooks.Expect().Magic(memd.CmdMagicReq)
-
-	reqExpects.Cmd(memd.CmdSASLListMechs).Handler(x.handleSASLListMechsRequest)
-	reqExpects.Cmd(memd.CmdSASLAuth).Handler(x.handleSASLAuthRequest)
-	reqExpects.Cmd(memd.CmdSASLStep).Handler(x.handleSASLStepRequest)
-	reqExpects.Cmd(memd.CmdSelectBucket).Handler(x.handleSelectBucketRequest)
+func (x *kvImplAuth) Register(h *hookHelper) {
+	h.RegisterKvHandler(memd.CmdSASLListMechs, x.handleSASLListMechsRequest)
+	h.RegisterKvHandler(memd.CmdSASLAuth, x.handleSASLAuthRequest)
+	h.RegisterKvHandler(memd.CmdSASLStep, x.handleSASLStepRequest)
+	h.RegisterKvHandler(memd.CmdSelectBucket, x.handleSelectBucketRequest)
 }
 
-func (x *kvImplAuth) handleSASLListMechsRequest(source mock.KvClient, pak *memd.Packet, next func()) {
+func (x *kvImplAuth) handleSASLListMechsRequest(source mock.KvClient, pak *memd.Packet) {
 	// TODO(brett19): Implement actual auth mechanism configuration support.
 	supportedMechs := []string{
 		"PLAIN",
@@ -65,7 +62,7 @@ func (x *kvImplAuth) handleAuthClient(source mock.KvClient, pak *memd.Packet, me
 	})
 }
 
-func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packet, next func()) {
+func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packet) {
 	authMech := string(pak.Key)
 
 	log.Printf("AUTH START: %+v, %s", authMech, pak.Value)
@@ -121,7 +118,7 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 	})
 }
 
-func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packet, next func()) {
+func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packet) {
 	authMech := string(pak.Key)
 
 	log.Printf("AUTH STEP: %+v, %s", authMech, pak.Value)
@@ -173,7 +170,7 @@ func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packe
 	})
 }
 
-func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.Packet, next func()) {
+func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.Packet) {
 	source.SetSelectedBucketName(string(pak.Key))
 	if source.SelectedBucket() == nil {
 		source.SetSelectedBucketName("")

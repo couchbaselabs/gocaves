@@ -4,19 +4,18 @@ import (
 	"bytes"
 
 	"github.com/couchbaselabs/gocaves/helpers/pathparse"
-	"github.com/couchbaselabs/gocaves/hooks"
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
 type mgmtImplConfig struct {
 }
 
-func (x *mgmtImplConfig) Register(hooks *hooks.MgmtHookManager) {
-	hooks.Expect().Method("GET").Path("/pools/default").Handler(x.handleGetPoolConfig)
-	hooks.Expect().Method("GET").Path("/pools/default/buckets/*").Handler(x.handleGetBucketConfig)
+func (x *mgmtImplConfig) Register(h *hookHelper) {
+	h.RegisterMgmtHandler("GET", "/pools/default", x.handleGetPoolConfig)
+	h.RegisterMgmtHandler("GET", "/pools/default/buckets/*", x.handleGetBucketConfig)
 }
 
-func (x *mgmtImplConfig) handleGetPoolConfig(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
+func (x *mgmtImplConfig) handleGetPoolConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	cluster := source.Node().Cluster()
 
 	clusterConfig := GenClusterConfig(cluster, source.Node())
@@ -26,7 +25,7 @@ func (x *mgmtImplConfig) handleGetPoolConfig(source mock.MgmtService, req *mock.
 	}
 }
 
-func (x *mgmtImplConfig) handleGetBucketConfig(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
+func (x *mgmtImplConfig) handleGetBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*")
 	bucketName := pathParts[0]
 

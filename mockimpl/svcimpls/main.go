@@ -15,12 +15,18 @@ type RegisterOptions struct {
 
 // Register registers all known hooks.
 func Register(opts RegisterOptions) {
-	(&kvImplAuth{}).Register(opts.KvInHooks)
-	(&kvImplCccp{}).Register(opts.KvInHooks)
-	(&kvImplCrud{}).Register(opts.KvInHooks)
-	(&kvImplErrMap{}).Register(opts.KvInHooks)
-	(&kvImplHello{}).Register(opts.KvInHooks)
-	(&mgmtImplConfig{}).Register(opts.MgmtHooks)
+	h := &hookHelper{
+		KvInHooks:  opts.KvInHooks,
+		KvOutHooks: opts.KvOutHooks,
+		MgmtHooks:  opts.MgmtHooks,
+	}
+
+	(&kvImplAuth{}).Register(h)
+	(&kvImplCccp{}).Register(h)
+	(&kvImplCrud{}).Register(h)
+	(&kvImplErrMap{}).Register(h)
+	(&kvImplHello{}).Register(h)
+	(&mgmtImplConfig{}).Register(h)
 }
 
 func replyWithError(source mock.KvClient, pak *memd.Packet, err error) {
