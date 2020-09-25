@@ -2,7 +2,8 @@ package mock
 
 import (
 	"encoding/json"
-	"io/ioutil"
+
+	mockdata "github.com/couchbaselabs/gocaves/mock/data"
 )
 
 // ErrorMap specifies a collection of ErrorMapErrors.
@@ -20,7 +21,7 @@ type ErrorMapError struct {
 }
 
 func NewErrorMap() (*ErrorMap, error) {
-	b, err := ioutil.ReadFile("mock/data/err_map70.json")
+	b, err := mockdata.Asset("err_map70.json")
 	if err != nil {
 		return nil, err
 	}

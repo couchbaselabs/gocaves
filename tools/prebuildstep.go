@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/jteeuwen/go-bindata"
 )
 
 func getCheckSuiteFiles() map[string][]string {
@@ -189,6 +191,18 @@ func updateCheckSuiteDotGo() {
 	ioutil.WriteFile("./checksuite/checksuite.go", []byte(indexOut), 0644)
 }
 
+func updateBindataFiles() {
+	cfg := bindata.NewConfig()
+	cfg.Output = "mock/data/gobindata.go"
+	cfg.Package = "mockdata"
+	cfg.Prefix = "mock/data"
+	cfg.Input = []bindata.InputConfig{
+		{Path: "mock/data"},
+	}
+	bindata.Translate(cfg)
+}
+
 func main() {
 	updateCheckSuiteDotGo()
+	updateBindataFiles()
 }

@@ -7,5 +7,6 @@ require (
 	github.com/couchbase/gocbcore/v9 v9.0.6
 	github.com/gogo/protobuf v1.3.1
 	github.com/google/uuid v1.1.1
+	github.com/jteeuwen/go-bindata v3.0.7+incompatible
 	github.com/stretchr/testify v1.5.1
 )

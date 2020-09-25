@@ -1,4 +1,4 @@
 generated:
 	go run ./tools/prebuildstep.go
 
-.PHONY: build
+.PHONY: generated
