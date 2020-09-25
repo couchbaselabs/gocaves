@@ -18,8 +18,9 @@ type Client struct {
 }
 
 type NewClientOptions struct {
-	Path    string
-	Version string
+	Path      string
+	Version   string
+	CavesAddr string
 }
 
 func NewClient(opts NewClientOptions) (*Client, error) {
@@ -50,6 +51,10 @@ func NewClient(opts NewClientOptions) (*Client, error) {
 	}
 
 	cavesProc.Args = append(cavesProc.Args, fmt.Sprintf("--control-port=%d", cavesListenPort))
+
+	if opts.CavesAddr != "" {
+		cavesProc.Args = append(cavesProc.Args, fmt.Sprintf("--link-addr=%s", opts.CavesAddr))
+	}
 
 	log.Printf("EXECUTING: %+v", cavesProc)
 

@@ -3,6 +3,7 @@ package checks
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"sync/atomic"
 
 	"github.com/couchbase/gocbcore/v9/memd"
@@ -39,42 +40,43 @@ type KvExpect struct {
 }
 
 func (e KvExpect) String() string {
-	outStr := ""
-	outStr += "KvExpect{\n"
+	var expectPieces []string
+	addExpectation := func(format string, args ...interface{}) {
+		expectPieces = append(expectPieces, fmt.Sprintf(format, args...))
+	}
 
 	if e.expectFields&memdPakFieldMagic != 0 {
-		outStr += fmt.Sprintf("  Magic: %02x\n", e.expectMagic)
+		addExpectation("Magic: %02x", e.expectMagic)
 	}
 	if e.expectFields&memdPakFieldCmd != 0 {
-		outStr += fmt.Sprintf("  Command: %s (%02x)\n", e.expectCmd.Name(), e.expectCmd)
+		addExpectation("Command: %s (%02x)", e.expectCmd.Name(), e.expectCmd)
 	}
 	if e.expectFields&memdPakFieldKey != 0 {
-		outStr += fmt.Sprintf("  Key: %s (%v)\n", e.expectKey, e.expectKey)
+		addExpectation("Key: %s (%v)", e.expectKey, e.expectKey)
 	}
 	if e.expectFields&memdPakFieldOpaque != 0 {
-		outStr += fmt.Sprintf("  Opaque: %08x\n", e.expectOpaque)
+		addExpectation("Opaque: %08x", e.expectOpaque)
 	}
 	if e.expectFields&memdPakFieldCollectionID != 0 {
-		outStr += fmt.Sprintf("  Collection ID: %d\n", e.expectCollectionID)
+		addExpectation("CollectionID: %d", e.expectCollectionID)
 	}
 	if e.expectFields&memdPakFieldBucketName != 0 {
-		outStr += fmt.Sprintf("  Bucket Name: %s\n", e.expectBucketName)
+		addExpectation("BucketName: %s", e.expectBucketName)
 	}
 	if e.expectFields&memdPakFieldScopeName != 0 {
-		outStr += fmt.Sprintf("  Scope Name: %s\n", e.expectScopeName)
+		addExpectation("ScopeName: %s", e.expectScopeName)
 	}
 	if e.expectFields&memdPakFieldCollectionName != 0 {
-		outStr += fmt.Sprintf("  Collection Name: %s\n", e.expectCollectionName)
+		addExpectation("CollectionName: %s", e.expectCollectionName)
 	}
 	if e.expectSource != nil {
-		outStr += fmt.Sprintf("  with Specific Source\n")
+		addExpectation("withSource=YES")
 	}
 	if len(e.expectFns) > 0 {
-		outStr += fmt.Sprintf("  with Custom Checks\n")
+		addExpectation("withCustomCheck=%d", len(e.expectFns))
 	}
 
-	outStr += "}"
-	return outStr
+	return fmt.Sprintf("{ %s }", strings.Join(expectPieces, ", "))
 }
 
 // ReplyTo specifies to expect the reply to another packet.
@@ -236,7 +238,7 @@ func (e KvExpect) Wait() (mock.KvClient, *memd.Packet) {
 	select {
 	case <-waitCh:
 	case <-e.parent.cancelCh:
-		e.parent.Fatalf("Test ended while still waiting for %s", e)
+		e.parent.Fatalf("Test ended while still waiting for kv packet %s", e)
 	}
 
 	return sourceOut, pakOut

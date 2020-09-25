@@ -2,7 +2,9 @@ package checks
 
 import (
 	"errors"
+	"fmt"
 	"log"
+	"time"
 
 	"github.com/couchbaselabs/gocaves/mock"
 )
@@ -11,7 +13,8 @@ var errFailNow = errors.New("fail now was called")
 
 // T represents a singular check test that is being run.
 type T struct {
-	parent *TestRunGroup
+	parent *TestRunner
+	ptest  *pendingTest
 	def    *Check
 
 	hasRun          bool
@@ -26,10 +29,12 @@ type T struct {
 	hasFinishConfiguring bool
 	requiredFeatures     []TestFeature
 
+	wasFailure bool
 	wasSuccess bool
 	startCh    chan *TestStartedSpec
 	cancelCh   chan struct{}
 	endedCh    chan struct{}
+	logMsgs    []string
 }
 
 func (t *T) testKvInHooks() mock.KvHookManager {
@@ -77,7 +82,7 @@ func (t *T) Start() (*TestStartedSpec, error) {
 		t.def.Fn(t)
 
 		close(t.endedCh)
-		t.wasSuccess = true
+		t.wasSuccess = !t.wasFailure
 	}()
 
 	var startedSpec *TestStartedSpec
@@ -121,7 +126,15 @@ func (t *T) markConfigured() {
 
 // End ends this test as quickly as possible.
 func (t *T) End(result interface{}) {
+	// Close the cancel channel to force everything to cancel
 	close(t.cancelCh)
+
+	// Wait for the test to complete, or a maximum.
+	select {
+	case <-t.endedCh:
+	case <-time.After(1 * time.Second):
+		log.Printf("Test did not end within a second of cancelling")
+	}
 }
 
 // Mock returns the mock associated with this check.
@@ -172,16 +185,18 @@ func (t *T) Collection() CollectionRef {
 
 // Fail marks this check as having failed.
 func (t *T) Fail() {
-
+	t.wasFailure = true
 }
 
 // FailNow mark this check as having failed and immediately bails out of the check.
 func (t *T) FailNow() {
+	t.wasFailure = true
 	panic(errFailNow)
 }
 
 // Logf writes a log message as part of this check.
 func (t *T) Logf(format string, args ...interface{}) {
+	t.logMsgs = append(t.logMsgs, fmt.Sprintf(format, args...))
 	log.Printf("TEST LOGGED: "+format, args...)
 }
 

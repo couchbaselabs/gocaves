@@ -52,6 +52,11 @@ func handleAPIRequest(pkt interface{}) interface{} {
 		}
 
 		run.RunGroup.End()
+
+		log.Printf("ended test run; full report:")
+		report := testRuns.GenerateReport()
+		log.Printf("Report:\n%+v", report)
+
 		return &api.CmdEndedTesting{}
 
 	case *api.CmdStartTest:
@@ -124,12 +129,17 @@ func startSDKLinkedMode() {
 		return
 	}
 
+	// TODO(brett19): Should probably use the API package to do this...
+	cliConn.Write([]byte(`{"type":"hello"}`))
+
 	go func() {
+		log.Printf("Starting server to client copying")
 		io.Copy(srvConn, cliConn)
 		cliConn.Close()
 		srvConn.Close()
 	}()
 
+	log.Printf("Starting client to server copying")
 	io.Copy(cliConn, srvConn)
 	cliConn.Close()
 	srvConn.Close()

@@ -11,7 +11,7 @@ import (
 func TestTestRunGroup(t *testing.T) {
 	checksuite.RegisterCheckFuncs()
 
-	rg, err := checks.NewTestRunGroup()
+	rg, err := checks.NewTestRunner()
 	if err != nil {
 		t.Fatalf("failed to create run group: %s", err)
 	}

@@ -23,7 +23,8 @@ func TestBasic(t *testing.T) {
 	gocb.SetLogger(gocb.DefaultStdioLogger())
 
 	caves, err := cavescli.NewClient(cavescli.NewClientOptions{
-		Path: "../../main.go",
+		Path:      "../../main.go",
+		CavesAddr: "127.0.0.1:9649",
 	})
 	if err != nil {
 		t.Fatalf("failed to setup caves: %s", err)
