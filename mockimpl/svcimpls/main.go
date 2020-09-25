@@ -2,15 +2,14 @@ package svcimpls
 
 import (
 	"github.com/couchbase/gocbcore/v9/memd"
-	"github.com/couchbaselabs/gocaves/hooks"
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
 // RegisterOptions specifies options used for impl registration
 type RegisterOptions struct {
-	KvInHooks  *hooks.KvHookManager
-	KvOutHooks *hooks.KvHookManager
-	MgmtHooks  *hooks.MgmtHookManager
+	KvInHooks  mock.KvHookManager
+	KvOutHooks mock.KvHookManager
+	MgmtHooks  mock.MgmtHookManager
 }
 
 // Register registers all known hooks.

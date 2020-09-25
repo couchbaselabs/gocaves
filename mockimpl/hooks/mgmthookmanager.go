@@ -4,25 +4,21 @@ import (
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
-// MgmtHookFunc implements a hook for handling a mgmt request.
-// NOTE: It is safe and expected that a hook may alter the packet.
-type MgmtHookFunc func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse
-
 // MgmtHookManager implements a tree of hooks which can handle a mgmt request.
 type MgmtHookManager struct {
 	hookManager
 }
 
 // Child returns a child hook manager to this hook manager.
-func (m *MgmtHookManager) Child() *MgmtHookManager {
+func (m *MgmtHookManager) Child() mock.MgmtHookManager {
 	return &MgmtHookManager{
 		m.hookManager.Child(),
 	}
 }
 
-// Push adds a new hook at the end of the processing chain.
-func (m *MgmtHookManager) Push(fn MgmtHookFunc) {
-	m.hookManager.Push(&fn)
+// Add adds a new hook at the end of the processing chain.
+func (m *MgmtHookManager) Add(fn mock.MgmtHookFunc) {
+	m.hookManager.Add(&fn)
 }
 
 // Destroy removes all hooks that were added to this manager.
@@ -45,17 +41,10 @@ func (m *MgmtHookManager) translateHookResult(val interface{}) *mock.HTTPRespons
 // registered hook and works it's way to the oldest hook.
 func (m *MgmtHookManager) Invoke(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	res := m.hookManager.Invoke(func(hook interface{}, next func() interface{}) interface{} {
-		hookFn := *(hook.(*MgmtHookFunc))
+		hookFn := *(hook.(*mock.MgmtHookFunc))
 		return hookFn(source, req, func() *mock.HTTPResponse {
 			return m.translateHookResult(next())
 		})
 	})
 	return res.(*mock.HTTPResponse)
-}
-
-// Expect sets up a new expectation to wait for.
-func (m *MgmtHookManager) Expect() *MgmtHookExpect {
-	return &MgmtHookExpect{
-		parent: m,
-	}
 }

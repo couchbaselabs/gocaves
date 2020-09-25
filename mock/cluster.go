@@ -38,11 +38,11 @@ type Cluster interface {
 	// TODO(brett19): Remove the totally hackery which is our hooks managers not being self-dependant...
 
 	// KvInHooks returns the hook manager for incoming kv packets.
-	KvInHooks() interface{}
+	KvInHooks() KvHookManager
 
 	// KvOutHooks returns the hook manager for outgoing kv packets.
-	KvOutHooks() interface{}
+	KvOutHooks() KvHookManager
 
 	// MgmtHooks returns the hook manager for management requests.
-	MgmtHooks() interface{}
+	MgmtHooks() MgmtHookManager
 }

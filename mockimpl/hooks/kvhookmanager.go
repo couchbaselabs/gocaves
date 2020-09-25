@@ -5,25 +5,21 @@ import (
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
-// KvHookFunc implements a hook for handling a kv packet.
-// NOTE: It is safe and expected that a hook may alter the packet.
-type KvHookFunc func(source mock.KvClient, pak *memd.Packet, next func())
-
 // KvHookManager implements a tree of hooks which can handle a kv packet.
 type KvHookManager struct {
 	hookManager
 }
 
 // Child returns a child hook manager to this hook manager.
-func (m *KvHookManager) Child() *KvHookManager {
+func (m *KvHookManager) Child() mock.KvHookManager {
 	return &KvHookManager{
 		hookManager: m.hookManager.Child(),
 	}
 }
 
-// Push adds a new hook at the end of the processing chain.
-func (m *KvHookManager) Push(fn KvHookFunc) {
-	m.hookManager.Push(&fn)
+// Add adds a new hook at the end of the processing chain.
+func (m *KvHookManager) Add(fn mock.KvHookFunc) {
+	m.hookManager.Add(&fn)
 }
 
 // Destroy removes all hooks that were added to this manager.
@@ -43,7 +39,7 @@ func (m *KvHookManager) Invoke(source mock.KvClient, pak *memd.Packet) bool {
 	var reachedEndOfChain bool
 
 	res := m.hookManager.Invoke(func(hook interface{}, next func() interface{}) interface{} {
-		hookFn := *(hook.(*KvHookFunc))
+		hookFn := *(hook.(*mock.KvHookFunc))
 		hookFn(source, pak, func() {
 			res := next()
 			if res == nil {
@@ -58,11 +54,4 @@ func (m *KvHookManager) Invoke(source mock.KvClient, pak *memd.Packet) bool {
 	}
 
 	return reachedEndOfChain
-}
-
-// Expect sets up a new expectation to wait for.
-func (m *KvHookManager) Expect() *KvHookExpect {
-	return &KvHookExpect{
-		parent: m,
-	}
 }

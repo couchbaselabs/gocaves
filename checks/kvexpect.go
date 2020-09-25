@@ -163,7 +163,7 @@ func (e KvExpect) Wait() (mock.KvClient, *memd.Packet) {
 	waitCh := make(chan struct{})
 	hasTripped := uint32(0)
 
-	e.parent.testKvInHooks().Push(func(source mock.KvClient, pak *memd.Packet, next func()) {
+	e.parent.testKvInHooks().Add(func(source mock.KvClient, pak *memd.Packet, next func()) {
 		shouldReject := false
 		if e.expectSource != nil && source != e.expectSource {
 			shouldReject = true

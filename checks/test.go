@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log"
 
-	"github.com/couchbaselabs/gocaves/hooks"
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
@@ -22,7 +21,7 @@ type T struct {
 	scopeName       string
 	collectionName  string
 
-	kvInHooks *hooks.KvHookManager
+	kvInHooks mock.KvHookManager
 
 	hasFinishConfiguring bool
 	requiredFeatures     []TestFeature
@@ -33,9 +32,9 @@ type T struct {
 	endedCh    chan struct{}
 }
 
-func (t *T) testKvInHooks() *hooks.KvHookManager {
+func (t *T) testKvInHooks() mock.KvHookManager {
 	if t.kvInHooks == nil {
-		t.kvInHooks = t.cluster.KvInHooks().(*hooks.KvHookManager).Child()
+		t.kvInHooks = t.cluster.KvInHooks().Child()
 	}
 	return t.kvInHooks
 }

@@ -28,7 +28,7 @@ func TestMgmtHooksBasic(t *testing.T) {
 	fakeResponse3 := &mock.HTTPResponse{}
 
 	var hooks MgmtHookManager
-	hooks.Push(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
+	hooks.Add(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		hookInvokes = append(hookInvokes, 1)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")
@@ -42,7 +42,7 @@ func TestMgmtHooksBasic(t *testing.T) {
 		}
 		return fakeResponse1
 	})
-	hooks.Push(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
+	hooks.Add(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		hookInvokes = append(hookInvokes, 2)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")
@@ -56,7 +56,7 @@ func TestMgmtHooksBasic(t *testing.T) {
 		}
 		return fakeResponse2
 	})
-	hooks.Push(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
+	hooks.Add(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
 		hookInvokes = append(hookInvokes, 3)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")

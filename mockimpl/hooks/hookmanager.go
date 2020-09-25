@@ -14,11 +14,11 @@ func (m *hookManager) Child() hookManager {
 	}
 }
 
-// Push adds a new hook at the end of the processing chain.
-func (m *hookManager) Push(fn interface{}) {
+// Add adds a new hook at the end of the processing chain.
+func (m *hookManager) Add(fn interface{}) {
 	m.hooks = append(m.hooks, fn)
 	if m.parent != nil {
-		m.parent.Push(fn)
+		m.parent.Add(fn)
 	}
 }
 

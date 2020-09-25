@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/couchbase/gocbcore/v9/memd"
-	"github.com/couchbaselabs/gocaves/hooks"
 	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mockimpl/hooks"
 	"github.com/couchbaselabs/gocaves/mockimpl/svcimpls"
 	"github.com/couchbaselabs/gocaves/mocktime"
 	"github.com/google/uuid"
@@ -184,17 +184,17 @@ func (c *clusterInst) ConnectionString() string {
 }
 
 // KvInHooks returns the hook manager for incoming kv packets.
-func (c *clusterInst) KvInHooks() interface{} {
+func (c *clusterInst) KvInHooks() mock.KvHookManager {
 	return &c.kvInHooks
 }
 
 // KvOutHooks returns the hook manager for outgoing kv packets.
-func (c *clusterInst) KvOutHooks() interface{} {
+func (c *clusterInst) KvOutHooks() mock.KvHookManager {
 	return &c.kvOutHooks
 }
 
 // MgmtHooks returns the hook manager for management requests.
-func (c *clusterInst) MgmtHooks() interface{} {
+func (c *clusterInst) MgmtHooks() mock.MgmtHookManager {
 	return &c.mgmtHooks
 }
 
