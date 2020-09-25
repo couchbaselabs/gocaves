@@ -4,8 +4,8 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/couchbaselabs/gocaves/helpers/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/pathparse"
 )
 
 // MgmtHookExpect provides a nicer way to configure mgmt hooks.
