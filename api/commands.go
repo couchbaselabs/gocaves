@@ -20,10 +20,63 @@ type CmdConnStr struct {
 	ConnStr string `json:"connstr"`
 }
 
+// CmdStartTesting indicates to start a new report.
+type CmdStartTesting struct {
+	RunID      string `json:"run"`
+	ClientName string `json:"client"`
+}
+
+// CmdStartedTesting indicates a new report was started.
+type CmdStartedTesting struct {
+	ConnStr string `json:"connstr"`
+}
+
+// CmdEndTesting indicates to stop a particular report.
+type CmdEndTesting struct {
+	RunID string `json:"run"`
+}
+
+// CmdEndedTesting indicates a particular report has ended.
+type CmdEndedTesting struct {
+}
+
+// CmdStartTest indicates to start a particular test.
+type CmdStartTest struct {
+	RunID    string `json:"run"`
+	TestName string `json:"test"`
+}
+
+// CmdStartedTest is returned when a test has been started.
+type CmdStartedTest struct {
+	ConnStr        string `json:"connstr"`
+	BucketName     string `json:"bucket"`
+	ScopeName      string `json:"scope"`
+	CollectionName string `json:"collection"`
+}
+
+// CmdEndTest indicates to end a particular test.
+type CmdEndTest struct {
+	RunID  string `json:"run"`
+	Result interface{}
+}
+
+// CmdEndedTest is returned when a test has been stopped.
+type CmdEndedTest struct {
+	Error string
+}
+
 var cmdsMap = map[string]reflect.Type{
-	"hello":      reflect.TypeOf(CmdHello{}),
-	"getconnstr": reflect.TypeOf(CmdGetConnStr{}),
-	"connstr":    reflect.TypeOf(CmdConnStr{}),
+	"hello":          reflect.TypeOf(CmdHello{}),
+	"getconnstr":     reflect.TypeOf(CmdGetConnStr{}),
+	"connstr":        reflect.TypeOf(CmdConnStr{}),
+	"starttesting":   reflect.TypeOf(CmdStartTesting{}),
+	"startedtesting": reflect.TypeOf(CmdStartedTesting{}),
+	"endtesting":     reflect.TypeOf(CmdEndTesting{}),
+	"endedtesting":   reflect.TypeOf(CmdEndedTesting{}),
+	"starttest":      reflect.TypeOf(CmdStartTest{}),
+	"startedtest":    reflect.TypeOf(CmdStartedTest{}),
+	"endtest":        reflect.TypeOf(CmdEndTest{}),
+	"endedtest":      reflect.TypeOf(CmdEndedTest{}),
 }
 
 func encodeCommandPacket(command interface{}) ([]byte, error) {

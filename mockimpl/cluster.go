@@ -184,17 +184,17 @@ func (c *clusterInst) ConnectionString() string {
 }
 
 // KvInHooks returns the hook manager for incoming kv packets.
-func (c *clusterInst) KvInHooks() *hooks.KvHookManager {
+func (c *clusterInst) KvInHooks() interface{} {
 	return &c.kvInHooks
 }
 
 // KvOutHooks returns the hook manager for outgoing kv packets.
-func (c *clusterInst) KvOutHooks() *hooks.KvHookManager {
+func (c *clusterInst) KvOutHooks() interface{} {
 	return &c.kvOutHooks
 }
 
 // MgmtHooks returns the hook manager for management requests.
-func (c *clusterInst) MgmtHooks() *hooks.MgmtHookManager {
+func (c *clusterInst) MgmtHooks() interface{} {
 	return &c.mgmtHooks
 }
 

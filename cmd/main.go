@@ -10,20 +10,9 @@ import (
 	"os"
 
 	"github.com/couchbaselabs/gocaves/api"
-	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mockimpl"
+	"github.com/couchbaselabs/gocaves/checksuite"
 	//checksuite "github.com/couchbaselabs/gocaves/checksuite"
 )
-
-/*
-	--sdk
-	Runs it as if its inside an SDK.  This doesn't start the web browser system.
-
-	--mock-only
-	Runs it for specific purposes of mocking.  Does not start the web browser
-	system, and does not run the testing system.
-
-*/
 
 type stdinData struct {
 	ConnStr string `json:"connstr"`
@@ -33,48 +22,83 @@ var controlPortFlag = flag.Int("control-port", 0, "specifies we are running in a
 var linkAddrFlag = flag.String("link-addr", "", "specifies a caves dev server to connect to")
 var mockOnlyFlag = flag.Bool("mock-only", false, "specifies only to use the mock")
 
-var globalCluster mock.Cluster
-
 func handleAPIRequest(pkt interface{}) interface{} {
-	switch pkt.(type) {
+	switch pktTyped := pkt.(type) {
 	case *api.CmdGetConnStr:
-		return &api.CmdConnStr{
-			ConnStr: globalCluster.ConnectionString(),
+		cluster, err := globalCluster.Get()
+		if err != nil {
+			log.Printf("failed to get global cluster: %s", err)
+			return &api.CmdConnStr{}
 		}
+		return &api.CmdConnStr{
+			ConnStr: cluster.ConnectionString(),
+		}
+	case *api.CmdStartTesting:
+		run, err := testRuns.NewRun(pktTyped.RunID, pktTyped.ClientName)
+		if run == nil {
+			log.Printf("failed to start testing: %s", err)
+			return &api.CmdStartedTesting{}
+		}
+
+		return &api.CmdStartedTesting{
+			ConnStr: run.RunGroup.DefaultCluster().ConnectionString(),
+		}
+
+	case *api.CmdEndTesting:
+		run := testRuns.Get(pktTyped.RunID)
+		if run == nil {
+			log.Printf("failed to end testing, bad run id: %s", pktTyped.RunID)
+			return &api.CmdEndedTesting{}
+		}
+
+		run.RunGroup.End()
+		return &api.CmdEndedTesting{}
+
+	case *api.CmdStartTest:
+		run := testRuns.Get(pktTyped.RunID)
+		if run == nil {
+			log.Printf("failed to start test, bad run id: %s", pktTyped.RunID)
+			return &api.CmdStartedTest{}
+		}
+
+		spec, err := run.RunGroup.StartTest(pktTyped.TestName)
+		if err != nil {
+			log.Printf("failed to start test: %s", err)
+			return &api.CmdStartedTest{}
+		}
+
+		return &api.CmdStartedTest{
+			ConnStr:        spec.Cluster.ConnectionString(),
+			BucketName:     spec.BucketName,
+			ScopeName:      spec.ScopeName,
+			CollectionName: spec.CollectionName,
+		}
+	case *api.CmdEndTest:
+		run := testRuns.Get(pktTyped.RunID)
+		if run == nil {
+			log.Printf("failed to end test, bad run id: %s", pktTyped.RunID)
+			return &api.CmdStartedTest{}
+		}
+
+		run.RunGroup.EndRunningTest(pktTyped.Result)
+		return &api.CmdEndedTest{}
 	}
 
 	return nil
-}
-
-func createDefaultCluster() mock.Cluster {
-	cluster, err := mockimpl.NewCluster(mock.NewClusterOptions{
-		InitialNode: mock.NewNodeOptions{},
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	//cluster.AddNode(mock.NewNodeOptions{})
-	//cluster.AddNode(mock.NewNodeOptions{})
-
-	_, err = cluster.AddBucket(mock.NewBucketOptions{
-		Name:        "default",
-		Type:        mock.BucketTypeCouchbase,
-		NumReplicas: 1,
-	})
-	if err != nil {
-		log.Printf("Failed to create bucket: %+v", err)
-	}
-
-	return cluster
 }
 
 func startMockMode() {
 	// When running in mock-only mode, we simply start-up, write the output
 	// and then we wait indefinitely until someone kills us.
 
+	cluster, err := globalCluster.Get()
+	if err != nil {
+		log.Printf("Failed to start mock cluster: %s", err)
+		return
+	}
+
 	logData := stdinData{
-		ConnStr: globalCluster.ConnectionString(),
+		ConnStr: cluster.ConnectionString(),
 	}
 	logBytes, _ := json.Marshal(logData)
 	log.Writer().Write(logBytes)
@@ -154,9 +178,17 @@ func Start() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	log.SetOutput(os.Stderr)
 
-	defaultCluster := createDefaultCluster()
-	log.Printf("get default cluster: %+v", defaultCluster)
-	globalCluster = defaultCluster
+	checksuite.RegisterCheckFuncs()
+
+	/*
+		defaultCluster, err := mockimpl.NewDefaultCluster()
+		if err != nil {
+			log.Printf("failed to start default cluster")
+		}
+
+		log.Printf("got default cluster: %+v", defaultCluster)
+		globalCluster = defaultCluster
+	*/
 
 	if mockOnlyFlag != nil && *mockOnlyFlag {
 		// Mock-only mode

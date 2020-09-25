@@ -159,7 +159,7 @@ func updateCheckSuiteDotGo() {
 
 	indexOut += "import (\n"
 
-	indexOut += "\tregistry \"github.com/couchbaselabs/gocaves/checkregistry\"\n"
+	indexOut += "\tregistry \"github.com/couchbaselabs/gocaves/checks\"\n"
 	indexOut += "\n"
 
 	for _, pkgInfo := range pkgInfos {

@@ -1,11 +1,15 @@
 package example
 
 import (
+	"log"
 	"testing"
 	"time"
 
+	cavescli "github.com/couchbaselabs/gocaves/client"
+
 	"github.com/couchbase/gocb/v2"
 	"github.com/couchbaselabs/gocaves/cmd"
+	"github.com/google/uuid"
 )
 
 func fakeFunc() {
@@ -18,14 +22,18 @@ func fakeFunc() {
 func TestBasic(t *testing.T) {
 	gocb.SetLogger(gocb.DefaultStdioLogger())
 
-	caves, err := newCavesClient()
+	caves, err := cavescli.NewClient(cavescli.NewClientOptions{
+		Path: "../../main.go",
+	})
 	if err != nil {
 		t.Fatalf("failed to setup caves: %s", err)
 	}
 
-	connStr, err := caves.GetConnStr()
+	runID := uuid.New().String()
+
+	connStr, err := caves.StartTesting(runID, "FakeSDK v3.0.3-df13221")
 	if err != nil {
-		t.Fatalf("failed to get connstr: %s", err)
+		t.Fatalf("failed to start testing: %s", err)
 	}
 
 	t.Logf("got connection string: %s", connStr)
@@ -45,6 +53,13 @@ func TestBasic(t *testing.T) {
 
 	bucket.WaitUntilReady(10*time.Second, nil)
 
+	spec, err := caves.StartTest(runID, "kv/crud/SetGet")
+	if err != nil {
+		t.Fatalf("failed to start test: %s", err)
+	}
+
+	log.Printf("started test: %+v", spec)
+
 	// Write a key to the bucket
 	testDoc := map[string]interface{}{
 		"foo": "bar",
@@ -56,10 +71,26 @@ func TestBasic(t *testing.T) {
 	t.Logf("MutRes: %+v", mutRes)
 
 	// Get a key from the bucket
-	doc, err := collection.Get("test-doc", nil)
+	/*
+		doc, err := collection.Get("test-doc", nil)
+		if err != nil {
+			t.Fatalf("Failed to get: %s", err)
+		}
+
+		t.Logf("Doc: %+v", doc)
+		//*/
+
+	log.Printf("ending test")
+
+	err = caves.EndTest(runID)
 	if err != nil {
-		t.Fatalf("Failed to get: %s", err)
+		t.Fatalf("failed to end test: %s", err)
 	}
 
-	t.Logf("Doc: %+v", doc)
+	log.Printf("ended test")
+
+	err = caves.EndTesting(runID)
+	if err != nil {
+		t.Fatalf("failed to end testing: %s", err)
+	}
 }

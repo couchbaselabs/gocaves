@@ -34,4 +34,15 @@ type Cluster interface {
 
 	// ConnectionString returns the basic non-TLS connection string for this cluster.
 	ConnectionString() string
+
+	// TODO(brett19): Remove the totally hackery which is our hooks managers not being self-dependant...
+
+	// KvInHooks returns the hook manager for incoming kv packets.
+	KvInHooks() interface{}
+
+	// KvOutHooks returns the hook manager for outgoing kv packets.
+	KvOutHooks() interface{}
+
+	// MgmtHooks returns the hook manager for management requests.
+	MgmtHooks() interface{}
 }
