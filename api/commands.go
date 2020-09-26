@@ -11,12 +11,13 @@ import (
 type CmdHello struct {
 }
 
-// CmdGetConnStr represents a connstr request
-type CmdGetConnStr struct {
+// CmdCreateCluster requests a new mock cluster be created.
+type CmdCreateCluster struct {
+	ClusterID string `json:"id"`
 }
 
-// CmdConnStr represents the reply to a connstr request.
-type CmdConnStr struct {
+// CmdCreatedCluster represents the reply to a create cluster request.
+type CmdCreatedCluster struct {
 	ConnStr string `json:"connstr"`
 }
 
@@ -68,8 +69,8 @@ type CmdEndedTest struct {
 
 var cmdsMap = map[string]reflect.Type{
 	"hello":          reflect.TypeOf(CmdHello{}),
-	"getconnstr":     reflect.TypeOf(CmdGetConnStr{}),
-	"connstr":        reflect.TypeOf(CmdConnStr{}),
+	"createcluster":  reflect.TypeOf(CmdCreateCluster{}),
+	"createdcluster": reflect.TypeOf(CmdCreatedCluster{}),
 	"starttesting":   reflect.TypeOf(CmdStartTesting{}),
 	"startedtesting": reflect.TypeOf(CmdStartedTesting{}),
 	"endtesting":     reflect.TypeOf(CmdEndTesting{}),

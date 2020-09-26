@@ -101,10 +101,9 @@ func (g *TestRunner) StartTest(name string) (*TestStartedSpec, error) {
 }
 
 // EndRunningTest will end whatever test is currently running.
-func (g *TestRunner) EndRunningTest(result interface{}) {
+func (g *TestRunner) EndRunningTest(result interface{}) error {
 	if g.runningTest == nil {
-		log.Printf("attempted to end running test with no running test")
-		return
+		return errors.New("no running test")
 	}
 
 	test := g.runningTest
@@ -116,6 +115,7 @@ func (g *TestRunner) EndRunningTest(result interface{}) {
 	resultObj.Logs = test.logMsgs
 
 	g.runningTest = nil
+	return nil
 }
 
 // End will end any currently running test, then the whole test group.

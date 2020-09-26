@@ -7,7 +7,7 @@ import (
 )
 
 func TestConnStrCommands(t *testing.T) {
-	testObj := &CmdConnStr{
+	testObj := &CmdCreatedCluster{
 		ConnStr: "hello-world",
 	}
 	testBytes := []byte(`{"type":"connstr","connstr":"hello-world"}`)

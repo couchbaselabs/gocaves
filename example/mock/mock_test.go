@@ -5,6 +5,7 @@ import (
 	"time"
 
 	cavescli "github.com/couchbaselabs/gocaves/client"
+	"github.com/google/uuid"
 
 	"github.com/couchbase/gocb/v2"
 	"github.com/couchbaselabs/gocaves/cmd"
@@ -27,7 +28,8 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("failed to setup caves: %s", err)
 	}
 
-	connStr, err := caves.GetConnStr()
+	clusterID := uuid.New().String()
+	connStr, err := caves.CreateCluster(clusterID)
 	if err != nil {
 		t.Fatalf("failed to get connection string: %s", err)
 	}

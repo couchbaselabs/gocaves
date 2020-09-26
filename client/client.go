@@ -131,9 +131,10 @@ func (c *Client) roundTripCommand(req map[string]interface{}) (map[string]interf
 	return resp, nil
 }
 
-func (c *Client) GetConnStr() (string, error) {
+func (c *Client) CreateCluster(clusterID string) (string, error) {
 	resp, err := c.roundTripCommand(map[string]interface{}{
-		"type": "getconnstr",
+		"type": "createcluster",
+		"id":   clusterID,
 	})
 	if err != nil {
 		return "", err

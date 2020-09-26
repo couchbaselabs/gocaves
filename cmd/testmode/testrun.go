@@ -1,4 +1,4 @@
-package cmd
+package testmode
 
 import (
 	"time"
@@ -11,36 +11,6 @@ type testRun struct {
 	StartTime  time.Time
 	ClientName string
 	RunGroup   *checks.TestRunner
-}
-
-type testRunManager struct {
-	Runs []*testRun
-}
-
-func (m *testRunManager) NewRun(runID, clientName string) (*testRun, error) {
-	runGroup, err := checks.NewTestRunner()
-	if err != nil {
-		return nil, err
-	}
-
-	run := &testRun{
-		RunID:      runID,
-		StartTime:  time.Now(),
-		ClientName: clientName,
-		RunGroup:   runGroup,
-	}
-	m.Runs = append(m.Runs, run)
-
-	return run, nil
-}
-
-func (m *testRunManager) Get(runID string) *testRun {
-	for _, run := range m.Runs {
-		if run.RunID == runID {
-			return run
-		}
-	}
-	return nil
 }
 
 type jsonTest struct {
@@ -83,5 +53,3 @@ func (m *testRun) GenerateReport() jsonRunReport {
 
 	return jrun
 }
-
-var testRuns testRunManager
