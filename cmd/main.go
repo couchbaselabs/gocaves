@@ -1,16 +1,19 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 
 	"github.com/couchbaselabs/gocaves/api"
 	"github.com/couchbaselabs/gocaves/checksuite"
+	"github.com/couchbaselabs/gocaves/reporting"
 	//checksuite "github.com/couchbaselabs/gocaves/checksuite"
 )
 
@@ -20,6 +23,7 @@ type stdinData struct {
 
 var controlPortFlag = flag.Int("control-port", 0, "specifies we are running in a test-framework")
 var linkAddrFlag = flag.String("link-addr", "", "specifies a caves dev server to connect to")
+var reportingAddrFlag = flag.String("reporting-addr", "", "specifies a caves reporting server to use")
 var mockOnlyFlag = flag.Bool("mock-only", false, "specifies only to use the mock")
 
 func handleAPIRequest(pkt interface{}) interface{} {
@@ -53,11 +57,22 @@ func handleAPIRequest(pkt interface{}) interface{} {
 
 		run.RunGroup.End()
 
-		log.Printf("ended test run; full report:")
-		report := testRuns.GenerateReport()
-		log.Printf("Report:\n%+v", report)
+		report := run.GenerateReport()
 
-		return &api.CmdEndedTesting{}
+		log.Printf("ended test run; full report:\n%+v", report)
+
+		if reportingAddrFlag != nil {
+			reportingURI := fmt.Sprintf("http://%s/submit", *reportingAddrFlag)
+			jsonReport, _ := json.Marshal(report)
+			_, err := http.Post(reportingURI, "text/javascript", bytes.NewReader(jsonReport))
+			if err != nil {
+				log.Printf("failed to send report to `%s`: %s", reportingURI, err)
+			}
+		}
+
+		return &api.CmdEndedTesting{
+			Report: report,
+		}
 
 	case *api.CmdStartTest:
 		run := testRuns.Get(pktTyped.RunID)
@@ -165,18 +180,16 @@ func startSDKMode() {
 }
 
 func startDevMode() {
-	apiSrv, err := api.NewServer(api.NewServerOptions{
-		ListenPort: 9649,
-		Handler:    handleAPIRequest,
+	srv, err := reporting.NewServer(reporting.NewServerOptions{
+		ListenPort: 9659,
 	})
 	if err != nil {
-		log.Printf("failed to start api server: %s", err)
-		return
+		log.Printf("failed to start reporting server: %s", err)
 	}
 
-	log.Printf("started api server: %+v", apiSrv)
+	log.Printf("reporting server started: %+v", srv)
+	log.Printf("Access the Web UI here: %s", "http://localhost:9659/")
 
-	// Let's wait forever
 	<-make(chan struct{})
 }
 

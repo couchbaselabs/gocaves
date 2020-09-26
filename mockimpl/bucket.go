@@ -156,3 +156,20 @@ func (b *bucketInst) GetVbServerInfo(reqNode mock.ClusterNode) ([]mock.ClusterNo
 
 	return kvNodes, idxdVbMap, nodeList
 }
+
+func (b *bucketInst) VbucketOwnership(node mock.ClusterNode) []int {
+	getRepIdx := func(vb []string) int {
+		for repIdx, nodeID := range vb {
+			if nodeID == node.ID() {
+				return repIdx
+			}
+		}
+		return -1
+	}
+
+	vbOwnership := make([]int, len(b.vbMap))
+	for vbIdx, vb := range b.vbMap {
+		vbOwnership[vbIdx] = getRepIdx(vb)
+	}
+	return vbOwnership
+}

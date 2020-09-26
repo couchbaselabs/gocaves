@@ -47,10 +47,10 @@ func NewTestRunner() (*TestRunner, error) {
 		group.allTests = append(group.allTests, &pendingTest{
 			Def: check,
 			Result: &TestResult{
-				Name: fmt.Sprintf("%s/%s", check.Group, check.Name),
-				//Description: test.def.Description,
-				Skipped: true,
-				Success: false,
+				Name:        fmt.Sprintf("%s/%s", check.Group, check.Name),
+				Description: check.Description,
+				Skipped:     true,
+				Success:     false,
 			},
 		})
 	}

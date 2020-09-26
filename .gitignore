@@ -1,3 +1,4 @@
 /gocaves
 /checksuite/checksuite.go
 /mock/data/gobindata.go
+/reporting/webapp/gobindata.go

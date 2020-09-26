@@ -81,6 +81,11 @@ func (b *Bucket) signalReplicators(vbIdx uint) {
 	}
 }
 
+// Chrono returns the chrono responsible for this bucket.
+func (b *Bucket) Chrono() *mocktime.Chrono {
+	return b.chrono
+}
+
 // Get fetches a document from a particular replica and vbucket index.
 func (b *Bucket) Get(repIdx, vbIdx uint, collectionID uint, key []byte) (*Document, error) {
 	vbucket := b.GetVbucket(repIdx, vbIdx)

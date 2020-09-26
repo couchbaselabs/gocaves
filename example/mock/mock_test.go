@@ -1,7 +1,6 @@
 package example
 
 import (
-	"log"
 	"testing"
 	"time"
 
@@ -67,6 +66,4 @@ func TestBasic(t *testing.T) {
 	}
 
 	t.Logf("Doc: %+v", doc)
-
-	log.Printf("ending test")
 }

@@ -24,6 +24,8 @@ type Document struct {
 	Flags        uint32
 	Datatype     uint8
 	IsDeleted    bool
+	Expiry       time.Time
+	LockExpiry   time.Time
 
 	Cas          uint64
 	SeqNo        uint64
@@ -88,7 +90,14 @@ func (s *Vbucket) Get(collectionID uint, key []byte) (*Document, error) {
 		return nil, ErrDocNotFound
 	}
 
-	return copyDocument(foundDoc), nil
+	foundDoc = copyDocument(foundDoc)
+
+	// We cheat and do this here.
+	if !foundDoc.Expiry.IsZero() && !s.chrono.Now().Before(foundDoc.Expiry) {
+		foundDoc.IsDeleted = true
+	}
+
+	return foundDoc, nil
 }
 
 // GetAllWithin returns a list of all the mutations that have occurred
@@ -166,7 +175,7 @@ func (s *Vbucket) pushDocMutationLocked(doc *Document) *Document {
 // NOTE: This must never be called on a replica vbucket.
 func (s *Vbucket) insert(doc *Document) (*Document, error) {
 	return s.update(doc.CollectionID, doc.Key, func(existingDoc *Document) (*Document, error) {
-		if existingDoc != nil {
+		if existingDoc != nil && !existingDoc.IsDeleted {
 			return nil, ErrDocExists
 		}
 
@@ -188,6 +197,11 @@ func (s *Vbucket) update(collectionID uint, key []byte, fn UpdateFunc) (*Documen
 	if foundDoc != nil {
 		// We never allow anyone to have access to the internal copy.
 		foundDoc = copyDocument(foundDoc)
+
+		// We cheat and do this here.
+		if !foundDoc.Expiry.IsZero() && !s.chrono.Now().Before(foundDoc.Expiry) {
+			foundDoc.IsDeleted = true
+		}
 	}
 
 	// Pass the existing document to the functor and get back the new copy.

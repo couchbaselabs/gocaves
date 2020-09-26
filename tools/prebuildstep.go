@@ -10,9 +10,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
-	"github.com/jteeuwen/go-bindata"
+	"github.com/go-bindata/go-bindata"
 )
 
 func getCheckSuiteFiles() map[string][]string {
@@ -192,14 +193,33 @@ func updateCheckSuiteDotGo() {
 }
 
 func updateBindataFiles() {
-	cfg := bindata.NewConfig()
-	cfg.Output = "mock/data/gobindata.go"
-	cfg.Package = "mockdata"
-	cfg.Prefix = "mock/data"
-	cfg.Input = []bindata.InputConfig{
-		{Path: "mock/data"},
-	}
-	bindata.Translate(cfg)
+	func() {
+		cfg := bindata.NewConfig()
+		cfg.Output = "mock/data/gobindata.go"
+		cfg.Package = "mockdata"
+		cfg.Prefix = "mock/data"
+		cfg.Input = []bindata.InputConfig{
+			{Path: "mock/data"},
+		}
+		cfg.Ignore = []*regexp.Regexp{
+			regexp.MustCompile("gobindata.go"),
+		}
+		bindata.Translate(cfg)
+	}()
+	func() {
+		cfg := bindata.NewConfig()
+		cfg.Output = "reporting/webapp/gobindata.go"
+		cfg.Package = "webapp"
+		cfg.Prefix = "reporting/webapp"
+		cfg.Input = []bindata.InputConfig{
+			{Path: "reporting/webapp"},
+		}
+		cfg.Ignore = []*regexp.Regexp{
+			regexp.MustCompile("gobindata.go"),
+		}
+		cfg.HttpFileSystem = true
+		bindata.Translate(cfg)
+	}()
 }
 
 func main() {

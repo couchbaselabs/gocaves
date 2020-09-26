@@ -38,6 +38,7 @@ type CmdEndTesting struct {
 
 // CmdEndedTesting indicates a particular report has ended.
 type CmdEndedTesting struct {
+	Report interface{} `json:"report"`
 }
 
 // CmdStartTest indicates to start a particular test.

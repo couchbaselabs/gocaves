@@ -1,9 +1,14 @@
 package cmd
 
-import "github.com/couchbaselabs/gocaves/checks"
+import (
+	"time"
+
+	"github.com/couchbaselabs/gocaves/checks"
+)
 
 type testRun struct {
 	RunID      string
+	StartTime  time.Time
 	ClientName string
 	RunGroup   *checks.TestRunner
 }
@@ -20,6 +25,7 @@ func (m *testRunManager) NewRun(runID, clientName string) (*testRun, error) {
 
 	run := &testRun{
 		RunID:      runID,
+		StartTime:  time.Now(),
 		ClientName: clientName,
 		RunGroup:   runGroup,
 	}
@@ -37,7 +43,7 @@ func (m *testRunManager) Get(runID string) *testRun {
 	return nil
 }
 
-type jsonResult struct {
+type jsonTest struct {
 	Name        string   `json:"name"`
 	Description string   `json:"desc"`
 	Skipped     bool     `json:"skipped"`
@@ -45,39 +51,37 @@ type jsonResult struct {
 	Logs        []string `json:"logs"`
 }
 
-type jsonRun struct {
-	RunID      string       `json:"run"`
-	ClientName string       `json:"client"`
-	Results    []jsonResult `json:"results"`
+type jsonRunReport struct {
+	MinVersion int        `json:"minversion"`
+	Version    int        `json:"version"`
+	ID         string     `json:"id"`
+	When       string     `json:"when"`
+	ClientName string     `json:"client"`
+	Tests      []jsonTest `json:"tests"`
 }
 
-type jsonReport struct {
-	Runs []jsonRun
-}
+func (m *testRun) GenerateReport() jsonRunReport {
+	var jrun jsonRunReport
+	jrun.MinVersion = 1
+	jrun.Version = 1
+	jrun.ID = m.RunID
+	jrun.When = m.StartTime.Format(time.RFC3339)
+	jrun.ClientName = m.ClientName
 
-func (m *testRunManager) GenerateReport() jsonReport {
-	var report jsonReport
+	results := m.RunGroup.Results()
 
-	for _, run := range m.Runs {
-		var jrun jsonRun
-		jrun.RunID = run.RunID
-		jrun.ClientName = run.ClientName
+	for _, result := range results {
+		var jtest jsonTest
+		jtest.Name = result.Name
+		jtest.Description = result.Description
+		jtest.Skipped = result.Skipped
+		jtest.Success = result.Success
+		jtest.Logs = result.Logs
 
-		for _, result := range run.RunGroup.Results() {
-			var jresult jsonResult
-			jresult.Name = result.Name
-			jresult.Description = result.Description
-			jresult.Skipped = result.Success
-			jresult.Success = result.Success
-			jresult.Logs = result.Logs
-
-			jrun.Results = append(jrun.Results, jresult)
-		}
-
-		report.Runs = append(report.Runs, jrun)
+		jrun.Tests = append(jrun.Tests, jtest)
 	}
 
-	return report
+	return jrun
 }
 
 var testRuns testRunManager

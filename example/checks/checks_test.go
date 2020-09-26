@@ -23,8 +23,8 @@ func TestBasic(t *testing.T) {
 	gocb.SetLogger(gocb.DefaultStdioLogger())
 
 	caves, err := cavescli.NewClient(cavescli.NewClientOptions{
-		Path:      "../../main.go",
-		CavesAddr: "127.0.0.1:9649",
+		Path:          "../../main.go",
+		ReportingAddr: "127.0.0.1:9659",
 	})
 	if err != nil {
 		t.Fatalf("failed to setup caves: %s", err)
@@ -72,14 +72,14 @@ func TestBasic(t *testing.T) {
 	t.Logf("MutRes: %+v", mutRes)
 
 	// Get a key from the bucket
-	/*
-		doc, err := collection.Get("test-doc", nil)
-		if err != nil {
-			t.Fatalf("Failed to get: %s", err)
-		}
+	//*
+	doc, err := collection.Get("test-doc", nil)
+	if err != nil {
+		t.Fatalf("Failed to get: %s", err)
+	}
 
-		t.Logf("Doc: %+v", doc)
-		//*/
+	t.Logf("Doc: %+v", doc)
+	//*/
 
 	log.Printf("ending test")
 
@@ -90,8 +90,10 @@ func TestBasic(t *testing.T) {
 
 	log.Printf("ended test")
 
-	err = caves.EndTesting(runID)
+	report, err := caves.EndTesting(runID)
 	if err != nil {
 		t.Fatalf("failed to end testing: %s", err)
 	}
+
+	log.Printf("ended testing:\n%+v", report)
 }

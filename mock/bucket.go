@@ -48,4 +48,8 @@ type Bucket interface {
 
 	// GetVbServerInfo returns the vb nodes, then the vb map, then the ordered list of all nodes
 	GetVbServerInfo(reqNode ClusterNode) ([]ClusterNode, [][]int, []ClusterNode)
+
+	// VbucketOwnership returns the replica index associated with the provided node.
+	// A response of -1 means it does not own any replicas for that vbucket.
+	VbucketOwnership(node ClusterNode) []int
 }

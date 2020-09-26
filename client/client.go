@@ -18,9 +18,10 @@ type Client struct {
 }
 
 type NewClientOptions struct {
-	Path      string
-	Version   string
-	CavesAddr string
+	Path          string
+	Version       string
+	CavesAddr     string
+	ReportingAddr string
 }
 
 func NewClient(opts NewClientOptions) (*Client, error) {
@@ -54,6 +55,10 @@ func NewClient(opts NewClientOptions) (*Client, error) {
 
 	if opts.CavesAddr != "" {
 		cavesProc.Args = append(cavesProc.Args, fmt.Sprintf("--link-addr=%s", opts.CavesAddr))
+	}
+
+	if opts.ReportingAddr != "" {
+		cavesProc.Args = append(cavesProc.Args, fmt.Sprintf("--reporting-addr=%s", opts.ReportingAddr))
 	}
 
 	log.Printf("EXECUTING: %+v", cavesProc)
@@ -153,12 +158,17 @@ func (c *Client) StartTesting(runID string, clientName string) (string, error) {
 	return connStr, nil
 }
 
-func (c *Client) EndTesting(runID string) error {
-	_, err := c.roundTripCommand(map[string]interface{}{
+func (c *Client) EndTesting(runID string) (interface{}, error) {
+	resp, err := c.roundTripCommand(map[string]interface{}{
 		"type": "endtesting",
 		"run":  runID,
 	})
-	return err
+	if err != nil {
+		return nil, err
+	}
+
+	report := resp["report"]
+	return report, err
 }
 
 type TestStartedSpec struct {

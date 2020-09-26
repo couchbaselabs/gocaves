@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>CAVES Reporting</title>
+
+    <!-- Bootstrap -->
+    <link
+      rel="stylesheet"
+      href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css"
+      integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
+      crossorigin="anonymous"
+    />
+
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css"
+      crossorigin="anonymous"
+    />
+
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+
+    <style type="text/css">
+      [v-cloak] {
+        display: none;
+      }
+      html {
+        font-size: 0.8rem;
+      }
+      .card-header .fa-chevron-down {
+        transition: 0.3s transform ease-in-out;
+      }
+      .card-header .collapsed .fa-chevron-down {
+        transform: rotate(90deg);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- START OF CAVES UI -->
+
+    <div id="app" v-cloak>
+      <div class="container-fluid">
+        <div class="row">
+          <div class="col">
+            <h1>CAVES Report</h1>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col">
+            <div class="card">
+              <h3 class="card-header">Report Details</h3>
+              <div class="card-body">
+                <div v-if="selectedReport">
+                  <table class="table table-sm table-hover">
+                    <tbody>
+                      <tr>
+                        <th>ID</th>
+                        <td>{{ selectedReport.id }}</td>
+                      </tr>
+                      <tr>
+                        <th>Client</th>
+                        <td>{{ selectedReport.client }}</td>
+                      </tr>
+                      <tr>
+                        <th>Date</th>
+                        <td>{{ selectedReport.when | date('llll') }}</td>
+                      </tr>
+                      <tr>
+                        <th>State</th>
+                        <td>
+                          <div v-if="selectedReport.failed > 0">FAILED</div>
+                          <div v-else-if="false">WARNING</div>
+                          <div v-else-if="selectedReport.skipped > 0">
+                            SKIPPED
+                          </div>
+                          <div v-else>PASSED</div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  <div
+                    v-for="group in selectedReport.groups"
+                    :key="group.id"
+                    class="card mb-3"
+                  >
+                    <h6 class="card-header">
+                      <a
+                        data-toggle="collapse"
+                        :href="'#' + group.id"
+                        aria-expanded="true"
+                        :aria-controls="group.id"
+                        class="d-block collapsed"
+                      >
+                        <i class="fa fa-chevron-down pull-right"></i>
+
+                        <i
+                          v-if="group.failed > 0"
+                          class="fa fa-times-circle text-danger"
+                          aria-hidden="true"
+                        ></i>
+                        <i
+                          v-else-if="group.skipped > 0"
+                          class="fa fa-info-circle text-warning"
+                          aria-hidden="true"
+                        ></i>
+                        <i
+                          v-else
+                          class="fa fa-check-circle text-success"
+                          aria-hidden="true"
+                        ></i>
+
+                        <span class="pl-1">{{ group.name }} </span>
+                      </a>
+                    </h6>
+                    <div :id="group.id" class="collapse">
+                      <div class="card-body">
+                        <div
+                          v-for="test in group.tests"
+                          :key="test.id"
+                          class="card mb-3"
+                        >
+                          <h6 class="card-header">
+                            <a
+                              data-toggle="collapse"
+                              :href="'#' + test.id"
+                              aria-expanded="true"
+                              :aria-controls="test.id"
+                              class="d-block collapsed"
+                            >
+                              <i class="fa fa-chevron-down pull-right"></i>
+
+                              <i
+                                v-if="test.skipped"
+                                class="fa fa-question-circle text-secondary"
+                                aria-hidden="true"
+                              ></i>
+                              <i
+                                v-else-if="!test.success"
+                                class="fa fa-times-circle text-danger"
+                                aria-hidden="true"
+                              ></i>
+                              <i
+                                v-else
+                                class="fa fa-check-circle text-success"
+                                aria-hidden="true"
+                              ></i>
+
+                              <span class="pl-1">{{ test.name }} </span>
+                            </a>
+                          </h6>
+                          <div :id="test.id" class="collapse">
+                            <div class="card-body">
+                              <div>
+                                <b>State</b>
+                              </div>
+                              <div v-if="test.success">PASSED</div>
+                              <div v-else-if="test.warning">WARNING</div>
+                              <div v-else-if="test.skipped">SKIPPED</div>
+                              <div v-else>FAILED</div>
+
+                              <div>
+                                <b>Description</b>
+                              </div>
+                              <pre>{{ test.desc }}</pre>
+
+                              <div>
+                                <b>Logs</b>
+                              </div>
+                              <pre>{{ test.logs }}</pre>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else>Select a report on the right to view it.</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-4">
+            <div class="card">
+              <h3 class="card-header">Reports List</h3>
+              <div class="card-body">
+                <div
+                  v-for="report in reports"
+                  :key="report.id"
+                  class="card mb-3"
+                  :class="{'border-primary': report.id==selectedReport.id}"
+                >
+                  <div class="card-body">
+                    <h4>
+                      <i
+                        v-if="report.failed > 0"
+                        class="fa fa-times-circle text-danger"
+                        aria-hidden="true"
+                      ></i>
+                      <i
+                        v-else-if="report.skipped > 0"
+                        class="fa fa-info-circle text-warning"
+                        aria-hidden="true"
+                      ></i>
+                      <i
+                        v-else
+                        class="fa fa-check-circle text-success"
+                        aria-hidden="true"
+                      ></i>
+
+                      <a
+                        href="#"
+                        @click="setSelectedReport(report.id)"
+                        class="text-dark"
+                      >
+                        {{ report.when | date('llll') }}
+                      </a>
+                    </h4>
+                    <div class="badge badge-secondary">{{ report.client }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- END OF CAVES UI -->
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.0/moment.min.js"
+      crossorigin="anonymous"
+    ></script>
+
+    <script
+      src="https://code.jquery.com/jquery-3.2.1.slim.min.js"
+      integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js"
+      integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"
+      integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl"
+      crossorigin="anonymous"
+    ></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.12"></script>
+
+    <script type="text/javascript">
+      Vue.filter("date", (value, format) => {
+        if (value) {
+          return moment(value).format(format);
+        }
+      });
+
+      var app = new Vue({
+        el: "#app",
+        data() {
+          return {
+            reports: [],
+            selectedReportId: "",
+          };
+        },
+        computed: {
+          selectedReport() {
+            if (!this.selectedReportId) {
+              if (this.reports.length > 0) {
+                return this.reports[0];
+              }
+
+              return null;
+            }
+
+            const reportId = this.selectedReportId;
+            return this.reports.find((r) => r.id === reportId);
+          },
+        },
+        methods: {
+          addReport(data) {
+            data.success = 0;
+            data.skipped = 0;
+            data.failed = 0;
+
+            // For now we just split everything into groups for easier viewing
+            var grpdTests = {};
+            data.tests.forEach((test) => {
+              test.logs = test.logs ? test.logs.join("\n") : "";
+              test.id = "tst_" + test.name.replace("/", "__");
+
+              var splitName = test.name.split("/");
+              var testName = splitName.pop();
+              var groupName = splitName.join("/");
+
+              var group = grpdTests[groupName];
+              if (!group) {
+                group = {
+                  id: "grp_" + groupName.replace("/", "__"),
+                  name: groupName,
+                  tests: [],
+                  success: 0,
+                  skipped: 0,
+                  failed: 0,
+                };
+                grpdTests[groupName] = group;
+              }
+
+              if (test.skipped) {
+                data.skipped++;
+                group.skipped++;
+              } else if (test.success) {
+                data.success++;
+                group.success++;
+              } else {
+                data.failed++;
+                group.failed++;
+              }
+              group.tests.push(test);
+            });
+            data.groups = grpdTests;
+
+            // We also parse the time...
+            data.when = new Date(data.when);
+
+            this.reports.unshift(data);
+            this.selectedReportId = data.id;
+          },
+          setSelectedReport(reportId) {
+            this.selectedReportId = reportId;
+          },
+        },
+        created() {
+          const startNewWsConn = () => {
+            console.log("Starting connection to WebSocket Server");
+            this.connection = new WebSocket(
+              "ws://" + location.host + "/stream"
+            );
+
+            this.connection.onmessage = (event) => {
+              var msg = JSON.parse(event.data);
+              console.log("received event", msg);
+
+              if (msg.type === "newreport") {
+                this.addReport(msg.report);
+              }
+            };
+
+            this.connection.onopen = (event) => {
+              console.log("Successfully connected to the websocket server...");
+            };
+
+            this.connection.onclose = () => {
+              startNewWsConn();
+            };
+          };
+          startNewWsConn();
+        },
+      });
+    </script>
+  </body>
+</html>
