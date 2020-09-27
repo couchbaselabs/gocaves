@@ -68,6 +68,8 @@ func (x *kvImplCrud) writeProcErr(source mock.KvClient, pak *memd.Packet, err er
 		x.writeStatusReply(source, pak, memd.StatusKeyExists)
 	case crudproc.ErrLocked:
 		x.writeStatusReply(source, pak, memd.StatusLocked)
+	case crudproc.ErrNotLocked:
+		x.writeStatusReply(source, pak, memd.StatusTmpFail)
 	default:
 		x.writeStatusReply(source, pak, memd.StatusInternalError)
 	}

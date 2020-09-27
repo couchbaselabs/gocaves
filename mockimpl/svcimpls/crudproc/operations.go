@@ -7,12 +7,14 @@ import (
 	"github.com/couchbaselabs/gocaves/mockdb"
 )
 
+// GetOptions specifies options for a GET operation.
 type GetOptions struct {
 	Vbucket      uint
 	CollectionID uint
 	Key          []byte
 }
 
+// GetResult contains the results of a GET operation.
 type GetResult struct {
 	Cas      uint64
 	Datatype uint8
@@ -20,6 +22,7 @@ type GetResult struct {
 	Flags    uint32
 }
 
+// Get performs a GET operation.
 func (e *Engine) Get(opts GetOptions) (*GetResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
@@ -29,8 +32,12 @@ func (e *Engine) Get(opts GetOptions) (*GetResult, error) {
 	if err == mockdb.ErrDocNotFound || doc.IsDeleted {
 		return nil, ErrDocNotFound
 	} else if err != nil {
-		// TODO(brett19): Correctly handle the various errors which can occur in a GET.
-		return nil, ErrInternal
+		return nil, err
+	}
+
+	if e.docIsLocked(doc) {
+		// If the doc is locked, we return -1 as the CAS instead.
+		doc.Cas = 0xFFFFFFFFFFFFFFFF
 	}
 
 	return &GetResult{
@@ -41,6 +48,7 @@ func (e *Engine) Get(opts GetOptions) (*GetResult, error) {
 	}, nil
 }
 
+// GetReplica performs a GET_REPLICA operation.
 func (e *Engine) GetReplica(opts GetOptions) (*GetResult, error) {
 	repIdx := e.findReplicaIdx(opts.Vbucket)
 	if repIdx < 1 {
@@ -51,8 +59,7 @@ func (e *Engine) GetReplica(opts GetOptions) (*GetResult, error) {
 	if err == mockdb.ErrDocNotFound || doc.IsDeleted {
 		return nil, ErrDocNotFound
 	} else if err != nil {
-		// TODO(brett19): Correctly handle the various errors which can occur in a GET.
-		return nil, ErrInternal
+		return nil, err
 	}
 
 	return &GetResult{
@@ -63,6 +70,7 @@ func (e *Engine) GetReplica(opts GetOptions) (*GetResult, error) {
 	}, nil
 }
 
+// StoreOptions specifies options for various store operations.
 type StoreOptions struct {
 	Vbucket      uint
 	CollectionID uint
@@ -74,10 +82,12 @@ type StoreOptions struct {
 	Expiry       uint32
 }
 
+// StoreResult contains the results for various store operations.
 type StoreResult struct {
 	Cas uint64
 }
 
+// Add performs an ADD operation.
 func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
@@ -105,6 +115,7 @@ func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 	}, nil
 }
 
+// Set performs an SET operation.
 func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
@@ -123,11 +134,15 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 			if opts.Cas != 0 {
 				if idoc == nil || idoc.IsDeleted {
 					// The user specified a CAS and the document didn't exist.
-					return nil, mockdb.ErrDocNotFound
+					return nil, ErrDocNotFound
 				}
 
-				if idoc.Cas != opts.Cas {
-					return nil, mockdb.ErrDocExists
+				if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
+					return nil, ErrLocked
+				}
+
+				if opts.Cas != 0 && idoc.Cas != opts.Cas {
+					return nil, ErrCasMismatch
 				}
 			}
 
@@ -143,14 +158,8 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 			idoc.Value = doc.Value
 			return idoc, nil
 		})
-
-	if err == mockdb.ErrDocExists {
-		return nil, ErrDocExists
-	} else if err == mockdb.ErrDocNotFound {
-		return nil, ErrDocNotFound
-	} else if err != nil {
-		// TODO(brett19): Correctly handle the various errors which can occur in a SET.
-		return nil, ErrInternal
+	if err != nil {
+		return nil, err
 	}
 
 	// TODO(brett19): Return mutation tokens with SET responses.
@@ -159,6 +168,7 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 	}, nil
 }
 
+// Replace performs an REPLACE operation.
 func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
@@ -175,25 +185,23 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
-				return nil, mockdb.ErrDocNotFound
+				return nil, ErrDocNotFound
+			}
+
+			if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
+				return nil, ErrLocked
 			}
 
 			if idoc.Cas != opts.Cas {
-				return nil, mockdb.ErrDocExists
+				return nil, ErrCasMismatch
 			}
 
 			// Otherwise we simply update the value
 			idoc.Value = doc.Value
 			return idoc, nil
 		})
-
-	if err == mockdb.ErrDocExists {
-		return nil, ErrDocExists
-	} else if err == mockdb.ErrDocNotFound {
-		return nil, ErrDocNotFound
-	} else if err != nil {
-		// TODO(brett19): Correctly handle the various errors which can occur in a REPLACE.
-		return nil, ErrInternal
+	if err != nil {
+		return nil, err
 	}
 
 	// TODO(brett19): Return mutation tokens with REPLACE responses.
@@ -202,6 +210,7 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 	}, nil
 }
 
+// DeleteOptions specifies options for a DELETE operation.
 type DeleteOptions struct {
 	Vbucket      uint
 	CollectionID uint
@@ -209,10 +218,12 @@ type DeleteOptions struct {
 	Cas          uint64
 }
 
+// DeleteResult contains the results of a DELETE operation.
 type DeleteResult struct {
 	Cas uint64
 }
 
+// Delete performs an DELETE operation.
 func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
@@ -228,25 +239,23 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
-				return nil, mockdb.ErrDocNotFound
+				return nil, ErrDocNotFound
+			}
+
+			if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
+				return nil, ErrLocked
 			}
 
 			if opts.Cas != 0 && idoc.Cas != opts.Cas {
-				return nil, mockdb.ErrDocExists
+				return nil, ErrCasMismatch
 			}
 
 			// Otherwise we simply update the value
 			idoc.IsDeleted = true
 			return idoc, nil
 		})
-
-	if err == mockdb.ErrDocExists {
-		return nil, ErrDocExists
-	} else if err == mockdb.ErrDocNotFound {
-		return nil, ErrDocNotFound
-	} else if err != nil {
-		// TODO(brett19): Correctly handle the various errors which can occur in a DELETE.
-		return nil, ErrInternal
+	if err != nil {
+		return nil, err
 	}
 
 	// TODO(brett19): Return mutation tokens with DELETE responses.
@@ -255,6 +264,7 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 	}, nil
 }
 
+// CounterOptions specifies options for a INCREMENT or DECREMENT operation.
 type CounterOptions struct {
 	Vbucket      uint
 	CollectionID uint
@@ -265,6 +275,7 @@ type CounterOptions struct {
 	Expiry       uint32
 }
 
+// CounterResult contains the results of a INCREMENT or DECREMENT operation.
 type CounterResult struct {
 	Cas   uint64
 	Value uint64
@@ -292,14 +303,18 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
 				if opts.Expiry != 0xffffffff {
-					return nil, mockdb.ErrDocNotFound
+					return nil, ErrDocNotFound
 				}
 
 				idoc = doc
 			}
 
+			if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
+				return nil, ErrLocked
+			}
+
 			if opts.Cas != 0 && idoc.Cas != opts.Cas {
-				return nil, mockdb.ErrDocExists
+				return nil, ErrCasMismatch
 			}
 
 			// Otherwise we simply update the value
@@ -329,14 +344,8 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 			idoc.Expiry = expiryTime
 			return idoc, nil
 		})
-
-	if err == mockdb.ErrDocExists {
-		return nil, ErrDocExists
-	} else if err == mockdb.ErrDocNotFound {
-		return nil, ErrDocNotFound
-	} else if err != nil {
-		// TODO(brett19): Correctly handle the various errors which can occur in an INCREMENT/DECREMENT.
-		return nil, ErrInternal
+	if err != nil {
+		return nil, err
 	}
 
 	docValue, _ := strconv.ParseUint(string(newDoc.Value), 10, 64)
@@ -348,10 +357,12 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 	}, nil
 }
 
+// Increment performs an INCREMENT operation.
 func (e *Engine) Increment(opts CounterOptions) (*CounterResult, error) {
 	return e.counter(opts, true)
 }
 
+// Decrement performs an DECREMENT operation.
 func (e *Engine) Decrement(opts CounterOptions) (*CounterResult, error) {
 	return e.counter(opts, false)
 }
@@ -372,11 +383,15 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
-				return nil, mockdb.ErrDocNotFound
+				return nil, ErrDocNotFound
+			}
+
+			if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
+				return nil, ErrLocked
 			}
 
 			if idoc.Cas != opts.Cas {
-				return nil, mockdb.ErrDocExists
+				return nil, ErrCasMismatch
 			}
 
 			// Otherwise we simply update the value
@@ -388,14 +403,8 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 
 			return idoc, nil
 		})
-
-	if err == mockdb.ErrDocExists {
-		return nil, ErrDocExists
-	} else if err == mockdb.ErrDocNotFound {
-		return nil, ErrDocNotFound
-	} else if err != nil {
-		// TODO(brett19): Correctly handle the various errors which can occur in a APPEND/PREPEND.
-		return nil, ErrInternal
+	if err != nil {
+		return nil, err
 	}
 
 	// TODO(brett19): Return mutation tokens with APPEND/PREPEND responses.
@@ -404,14 +413,17 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 	}, nil
 }
 
+// Append performs an APPEND operation.
 func (e *Engine) Append(opts StoreOptions) (*StoreResult, error) {
 	return e.adjoin(opts, true)
 }
 
+// Prepend performs an PREPEND operation.
 func (e *Engine) Prepend(opts StoreOptions) (*StoreResult, error) {
 	return e.adjoin(opts, false)
 }
 
+// GetAndTouchOptions specifies options for a GET_AND_TOUCH operation.
 type GetAndTouchOptions struct {
 	ReplicaIdx   int
 	Vbucket      uint
@@ -420,6 +432,7 @@ type GetAndTouchOptions struct {
 	Expiry       uint32
 }
 
+// GetAndTouch performs a GET_AND_TOUCH operation.
 func (e *Engine) GetAndTouch(opts GetAndTouchOptions) (*GetResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
@@ -429,6 +442,7 @@ func (e *Engine) GetAndTouch(opts GetAndTouchOptions) (*GetResult, error) {
 	return nil, ErrNotSupported
 }
 
+// GetLockedOptions specifies options for a GET_LOCKED operation.
 type GetLockedOptions struct {
 	ReplicaIdx   int
 	Vbucket      uint
@@ -437,6 +451,7 @@ type GetLockedOptions struct {
 	LockTime     uint32
 }
 
+// GetLocked performs a GET_LOCKED operation.
 func (e *Engine) GetLocked(opts GetLockedOptions) (*GetResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
@@ -459,19 +474,19 @@ func (e *Engine) GetLocked(opts GetLockedOptions) (*GetResult, error) {
 		lkpDoc.VbID, lkpDoc.CollectionID, lkpDoc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
-				return nil, mockdb.ErrDocNotFound
+				return nil, ErrDocNotFound
+			}
+
+			if e.docIsLocked(idoc) {
+				return nil, ErrLocked
 			}
 
 			idoc.LockExpiry = lockExpiryTime
 
 			return idoc, nil
 		})
-
-	if err == mockdb.ErrDocNotFound {
-		return nil, ErrDocNotFound
-	} else if err != nil {
-		// TODO(brett19): Correctly handle the various errors which can occur in a GET.
-		return nil, ErrInternal
+	if err != nil {
+		return nil, err
 	}
 
 	return &GetResult{
@@ -482,6 +497,7 @@ func (e *Engine) GetLocked(opts GetLockedOptions) (*GetResult, error) {
 	}, nil
 }
 
+// UnlockOptions specifies options for an UNLOCK operation.
 type UnlockOptions struct {
 	ReplicaIdx   int
 	Vbucket      uint
@@ -490,11 +506,45 @@ type UnlockOptions struct {
 	Cas          uint64
 }
 
+// Unlock performs an UNLOCK operation.
 func (e *Engine) Unlock(opts UnlockOptions) (*StoreResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
 	}
 
-	// TODO(brett19): Implement Unlock
-	return nil, ErrNotSupported
+	doc := &mockdb.Document{
+		VbID:         opts.Vbucket,
+		CollectionID: opts.CollectionID,
+		Key:          opts.Key,
+	}
+
+	newDoc, err := e.db.Update(
+		doc.VbID, doc.CollectionID, doc.Key,
+		func(idoc *mockdb.Document) (*mockdb.Document, error) {
+			if idoc == nil || idoc.IsDeleted {
+				return nil, ErrDocNotFound
+			}
+
+			if !e.docIsLocked(idoc) {
+				return nil, ErrNotLocked
+			}
+
+			if idoc.Cas != opts.Cas {
+				return nil, ErrCasMismatch
+			}
+
+			// Otherwise we simply mark it as no longer locked.
+			// TODO(brett19): Technically unlocking the document should not trigger
+			// the CAS to change.  Though it shouldn't matter much in practice.
+			idoc.LockExpiry = time.Time{}
+			return idoc, nil
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(brett19): Return mutation tokens with UNLOCK responses.
+	return &StoreResult{
+		Cas: newDoc.Cas,
+	}, nil
 }

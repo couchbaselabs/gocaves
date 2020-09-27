@@ -33,3 +33,11 @@ func (e *Engine) confirmIsMaster(vbIdx uint) error {
 
 	return nil
 }
+
+func (e *Engine) docIsLocked(doc *mockdb.Document) bool {
+	if doc == nil {
+		return false
+	}
+
+	return e.db.Chrono().Now().Before(doc.LockExpiry)
+}

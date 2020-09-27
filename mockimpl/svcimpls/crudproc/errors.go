@@ -11,4 +11,5 @@ var (
 	ErrDocNotFound  = errors.New("doc not found")
 	ErrCasMismatch  = errors.New("cas mismatch")
 	ErrLocked       = errors.New("locked")
+	ErrNotLocked    = errors.New("not locked")
 )
