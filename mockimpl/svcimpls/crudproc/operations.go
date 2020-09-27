@@ -390,7 +390,7 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 				return nil, ErrLocked
 			}
 
-			if idoc.Cas != opts.Cas {
+			if opts.Cas != 0 && idoc.Cas != opts.Cas {
 				return nil, ErrCasMismatch
 			}
 
