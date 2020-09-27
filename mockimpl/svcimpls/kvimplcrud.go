@@ -9,7 +9,6 @@ import (
 )
 
 type kvImplCrud struct {
-	proc crudProc
 }
 
 func (x *kvImplCrud) Register(h *hookHelper) {
