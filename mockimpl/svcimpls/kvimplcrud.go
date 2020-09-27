@@ -31,7 +31,7 @@ func (x *kvImplCrud) writeStatusReply(source mock.KvClient, pak *memd.Packet, st
 		Magic:   memd.CmdMagicRes,
 		Command: pak.Command,
 		Opaque:  pak.Opaque,
-		Status:  memd.StatusNoBucket,
+		Status:  status,
 	})
 }
 
