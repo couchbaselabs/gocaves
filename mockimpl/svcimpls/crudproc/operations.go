@@ -1,6 +1,7 @@
 package crudproc
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -295,7 +296,7 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 		VbID:         opts.Vbucket,
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
-		Value:        strconv.AppendUint(nil, opts.Initial, 64),
+		Value:        []byte(fmt.Sprintf("%d", opts.Initial)),
 	}
 
 	newDoc, err := e.db.Update(
@@ -340,7 +341,7 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 				}
 			}
 
-			idoc.Value = strconv.AppendUint(nil, val, 64)
+			idoc.Value = []byte(fmt.Sprintf("%d", val))
 			idoc.Expiry = expiryTime
 			return idoc, nil
 		})
