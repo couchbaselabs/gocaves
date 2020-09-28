@@ -12,9 +12,10 @@ import (
 )
 
 type Client struct {
-	conn    net.Conn
-	encoder *json.Encoder
-	decoder *json.Decoder
+	conn       net.Conn
+	encoder    *json.Encoder
+	decoder    *json.Decoder
+	shutdownCh chan struct{}
 }
 
 type NewClientOptions struct {
@@ -63,6 +64,8 @@ func NewClient(opts NewClientOptions) (*Client, error) {
 
 	log.Printf("EXECUTING: %+v", cavesProc)
 
+	shutdownCh := make(chan struct{}, 1)
+
 	cavesProc.Stdout = os.Stdin
 	cavesProc.Stderr = os.Stderr
 	go func() {
@@ -70,6 +73,8 @@ func NewClient(opts NewClientOptions) (*Client, error) {
 		if err != nil {
 			panic(err)
 		}
+
+		close(shutdownCh)
 	}()
 
 	log.Printf("Started CAVES")
@@ -83,9 +88,10 @@ func NewClient(opts NewClientOptions) (*Client, error) {
 	log.Printf("CAVES connected")
 
 	cli := &Client{
-		conn:    conn,
-		encoder: json.NewEncoder(conn),
-		decoder: json.NewDecoder(conn),
+		conn:       conn,
+		encoder:    json.NewEncoder(conn),
+		decoder:    json.NewDecoder(conn),
+		shutdownCh: shutdownCh,
 	}
 
 	helloCmd, err := cli.readCommand()
@@ -100,6 +106,13 @@ func NewClient(opts NewClientOptions) (*Client, error) {
 	}
 
 	return cli, nil
+}
+
+// Shutdown will shutdown the CAVES client.
+func (c *Client) Shutdown() error {
+	err := c.conn.Close()
+	<-c.shutdownCh
+	return err
 }
 
 func (c *Client) writeCommand(req map[string]interface{}) error {
