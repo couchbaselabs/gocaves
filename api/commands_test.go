@@ -10,7 +10,7 @@ func TestConnStrCommands(t *testing.T) {
 	testObj := &CmdCreatedCluster{
 		ConnStr: "hello-world",
 	}
-	testBytes := []byte(`{"type":"connstr","connstr":"hello-world"}`)
+	testBytes := []byte(`{"type":"createdcluster","connstr":"hello-world"}`)
 
 	encodedBytes, err := encodeCommandPacket(testObj)
 	if err != nil {
