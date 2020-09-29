@@ -2,6 +2,7 @@ package svcimpls
 
 import (
 	"encoding/binary"
+	"log"
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
@@ -21,6 +22,7 @@ func (x *kvImplCrud) Register(h *hookHelper) {
 	h.RegisterKvHandler(memd.CmdDecrement, x.handleDecrementRequest)
 	h.RegisterKvHandler(memd.CmdAppend, x.handleAppendRequest)
 	h.RegisterKvHandler(memd.CmdPrepend, x.handlePrependRequest)
+	h.RegisterKvHandler(memd.CmdTouch, x.handleTouchRequest)
 	h.RegisterKvHandler(memd.CmdGAT, x.handleGATRequest)
 	h.RegisterKvHandler(memd.CmdGetLocked, x.handleGetLockedRequest)
 	h.RegisterKvHandler(memd.CmdUnlockKey, x.handleUnlockRequest)
@@ -64,12 +66,13 @@ func (x *kvImplCrud) writeProcErr(source mock.KvClient, pak *memd.Packet, err er
 	case crudproc.ErrDocNotFound:
 		x.writeStatusReply(source, pak, memd.StatusKeyNotFound)
 	case crudproc.ErrCasMismatch:
-		x.writeStatusReply(source, pak, memd.StatusKeyExists)
+		x.writeStatusReply(source, pak, memd.StatusTmpFail)
 	case crudproc.ErrLocked:
 		x.writeStatusReply(source, pak, memd.StatusLocked)
 	case crudproc.ErrNotLocked:
 		x.writeStatusReply(source, pak, memd.StatusTmpFail)
 	default:
+		log.Printf("Recieved unexpected crud proc error: %s", err)
 		x.writeStatusReply(source, pak, memd.StatusInternalError)
 	}
 }
@@ -302,8 +305,8 @@ func (x *kvImplCrud) handleIncrementRequest(source mock.KvClient, pak *memd.Pack
 			return
 		}
 
-		extrasBuf := make([]byte, 8)
-		binary.BigEndian.PutUint64(extrasBuf[0:], resp.Value)
+		valueBuf := make([]byte, 8)
+		binary.BigEndian.PutUint64(valueBuf[0:], resp.Value)
 
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -311,7 +314,7 @@ func (x *kvImplCrud) handleIncrementRequest(source mock.KvClient, pak *memd.Pack
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
-			Extras:  extrasBuf,
+			Value:   valueBuf,
 		})
 	}
 }
@@ -341,8 +344,8 @@ func (x *kvImplCrud) handleDecrementRequest(source mock.KvClient, pak *memd.Pack
 			return
 		}
 
-		extrasBuf := make([]byte, 8)
-		binary.BigEndian.PutUint64(extrasBuf[0:], resp.Value)
+		valueBuf := make([]byte, 8)
+		binary.BigEndian.PutUint64(valueBuf[0:], resp.Value)
 
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -350,7 +353,7 @@ func (x *kvImplCrud) handleDecrementRequest(source mock.KvClient, pak *memd.Pack
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
-			Extras:  extrasBuf,
+			Value:   valueBuf,
 		})
 	}
 }
@@ -399,6 +402,36 @@ func (x *kvImplCrud) handlePrependRequest(source mock.KvClient, pak *memd.Packet
 			Cas:          pak.Cas,
 			Expiry:       0,
 			Value:        pak.Value,
+		})
+		if err != nil {
+			x.writeProcErr(source, pak, err)
+			return
+		}
+
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: pak.Command,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusSuccess,
+			Cas:     resp.Cas,
+		})
+	}
+}
+
+func (x *kvImplCrud) handleTouchRequest(source mock.KvClient, pak *memd.Packet) {
+	if proc := x.makeProc(source, pak); proc != nil {
+		if len(pak.Extras) != 4 {
+			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
+			return
+		}
+
+		expiry := binary.BigEndian.Uint32(pak.Extras[0:])
+
+		resp, err := proc.Touch(crudproc.TouchOptions{
+			Vbucket:      uint(pak.Vbucket),
+			CollectionID: uint(pak.CollectionID),
+			Key:          pak.Key,
+			Expiry:       expiry,
 		})
 		if err != nil {
 			x.writeProcErr(source, pak, err)

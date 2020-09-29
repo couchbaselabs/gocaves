@@ -33,7 +33,7 @@ func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, er
 	// We currently always use a single replica here.  We use this 1 replica for all
 	// replicas that are needed, and it is potentially unused if the buckets replica
 	// count is 0.
-	bucketStore, err := mockdb.NewBucket(mockdb.BucketConfig{
+	bucketStore, err := mockdb.NewBucket(mockdb.NewBucketOptions{
 		Chrono:         parent.chrono,
 		NumReplicas:    1,
 		NumVbuckets:    parent.numVbuckets,

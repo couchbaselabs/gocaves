@@ -1,6 +1,10 @@
 package crudproc
 
-import "github.com/couchbaselabs/gocaves/mockdb"
+import (
+	"time"
+
+	"github.com/couchbaselabs/gocaves/mockdb"
+)
 
 // Engine represents a specific engine.
 type Engine struct {
@@ -39,5 +43,23 @@ func (e *Engine) docIsLocked(doc *mockdb.Document) bool {
 		return false
 	}
 
+	if doc.LockExpiry.IsZero() {
+		return false
+	}
+
 	return e.db.Chrono().Now().Before(doc.LockExpiry)
+}
+
+func (e *Engine) parseExpiry(expiry uint32) time.Time {
+	if expiry == 0 {
+		return time.Time{}
+	}
+
+	// TODO(brett19): Check if this is the right edge for expiry.
+	if expiry > 30*24*60*60 {
+		return time.Unix(int64(expiry), 0)
+	}
+
+	expiryDura := time.Duration(expiry) * time.Second
+	return e.db.Chrono().Now().Add(expiryDura)
 }

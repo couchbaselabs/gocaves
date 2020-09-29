@@ -9,7 +9,7 @@ import (
 
 func TestBasic(t *testing.T) {
 	chrono := &mocktime.Chrono{}
-	bucket, err := NewBucket(BucketConfig{
+	bucket, err := NewBucket(NewBucketOptions{
 		Chrono:         chrono,
 		NumReplicas:    2,
 		NumVbuckets:    4,
@@ -44,7 +44,7 @@ func TestBasic(t *testing.T) {
 
 func TestReplication(t *testing.T) {
 	chrono := &mocktime.Chrono{}
-	bucket, err := NewBucket(BucketConfig{
+	bucket, err := NewBucket(NewBucketOptions{
 		Chrono:         chrono,
 		NumReplicas:    2,
 		NumVbuckets:    4,

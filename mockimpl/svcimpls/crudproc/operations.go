@@ -99,6 +99,9 @@ func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
 		Value:        opts.Value,
+		Flags:        opts.Flags,
+		Datatype:     opts.Datatype,
+		Expiry:       e.parseExpiry(opts.Expiry),
 	}
 
 	newDoc, err := e.db.Insert(doc)
@@ -127,6 +130,9 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
 		Value:        opts.Value,
+		Flags:        opts.Flags,
+		Datatype:     opts.Datatype,
+		Expiry:       e.parseExpiry(opts.Expiry),
 	}
 
 	newDoc, err := e.db.Update(
@@ -142,21 +148,26 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 					return nil, ErrLocked
 				}
 
-				if opts.Cas != 0 && idoc.Cas != opts.Cas {
+				if idoc.Cas != opts.Cas {
 					return nil, ErrCasMismatch
+				}
+			} else {
+				// Insert the document if it wasn't already existing.
+				if idoc == nil {
+					return doc, nil
+				}
+
+				if e.docIsLocked(idoc) {
+					return nil, ErrLocked
 				}
 			}
 
-			// Insert the document if it wasn't already existing.
-			if idoc == nil {
-				return doc, nil
-			}
-			if idoc.IsDeleted {
-				idoc.IsDeleted = false
-			}
-
 			// Otherwise we simply update the value
+			idoc.IsDeleted = false
 			idoc.Value = doc.Value
+			idoc.Flags = doc.Flags
+			idoc.Datatype = doc.Datatype
+			idoc.Expiry = doc.Expiry
 			return idoc, nil
 		})
 	if err != nil {
@@ -180,6 +191,9 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
 		Value:        opts.Value,
+		Flags:        opts.Flags,
+		Datatype:     opts.Datatype,
+		Expiry:       e.parseExpiry(opts.Expiry),
 	}
 
 	newDoc, err := e.db.Update(
@@ -193,12 +207,15 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 				return nil, ErrLocked
 			}
 
-			if idoc.Cas != opts.Cas {
+			if opts.Cas != 0 && idoc.Cas != opts.Cas {
 				return nil, ErrCasMismatch
 			}
 
 			// Otherwise we simply update the value
 			idoc.Value = doc.Value
+			idoc.Flags = doc.Flags
+			idoc.Datatype = doc.Datatype
+			idoc.Expiry = doc.Expiry
 			return idoc, nil
 		})
 	if err != nil {
@@ -287,27 +304,29 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 		return nil, err
 	}
 
-	var expiryTime time.Time
-	if opts.Expiry > 0 && opts.Expiry != 0xffffffff {
-		expiryTime = e.db.Chrono().Now().Add(time.Duration(opts.Expiry) * time.Second)
-	}
-
 	doc := &mockdb.Document{
 		VbID:         opts.Vbucket,
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
 		Value:        []byte(fmt.Sprintf("%d", opts.Initial)),
+		Flags:        0,
+		Datatype:     0,
+		Expiry:       e.parseExpiry(opts.Expiry),
 	}
 
 	newDoc, err := e.db.Update(
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
-				if opts.Expiry != 0xffffffff {
+				if opts.Expiry == 0xffffffff {
 					return nil, ErrDocNotFound
 				}
 
-				idoc = doc
+				if opts.Cas != 0 {
+					return nil, ErrCasMismatch
+				}
+
+				return doc, nil
 			}
 
 			if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
@@ -342,7 +361,9 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 			}
 
 			idoc.Value = []byte(fmt.Sprintf("%d", val))
-			idoc.Expiry = expiryTime
+			idoc.Flags = doc.Flags
+			idoc.Datatype = doc.Datatype
+			idoc.Expiry = doc.Expiry
 			return idoc, nil
 		})
 	if err != nil {
@@ -424,6 +445,39 @@ func (e *Engine) Prepend(opts StoreOptions) (*StoreResult, error) {
 	return e.adjoin(opts, false)
 }
 
+// TouchOptions specifies options for a TOUCH operation.
+type TouchOptions struct {
+	ReplicaIdx   int
+	Vbucket      uint
+	CollectionID uint
+	Key          []byte
+	Expiry       uint32
+}
+
+// Touch performs a GET_AND_TOUCH operation.
+func (e *Engine) Touch(opts TouchOptions) (*StoreResult, error) {
+	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
+		return nil, err
+	}
+
+	// We cheat for now.
+	resp, err := e.GetAndTouch(GetAndTouchOptions{
+		ReplicaIdx:   opts.ReplicaIdx,
+		Vbucket:      opts.Vbucket,
+		CollectionID: opts.CollectionID,
+		Key:          opts.Key,
+		Expiry:       opts.Expiry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(brett19): Return mutation tokens with TOUCH responses.
+	return &StoreResult{
+		Cas: resp.Cas,
+	}, err
+}
+
 // GetAndTouchOptions specifies options for a GET_AND_TOUCH operation.
 type GetAndTouchOptions struct {
 	ReplicaIdx   int
@@ -439,8 +493,39 @@ func (e *Engine) GetAndTouch(opts GetAndTouchOptions) (*GetResult, error) {
 		return nil, err
 	}
 
-	// TODO(brett19): Implement GetAndTouch
-	return nil, ErrNotSupported
+	doc := &mockdb.Document{
+		VbID:         opts.Vbucket,
+		CollectionID: opts.CollectionID,
+		Key:          opts.Key,
+		Expiry:       e.parseExpiry(opts.Expiry),
+	}
+
+	newDoc, err := e.db.Update(
+		doc.VbID, doc.CollectionID, doc.Key,
+		func(idoc *mockdb.Document) (*mockdb.Document, error) {
+			if idoc == nil || idoc.IsDeleted {
+				return nil, ErrDocNotFound
+			}
+
+			if e.docIsLocked(idoc) {
+				return nil, ErrLocked
+			}
+
+			// Otherwise we simply update the value
+			idoc.Expiry = doc.Expiry
+			return idoc, nil
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(brett19): Return mutation tokens with GET_AND_TOUCH responses.
+	return &GetResult{
+		Cas:      newDoc.Cas,
+		Datatype: newDoc.Datatype,
+		Value:    newDoc.Value,
+		Flags:    newDoc.Flags,
+	}, nil
 }
 
 // GetLockedOptions specifies options for a GET_LOCKED operation.
@@ -483,7 +568,6 @@ func (e *Engine) GetLocked(opts GetLockedOptions) (*GetResult, error) {
 			}
 
 			idoc.LockExpiry = lockExpiryTime
-
 			return idoc, nil
 		})
 	if err != nil {
