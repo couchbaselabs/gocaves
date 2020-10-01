@@ -21,6 +21,17 @@ type CmdCreatedCluster struct {
 	ConnStr string `json:"connstr"`
 }
 
+// CmdTimeTravel allows a test run or cluster to be time travelled.
+type CmdTimeTravel struct {
+	RunID     string `json:"run"`
+	ClusterID string `json:"cluster"`
+	Amount    uint64 `json:"amount_ms"`
+}
+
+// CmdTimeTravelled represents a reply to time travelling.
+type CmdTimeTravelled struct {
+}
+
 // CmdStartTesting indicates to start a new report.
 type CmdStartTesting struct {
 	RunID      string `json:"run"`
@@ -79,6 +90,8 @@ var cmdsMap = map[string]reflect.Type{
 	"startedtest":    reflect.TypeOf(CmdStartedTest{}),
 	"endtest":        reflect.TypeOf(CmdEndTest{}),
 	"endedtest":      reflect.TypeOf(CmdEndedTest{}),
+	"timetravel":     reflect.TypeOf(CmdTimeTravel{}),
+	"timetravelled":  reflect.TypeOf(CmdTimeTravelled{}),
 }
 
 func encodeCommandPacket(command interface{}) ([]byte, error) {

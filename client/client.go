@@ -221,3 +221,19 @@ func (c *Client) EndTest(runID string) error {
 	})
 	return err
 }
+
+func (c *Client) TimeTravelRun(runID string) error {
+	_, err := c.roundTripCommand(map[string]interface{}{
+		"type": "timetravel",
+		"run":  runID,
+	})
+	return err
+}
+
+func (c *Client) TimeTravelCluster(clusterID string) error {
+	_, err := c.roundTripCommand(map[string]interface{}{
+		"type":    "timetravel",
+		"cluster": clusterID,
+	})
+	return err
+}

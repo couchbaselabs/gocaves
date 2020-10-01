@@ -2,6 +2,7 @@ package testmode
 
 import (
 	"errors"
+	"time"
 
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mockimpl"
@@ -37,6 +38,17 @@ func (m *clusterManager) Get(clusterID string) *namedCluster {
 			return run
 		}
 	}
+	return nil
+}
+
+func (m *clusterManager) TimeTravel(clusterID string, amount time.Duration) error {
+	cluster := m.Get(clusterID)
+	if cluster == nil {
+		return errors.New("invalid cluster id")
+	}
+
+	cluster.Mock.Chrono().TimeTravel(amount)
+
 	return nil
 }
 

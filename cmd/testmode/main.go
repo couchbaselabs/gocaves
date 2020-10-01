@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/couchbaselabs/gocaves/api"
 )
@@ -112,6 +113,13 @@ func (m *Main) handleAPIRequest(pkt interface{}) interface{} {
 		}
 
 		return &api.CmdEndedTest{}
+	case *api.CmdTimeTravel:
+		ttAmnt := time.Duration(pktTyped.Amount) * time.Millisecond
+
+		m.clusterMgr.TimeTravel(pktTyped.ClusterID, ttAmnt)
+		m.testRuns.TimeTravel(pktTyped.RunID, ttAmnt)
+
+		return &api.CmdTimeTravelled{}
 	}
 
 	return nil

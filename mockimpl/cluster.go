@@ -183,6 +183,10 @@ func (c *clusterInst) ConnectionString() string {
 	return "couchbase://" + strings.Join(nodesList, ",")
 }
 
+func (c *clusterInst) Chrono() *mocktime.Chrono {
+	return c.chrono
+}
+
 // KvInHooks returns the hook manager for incoming kv packets.
 func (c *clusterInst) KvInHooks() mock.KvHookManager {
 	return &c.kvInHooks

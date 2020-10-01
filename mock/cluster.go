@@ -45,4 +45,7 @@ type Cluster interface {
 
 	// MgmtHooks returns the hook manager for management requests.
 	MgmtHooks() MgmtHookManager
+
+	// Chrono returns the chrono object in use by the cluster.
+	Chrono() *mocktime.Chrono
 }

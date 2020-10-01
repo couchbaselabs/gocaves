@@ -37,6 +37,17 @@ func (m *testRunManager) Get(runID string) *testRun {
 	return nil
 }
 
+func (m *testRunManager) TimeTravel(runID string, amount time.Duration) error {
+	run := m.Get(runID)
+	if run == nil {
+		return errors.New("invalid run specified")
+	}
+
+	run.RunGroup.DefaultCluster().Chrono().TimeTravel(amount)
+
+	return nil
+}
+
 func (m *testRunManager) StartTest(runID, testName string) (*checks.TestStartedSpec, error) {
 	run := m.Get(runID)
 	if run == nil {
