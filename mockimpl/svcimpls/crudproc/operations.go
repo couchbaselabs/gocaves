@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mockdb"
 )
 
@@ -102,6 +103,7 @@ func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 		Flags:        opts.Flags,
 		Datatype:     opts.Datatype,
 		Expiry:       e.parseExpiry(opts.Expiry),
+		Cas:          mockdb.GenerateNewCas(),
 	}
 
 	newDoc, err := e.db.Insert(doc)
@@ -133,6 +135,7 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 		Flags:        opts.Flags,
 		Datatype:     opts.Datatype,
 		Expiry:       e.parseExpiry(opts.Expiry),
+		Cas:          mockdb.GenerateNewCas(),
 	}
 
 	newDoc, err := e.db.Update(
@@ -168,6 +171,7 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
 			idoc.Expiry = doc.Expiry
+			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
 	if err != nil {
@@ -194,6 +198,7 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 		Flags:        opts.Flags,
 		Datatype:     opts.Datatype,
 		Expiry:       e.parseExpiry(opts.Expiry),
+		Cas:          mockdb.GenerateNewCas(),
 	}
 
 	newDoc, err := e.db.Update(
@@ -216,6 +221,7 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
 			idoc.Expiry = doc.Expiry
+			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
 	if err != nil {
@@ -247,14 +253,14 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 		return nil, err
 	}
 
-	doc := &mockdb.Document{
+	lkpDoc := &mockdb.Document{
 		VbID:         opts.Vbucket,
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
 	}
 
 	newDoc, err := e.db.Update(
-		doc.VbID, doc.CollectionID, doc.Key,
+		lkpDoc.VbID, lkpDoc.CollectionID, lkpDoc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
 				return nil, ErrDocNotFound
@@ -268,8 +274,11 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 				return nil, ErrCasMismatch
 			}
 
+			// TODO(brett19): Check if DELETE generates a new CAS or not.
+
 			// Otherwise we simply update the value
 			idoc.IsDeleted = true
+			idoc.Cas = mockdb.GenerateNewCas()
 			return idoc, nil
 		})
 	if err != nil {
@@ -312,6 +321,7 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 		Flags:        0,
 		Datatype:     0,
 		Expiry:       e.parseExpiry(opts.Expiry),
+		Cas:          mockdb.GenerateNewCas(),
 	}
 
 	newDoc, err := e.db.Update(
@@ -364,6 +374,7 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
 			idoc.Expiry = doc.Expiry
+			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
 	if err != nil {
@@ -399,6 +410,7 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
 		Value:        opts.Value,
+		Cas:          mockdb.GenerateNewCas(),
 	}
 
 	newDoc, err := e.db.Update(
@@ -423,6 +435,7 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 				idoc.Value = append(doc.Value, idoc.Value...)
 			}
 
+			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
 	if err != nil {
@@ -498,6 +511,7 @@ func (e *Engine) GetAndTouch(opts GetAndTouchOptions) (*GetResult, error) {
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
 		Expiry:       e.parseExpiry(opts.Expiry),
+		Cas:          mockdb.GenerateNewCas(),
 	}
 
 	newDoc, err := e.db.Update(
@@ -513,6 +527,7 @@ func (e *Engine) GetAndTouch(opts GetAndTouchOptions) (*GetResult, error) {
 
 			// Otherwise we simply update the value
 			idoc.Expiry = doc.Expiry
+			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
 	if err != nil {
@@ -568,6 +583,7 @@ func (e *Engine) GetLocked(opts GetLockedOptions) (*GetResult, error) {
 			}
 
 			idoc.LockExpiry = lockExpiryTime
+			idoc.Cas = mockdb.GenerateNewCas()
 			return idoc, nil
 		})
 	if err != nil {
@@ -619,9 +635,9 @@ func (e *Engine) Unlock(opts UnlockOptions) (*StoreResult, error) {
 			}
 
 			// Otherwise we simply mark it as no longer locked.
-			// TODO(brett19): Technically unlocking the document should not trigger
-			// the CAS to change.  Though it shouldn't matter much in practice.
 			idoc.LockExpiry = time.Time{}
+			// We intentionally do not update the CAS here as locking has
+			// already changed it and nobody can see it until unlock anyways.
 			return idoc, nil
 		})
 	if err != nil {
@@ -632,4 +648,186 @@ func (e *Engine) Unlock(opts UnlockOptions) (*StoreResult, error) {
 	return &StoreResult{
 		Cas: newDoc.Cas,
 	}, nil
+}
+
+// SubDocOp represents one sub-document operation.
+type SubDocOp struct {
+	Op        memd.SubDocOpType
+	Path      string
+	Value     []byte
+	SdOpFlags memd.SubdocFlag
+}
+
+// SubDocResult represents one result from a sub-document operation.
+type SubDocResult struct {
+	Value []byte
+	Err   error
+}
+
+// MultiLookupOptions specifies options for an SD_MULTILOOKUP operation.
+type MultiLookupOptions struct {
+	Vbucket      uint
+	CollectionID uint
+	Key          []byte
+	Ops          []*SubDocOp
+	SdFlags      memd.SubdocDocFlag
+}
+
+// MultiLookupResult contains the results of a SD_MULTILOOKUP operation.
+type MultiLookupResult struct {
+	Cas uint64
+	Ops []*SubDocResult
+}
+
+func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([]*SubDocResult, error) {
+	opReses := make([]*SubDocResult, len(ops))
+
+	for opIdx, op := range ops {
+		var opRes *SubDocResult
+		var err error
+
+		switch op.Op {
+		case memd.SubDocOpGet:
+			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpGet(op)
+		case memd.SubDocOpExists:
+			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpExists(op)
+		case memd.SubDocOpGetCount:
+			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpGetCount(op)
+		case memd.SubDocOpGetDoc:
+			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpGetDoc(op)
+
+		case memd.SubDocOpDictAdd:
+			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDictAdd(op)
+		case memd.SubDocOpDictSet:
+			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDictSet(op)
+		case memd.SubDocOpDelete:
+			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDelete(op)
+		case memd.SubDocOpReplace:
+			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpReplace(op)
+		case memd.SubDocOpArrayPushLast:
+		case memd.SubDocOpArrayPushFirst:
+		case memd.SubDocOpArrayInsert:
+		case memd.SubDocOpArrayAddUnique:
+		case memd.SubDocOpCounter:
+		case memd.SubDocOpSetDoc:
+		case memd.SubDocOpAddDoc:
+		case memd.SubDocOpDeleteDoc:
+		}
+
+		if err != nil {
+			return nil, err
+		}
+		if opRes == nil {
+			return nil, ErrInternal
+		}
+
+		opReses[opIdx] = opRes
+	}
+
+	return opReses, nil
+}
+
+// MultiLookup performs an SD_MULTILOOKUP operation.
+func (e *Engine) MultiLookup(opts MultiLookupOptions) (*MultiLookupResult, error) {
+	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
+		return nil, err
+	}
+
+	doc, err := e.db.Get(0, opts.Vbucket, opts.CollectionID, opts.Key)
+	if err == mockdb.ErrDocNotFound || doc.IsDeleted {
+		return nil, ErrDocNotFound
+	} else if err != nil {
+		return nil, err
+	}
+
+	if e.docIsLocked(doc) {
+		return nil, ErrLocked
+	}
+
+	sdRes, err := e.executeSdOps(doc, doc, opts.Ops)
+	if err != nil {
+		return nil, err
+	}
+
+	return &MultiLookupResult{
+		Cas: doc.Cas,
+		Ops: sdRes,
+	}, nil
+}
+
+// MultiMutateOptions specifies options for an SD_MULTIMUTATE operation.
+type MultiMutateOptions struct {
+	Vbucket      uint
+	CollectionID uint
+	Key          []byte
+	Ops          []*SubDocOp
+	SdFlags      memd.SubdocDocFlag
+}
+
+// MultiMutateResult contains the results of a SD_MULTIMUTATE operation.
+type MultiMutateResult struct {
+	Cas uint64
+	Ops []*SubDocResult
+}
+
+// MultiMutate performs an SD_MULTIMUTATE operation.
+func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error) {
+	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
+		return nil, err
+	}
+
+	for attemptIdx := 0; attemptIdx < 10; attemptIdx++ {
+		doc, err := e.db.Get(0, opts.Vbucket, opts.CollectionID, opts.Key)
+		if err == mockdb.ErrDocNotFound || doc.IsDeleted {
+			return nil, ErrDocNotFound
+		} else if err != nil {
+			return nil, err
+		}
+
+		if e.docIsLocked(doc) {
+			return nil, ErrLocked
+		}
+
+		newMetaDoc := &mockdb.Document{
+			Cas: mockdb.GenerateNewCas(),
+		}
+
+		sdRes, err := e.executeSdOps(doc, newMetaDoc, opts.Ops)
+		if err != nil {
+			return nil, err
+		}
+
+		newDoc, err := e.db.Update(
+			doc.VbID, doc.CollectionID, doc.Key,
+			func(idoc *mockdb.Document) (*mockdb.Document, error) {
+				if idoc == nil || idoc.IsDeleted {
+					return nil, ErrDocNotFound
+				}
+
+				if e.docIsLocked(idoc) {
+					return nil, ErrLocked
+				}
+
+				if idoc.Cas != doc.Cas {
+					return nil, ErrCasMismatch
+				}
+
+				idoc.Value = doc.Value
+				idoc.Xattrs = doc.Xattrs
+				idoc.Cas = newMetaDoc.Cas
+				return idoc, nil
+			})
+		if err == ErrCasMismatch {
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+
+		return &MultiMutateResult{
+			Cas: newDoc.Cas,
+			Ops: sdRes,
+		}, nil
+	}
+
+	return nil, ErrSdToManyTries
 }

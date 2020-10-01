@@ -156,7 +156,6 @@ func (s *Vbucket) pushDocMutationLocked(doc *Document) *Document {
 	newDoc := copyDocument(doc)
 	newDoc.VbUUID = s.currentUUIDLocked()
 	newDoc.SeqNo = s.nextSeqNoLocked()
-	newDoc.Cas = generateNewCas()
 	newDoc.ModifiedTime = s.chrono.Now()
 
 	s.documents = append(s.documents, newDoc)

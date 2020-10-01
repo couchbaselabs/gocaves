@@ -5,7 +5,8 @@ import "sync/atomic"
 // This ends with CA to make it easier to see it's a CAS.
 var globalCasIncr uint64 = 1
 
-func generateNewCas() uint64 {
+// GenerateNewCas will generate a new CAS to use with a document.
+func GenerateNewCas() uint64 {
 	newVal := atomic.AddUint64(&globalCasIncr, 1)
 	return newVal<<8 | 0xCA
 }

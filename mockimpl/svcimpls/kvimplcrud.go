@@ -26,6 +26,8 @@ func (x *kvImplCrud) Register(h *hookHelper) {
 	h.RegisterKvHandler(memd.CmdGAT, x.handleGATRequest)
 	h.RegisterKvHandler(memd.CmdGetLocked, x.handleGetLockedRequest)
 	h.RegisterKvHandler(memd.CmdUnlockKey, x.handleUnlockRequest)
+	h.RegisterKvHandler(memd.CmdSubDocMultiLookup, x.handleMultiLookupRequest)
+	h.RegisterKvHandler(memd.CmdSubDocMultiMutation, x.handleMultiMutateRequest)
 }
 
 func (x *kvImplCrud) writeStatusReply(source mock.KvClient, pak *memd.Packet, status memd.StatusCode) {
@@ -51,30 +53,49 @@ func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet) *crudproc.
 	return crudproc.New(selectedBucket.Store(), vbOwnership)
 }
 
-func (x *kvImplCrud) writeProcErr(source mock.KvClient, pak *memd.Packet, err error) {
+func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 	// TODO(brett19): Implement special handling for various errors on specific versions.
 
 	switch err {
+	case nil:
+		return memd.StatusSuccess
 	case crudproc.ErrNotSupported:
-		x.writeStatusReply(source, pak, memd.StatusNotSupported)
+		return memd.StatusNotSupported
 	case crudproc.ErrNotMyVbucket:
-		x.writeStatusReply(source, pak, memd.StatusNotMyVBucket)
+		return memd.StatusNotMyVBucket
 	case crudproc.ErrInternal:
-		x.writeStatusReply(source, pak, memd.StatusInternalError)
+		return memd.StatusInternalError
 	case crudproc.ErrDocExists:
-		x.writeStatusReply(source, pak, memd.StatusKeyExists)
+		return memd.StatusKeyExists
 	case crudproc.ErrDocNotFound:
-		x.writeStatusReply(source, pak, memd.StatusKeyNotFound)
+		return memd.StatusKeyNotFound
 	case crudproc.ErrCasMismatch:
-		x.writeStatusReply(source, pak, memd.StatusTmpFail)
+		return memd.StatusTmpFail
 	case crudproc.ErrLocked:
-		x.writeStatusReply(source, pak, memd.StatusLocked)
+		return memd.StatusLocked
 	case crudproc.ErrNotLocked:
-		x.writeStatusReply(source, pak, memd.StatusTmpFail)
-	default:
-		log.Printf("Recieved unexpected crud proc error: %s", err)
-		x.writeStatusReply(source, pak, memd.StatusInternalError)
+		return memd.StatusTmpFail
+	case crudproc.ErrSdToManyTries:
+		// TODO(brett19): Confirm too many sd retries is TMPFAIL.
+		return memd.StatusTmpFail
+	case crudproc.ErrSdNotJSON:
+		return memd.StatusSubDocNotJSON
+	case crudproc.ErrSdPathInvalid:
+		return memd.StatusSubDocPathInvalid
+	case crudproc.ErrSdPathMismatch:
+		return memd.StatusSubDocPathMismatch
+	case crudproc.ErrSdPathNotFound:
+		return memd.StatusSubDocPathNotFound
+	case crudproc.ErrSdPathExists:
+		return memd.StatusSubDocPathExists
 	}
+
+	log.Printf("Recieved unexpected crud proc error: %s", err)
+	return memd.StatusInternalError
+}
+
+func (x *kvImplCrud) writeProcErr(source mock.KvClient, pak *memd.Packet, err error) {
+	x.writeStatusReply(source, pak, x.translateProcErr(err))
 }
 
 func (x *kvImplCrud) handleGetRequest(source mock.KvClient, pak *memd.Packet) {
@@ -544,6 +565,227 @@ func (x *kvImplCrud) handleUnlockRequest(source mock.KvClient, pak *memd.Packet)
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
+		})
+	}
+}
+
+func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Packet) {
+	if proc := x.makeProc(source, pak); proc != nil {
+		var docFlags memd.SubdocDocFlag
+		if len(pak.Extras) >= 1 {
+			docFlags = memd.SubdocDocFlag(pak.Extras[0])
+		}
+
+		ops := make([]*crudproc.SubDocOp, 0)
+		opData := pak.Value
+		for byteIdx := 0; byteIdx < len(opData); byteIdx++ {
+			opCode := memd.SubDocOpType(opData[byteIdx])
+
+			switch opCode {
+			case memd.SubDocOpGet:
+				fallthrough
+			case memd.SubDocOpExists:
+				fallthrough
+			case memd.SubDocOpGetCount:
+				fallthrough
+			case memd.SubDocOpGetDoc:
+				if byteIdx+4 > len(opData) {
+					log.Printf("not enough bytes 1")
+					x.writeProcErr(source, pak, crudproc.ErrInternal)
+					return
+				}
+
+				opFlags := memd.SubdocFlag(opData[byteIdx+1])
+				pathLen := int(binary.BigEndian.Uint16(opData[byteIdx+2:]))
+				if byteIdx+4+pathLen > len(opData) {
+					log.Printf("not enough bytes 2 - %d - %d", byteIdx, pathLen)
+					x.writeProcErr(source, pak, crudproc.ErrInternal)
+					return
+				}
+
+				path := string(opData[byteIdx+4 : byteIdx+4+pathLen])
+
+				ops = append(ops, &crudproc.SubDocOp{
+					Op:        opCode,
+					Path:      path,
+					Value:     nil,
+					SdOpFlags: opFlags,
+				})
+
+				byteIdx += 4 + pathLen - 1
+
+			default:
+				log.Printf("unsupported op type")
+				x.writeProcErr(source, pak, crudproc.ErrNotSupported)
+				return
+			}
+		}
+
+		resp, err := proc.MultiLookup(crudproc.MultiLookupOptions{
+			Vbucket:      uint(pak.Vbucket),
+			CollectionID: uint(pak.CollectionID),
+			Key:          pak.Key,
+			SdFlags:      docFlags,
+			Ops:          ops,
+		})
+		if err != nil {
+			x.writeProcErr(source, pak, err)
+			return
+		}
+
+		valueBytes := make([]byte, 0)
+		for _, opRes := range resp.Ops {
+			opBytes := make([]byte, 6)
+			resStatus := x.translateProcErr(opRes.Err)
+
+			binary.BigEndian.PutUint16(opBytes[0:], uint16(resStatus))
+			binary.BigEndian.PutUint32(opBytes[2:], uint32(len(opRes.Value)))
+			opBytes = append(opBytes, opRes.Value...)
+
+			valueBytes = append(valueBytes, opBytes...)
+		}
+
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: pak.Command,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusSuccess,
+			Cas:     resp.Cas,
+			Value:   valueBytes,
+		})
+	}
+}
+
+func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Packet) {
+	if proc := x.makeProc(source, pak); proc != nil {
+		var docFlags memd.SubdocDocFlag
+		if len(pak.Extras) >= 1 {
+			docFlags = memd.SubdocDocFlag(pak.Extras[0])
+		}
+
+		ops := make([]*crudproc.SubDocOp, 0)
+		opData := pak.Value
+		for byteIdx := 0; byteIdx < len(opData); byteIdx++ {
+			opCode := memd.SubDocOpType(opData[byteIdx])
+
+			switch opCode {
+			case memd.SubDocOpDictAdd:
+				fallthrough
+			case memd.SubDocOpDictSet:
+				fallthrough
+			case memd.SubDocOpDelete:
+				fallthrough
+			case memd.SubDocOpReplace:
+				fallthrough
+			case memd.SubDocOpArrayPushLast:
+				fallthrough
+			case memd.SubDocOpArrayPushFirst:
+				fallthrough
+			case memd.SubDocOpArrayInsert:
+				fallthrough
+			case memd.SubDocOpArrayAddUnique:
+				fallthrough
+			case memd.SubDocOpCounter:
+				fallthrough
+			case memd.SubDocOpSetDoc:
+				fallthrough
+			case memd.SubDocOpAddDoc:
+				fallthrough
+			case memd.SubDocOpDeleteDoc:
+				if byteIdx+8 > len(opData) {
+					log.Printf("not enough bytes 11")
+					x.writeProcErr(source, pak, crudproc.ErrInternal)
+					return
+				}
+
+				opFlags := memd.SubdocFlag(opData[byteIdx+1])
+				pathLen := int(binary.BigEndian.Uint16(opData[byteIdx+2:]))
+				valueLen := int(binary.BigEndian.Uint32(opData[byteIdx+4:]))
+				if byteIdx+8+pathLen+valueLen > len(opData) {
+					log.Printf("not enough bytes 12 - %d - %d", byteIdx, pathLen)
+					x.writeProcErr(source, pak, crudproc.ErrInternal)
+					return
+				}
+
+				path := string(opData[byteIdx+8 : byteIdx+8+pathLen])
+				value := opData[byteIdx+8+pathLen : byteIdx+8+pathLen+valueLen]
+
+				ops = append(ops, &crudproc.SubDocOp{
+					Op:        opCode,
+					Path:      path,
+					Value:     value,
+					SdOpFlags: opFlags,
+				})
+
+				byteIdx += 8 + pathLen + valueLen - 1
+
+			default:
+				log.Printf("unsupported op type")
+				x.writeProcErr(source, pak, crudproc.ErrInternal)
+				return
+			}
+		}
+
+		resp, err := proc.MultiMutate(crudproc.MultiMutateOptions{
+			Vbucket:      uint(pak.Vbucket),
+			CollectionID: uint(pak.CollectionID),
+			Key:          pak.Key,
+			SdFlags:      docFlags,
+			Ops:          ops,
+		})
+		if err != nil {
+			x.writeProcErr(source, pak, err)
+			return
+		}
+
+		failedOpIdx := -1
+		for opIdx, opRes := range resp.Ops {
+			if opRes.Err != nil {
+				failedOpIdx = opIdx
+			}
+		}
+
+		if failedOpIdx >= 0 {
+			resStatus := x.translateProcErr(resp.Ops[failedOpIdx].Err)
+
+			valueBytes := make([]byte, 3)
+			valueBytes[0] = uint8(failedOpIdx)
+			binary.BigEndian.PutUint16(valueBytes[1:], uint16(resStatus))
+
+			// TODO(brett19): Confirm that sub-document errors return 0 CAS.
+			source.WritePacket(&memd.Packet{
+				Magic:   memd.CmdMagicRes,
+				Command: pak.Command,
+				Opaque:  pak.Opaque,
+				Status:  memd.StatusSubDocBadMulti,
+				Cas:     0,
+				Value:   valueBytes,
+			})
+			return
+		}
+
+		valueBytes := make([]byte, 0)
+		for opIdx, opRes := range resp.Ops {
+			if opRes.Err == nil {
+				opBytes := make([]byte, 7)
+				resStatus := x.translateProcErr(opRes.Err)
+
+				opBytes[0] = uint8(opIdx)
+				binary.BigEndian.PutUint16(opBytes[1:], uint16(resStatus))
+				binary.BigEndian.PutUint32(opBytes[3:], uint32(len(opRes.Value)))
+				opBytes = append(opBytes, opRes.Value...)
+
+				valueBytes = append(valueBytes, opBytes...)
+			}
+		}
+
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: pak.Command,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusSuccess,
+			Cas:     resp.Cas,
+			Value:   valueBytes,
 		})
 	}
 }
