@@ -2,7 +2,9 @@ package crudproc
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 )
 
 // SubDocPathComponent represents one part of a sub-document path.
@@ -11,8 +13,31 @@ type SubDocPathComponent struct {
 	ArrayIndex int
 }
 
-// ParsePath takes a sub-document path and splits it into components.
-func ParsePath(path string) ([]SubDocPathComponent, error) {
+// StringifySubDocPath takes a list of components and stringify's it.
+func StringifySubDocPath(comps []SubDocPathComponent) string {
+	outStr := ""
+	for _, comp := range comps {
+		if comp.Path != "" {
+			escapedPath := comp.Path
+			escapedPath = strings.ReplaceAll(escapedPath, "\\", "\\\\")
+			escapedPath = strings.ReplaceAll(escapedPath, ".", "\\.")
+			escapedPath = strings.ReplaceAll(escapedPath, "[", "\\[")
+			escapedPath = strings.ReplaceAll(escapedPath, "]", "\\]")
+			escapedPath = strings.ReplaceAll(escapedPath, "`", "\\`")
+			if outStr == "" {
+				outStr += escapedPath
+			} else {
+				outStr += fmt.Sprintf(".%s", escapedPath)
+			}
+		} else {
+			outStr += fmt.Sprintf("[%d]", comp.ArrayIndex)
+		}
+	}
+	return outStr
+}
+
+// ParseSubDocPath takes a sub-document path and splits it into components.
+func ParseSubDocPath(path string) ([]SubDocPathComponent, error) {
 	parts := make([]SubDocPathComponent, 0)
 	compBuffer := ""
 

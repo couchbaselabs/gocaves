@@ -7,7 +7,7 @@ import (
 )
 
 func testOnePath(t *testing.T, path string, output []SubDocPathComponent) {
-	paths, err := ParsePath(path)
+	paths, err := ParseSubDocPath(path)
 	if err != nil {
 		t.Fatalf("failed to parse path `%s`: %s", path, err)
 	}

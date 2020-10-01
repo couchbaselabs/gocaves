@@ -63,7 +63,7 @@ func (m *subDocManip) GetByPath(path string, createPath, createLast bool) (*subD
 		return m, nil
 	}
 
-	pathComps, err := ParsePath(path)
+	pathComps, err := ParseSubDocPath(path)
 	if err != nil {
 		return nil, ErrSdPathInvalid
 	}
@@ -151,9 +151,19 @@ func (m *subDocManip) Replace(val interface{}) error {
 		typedRoot[typedPath] = val
 		return nil
 	case int:
-		return ErrSdPathMismatch
+		typedRoot := m.root.([]interface{})
+		if typedPath < 0 {
+			typedRoot[len(typedRoot)+typedPath] = val
+			return nil
+		}
+		if typedPath >= len(typedRoot) {
+			return ErrSdPathNotFound
+		}
+		typedRoot[typedPath] = val
+		return nil
 	case nil:
-		return ErrSdPathMismatch
+		m.root = val
+		return nil
 	default:
 		return errors.New("unexpected path type")
 	}
@@ -168,21 +178,6 @@ func (m *subDocManip) Insert(val interface{}) error {
 		}
 
 		typedRoot[typedPath] = val
-		return nil
-	case int:
-		return ErrSdPathMismatch
-	case nil:
-		return ErrSdPathMismatch
-	default:
-		return errors.New("unexpected path type")
-	}
-}
-
-func (m *subDocManip) Remove() error {
-	switch typedPath := m.path.(type) {
-	case string:
-		typedRoot := m.root.(map[string]interface{})
-		delete(typedRoot, typedPath)
 		return nil
 	case int:
 		return ErrSdPathMismatch

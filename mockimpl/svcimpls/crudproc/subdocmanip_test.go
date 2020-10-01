@@ -33,16 +33,6 @@ func TestSubdocManipObj(t *testing.T) {
 	docJSON2, err := docRoot.GetJSON()
 	assert.NoError(t, err)
 	assert.Equal(t, docJSON2, []byte(`{"a":{"b":{"c":"bar"},"d":{"e":"baz"}}}`))
-
-	ab, err := docRoot.GetByPath("a.b", false, false)
-	assert.NoError(t, err)
-
-	err = ab.Remove()
-	assert.NoError(t, err)
-
-	docJSON3, err := docRoot.GetJSON()
-	assert.NoError(t, err)
-	assert.Equal(t, docJSON3, []byte(`{"a":{"d":{"e":"baz"}}}`))
 }
 
 func TestSubdocManipArr(t *testing.T) {

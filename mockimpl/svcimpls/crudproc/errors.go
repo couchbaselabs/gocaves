@@ -18,4 +18,5 @@ var (
 	ErrSdPathMismatch = errors.New("subdocument path mismatch")
 	ErrSdPathNotFound = errors.New("subdocument path not found")
 	ErrSdPathExists   = errors.New("subdocument path exists")
+	ErrSdCantInsert   = errors.New("subdocument cant insert")
 )

@@ -3,6 +3,7 @@ package crudproc
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/couchbase/gocbcore/v9/memd"
@@ -695,54 +696,6 @@ type MultiLookupResult struct {
 	Ops []*SubDocResult
 }
 
-func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([]*SubDocResult, error) {
-	opReses := make([]*SubDocResult, len(ops))
-
-	for opIdx, op := range ops {
-		var opRes *SubDocResult
-		var err error
-
-		switch op.Op {
-		case memd.SubDocOpGet:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpGet(op)
-		case memd.SubDocOpExists:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpExists(op)
-		case memd.SubDocOpGetCount:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpGetCount(op)
-		case memd.SubDocOpGetDoc:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpGetDoc(op)
-
-		case memd.SubDocOpDictAdd:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDictAdd(op)
-		case memd.SubDocOpDictSet:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDictSet(op)
-		case memd.SubDocOpDelete:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDelete(op)
-		case memd.SubDocOpReplace:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpReplace(op)
-		case memd.SubDocOpArrayPushLast:
-		case memd.SubDocOpArrayPushFirst:
-		case memd.SubDocOpArrayInsert:
-		case memd.SubDocOpArrayAddUnique:
-		case memd.SubDocOpCounter:
-		case memd.SubDocOpSetDoc:
-		case memd.SubDocOpAddDoc:
-		case memd.SubDocOpDeleteDoc:
-		}
-
-		if err != nil {
-			return nil, err
-		}
-		if opRes == nil {
-			return nil, ErrInternal
-		}
-
-		opReses[opIdx] = opRes
-	}
-
-	return opReses, nil
-}
-
 // MultiLookup performs an SD_MULTILOOKUP operation.
 func (e *Engine) MultiLookup(opts MultiLookupOptions) (*MultiLookupResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
@@ -795,13 +748,42 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		return nil, err
 	}
 
+	// Some doc options imply path options.
+	if opts.CreateIfMissing || opts.CreateOnly {
+		for opIdx := range opts.Ops {
+			opts.Ops[opIdx].CreatePath = true
+		}
+	}
+
 	for attemptIdx := 0; attemptIdx < 10; attemptIdx++ {
 		mdoc := &mockdb.Document{
 			VbID:         opts.Vbucket,
 			CollectionID: opts.CollectionID,
 			Key:          opts.Key,
-			Value:        []byte(`{}`),
+			Value:        nil,
 			Cas:          0,
+		}
+
+		// We need to dynamically decide what the root of the document
+		// needs to look like based on the operations that exist.
+		for _, op := range opts.Ops {
+			if !op.IsXattrPath {
+				trimmedPath := strings.TrimSpace(op.Path)
+				if trimmedPath == "" {
+					switch op.Op {
+					case memd.SubDocOpArrayPushFirst:
+						fallthrough
+					case memd.SubDocOpArrayPushLast:
+						fallthrough
+					case memd.SubDocOpArrayAddUnique:
+						mdoc.Value = []byte("[]")
+					}
+				} else if trimmedPath[0] == '[' {
+					mdoc.Value = []byte("[]")
+				} else {
+					mdoc.Value = []byte("{}")
+				}
+			}
 		}
 
 		doc, err := e.db.Get(0, mdoc.VbID, mdoc.CollectionID, mdoc.Key)
