@@ -195,12 +195,22 @@ func (x *kvImplCrud) handleAddRequest(source mock.KvClient, pak *memd.Packet) {
 			return
 		}
 
+		extrasBuf := make([]byte, 0)
+		// TODO(brett19): Implement feature checking for mutation tokens.
+		if true {
+			mtBuf := make([]byte, 16)
+			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
+			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
+			extrasBuf = append(extrasBuf, mtBuf...)
+		}
+
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
+			Extras:  extrasBuf,
 		})
 	}
 }
@@ -230,12 +240,22 @@ func (x *kvImplCrud) handleSetRequest(source mock.KvClient, pak *memd.Packet) {
 			return
 		}
 
+		extrasBuf := make([]byte, 0)
+		// TODO(brett19): Implement feature checking for mutation tokens.
+		if true {
+			mtBuf := make([]byte, 16)
+			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
+			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
+			extrasBuf = append(extrasBuf, mtBuf...)
+		}
+
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
+			Extras:  extrasBuf,
 		})
 	}
 }
@@ -265,12 +285,22 @@ func (x *kvImplCrud) handleReplaceRequest(source mock.KvClient, pak *memd.Packet
 			return
 		}
 
+		extrasBuf := make([]byte, 0)
+		// TODO(brett19): Implement feature checking for mutation tokens.
+		if true {
+			mtBuf := make([]byte, 16)
+			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
+			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
+			extrasBuf = append(extrasBuf, mtBuf...)
+		}
+
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
+			Extras:  extrasBuf,
 		})
 	}
 }
@@ -293,12 +323,22 @@ func (x *kvImplCrud) handleDeleteRequest(source mock.KvClient, pak *memd.Packet)
 			return
 		}
 
+		extrasBuf := make([]byte, 0)
+		// TODO(brett19): Implement feature checking for mutation tokens.
+		if true {
+			mtBuf := make([]byte, 16)
+			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
+			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
+			extrasBuf = append(extrasBuf, mtBuf...)
+		}
+
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
+			Extras:  extrasBuf,
 		})
 	}
 }
@@ -331,6 +371,15 @@ func (x *kvImplCrud) handleIncrementRequest(source mock.KvClient, pak *memd.Pack
 		valueBuf := make([]byte, 8)
 		binary.BigEndian.PutUint64(valueBuf[0:], resp.Value)
 
+		extrasBuf := make([]byte, 0)
+		// TODO(brett19): Implement feature checking for mutation tokens.
+		if true {
+			mtBuf := make([]byte, 16)
+			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
+			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
+			extrasBuf = append(extrasBuf, mtBuf...)
+		}
+
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
@@ -338,6 +387,7 @@ func (x *kvImplCrud) handleIncrementRequest(source mock.KvClient, pak *memd.Pack
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
 			Value:   valueBuf,
+			Extras:  extrasBuf,
 		})
 	}
 }
@@ -370,6 +420,15 @@ func (x *kvImplCrud) handleDecrementRequest(source mock.KvClient, pak *memd.Pack
 		valueBuf := make([]byte, 8)
 		binary.BigEndian.PutUint64(valueBuf[0:], resp.Value)
 
+		extrasBuf := make([]byte, 0)
+		// TODO(brett19): Implement feature checking for mutation tokens.
+		if true {
+			mtBuf := make([]byte, 16)
+			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
+			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
+			extrasBuf = append(extrasBuf, mtBuf...)
+		}
+
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
@@ -377,6 +436,7 @@ func (x *kvImplCrud) handleDecrementRequest(source mock.KvClient, pak *memd.Pack
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
 			Value:   valueBuf,
+			Extras:  extrasBuf,
 		})
 	}
 }
@@ -401,12 +461,22 @@ func (x *kvImplCrud) handleAppendRequest(source mock.KvClient, pak *memd.Packet)
 			return
 		}
 
+		extrasBuf := make([]byte, 0)
+		// TODO(brett19): Implement feature checking for mutation tokens.
+		if true {
+			mtBuf := make([]byte, 16)
+			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
+			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
+			extrasBuf = append(extrasBuf, mtBuf...)
+		}
+
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
+			Extras:  extrasBuf,
 		})
 	}
 }
@@ -431,12 +501,22 @@ func (x *kvImplCrud) handlePrependRequest(source mock.KvClient, pak *memd.Packet
 			return
 		}
 
+		extrasBuf := make([]byte, 0)
+		// TODO(brett19): Implement feature checking for mutation tokens.
+		if true {
+			mtBuf := make([]byte, 16)
+			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
+			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
+			extrasBuf = append(extrasBuf, mtBuf...)
+		}
+
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
+			Extras:  extrasBuf,
 		})
 	}
 }
@@ -461,12 +541,22 @@ func (x *kvImplCrud) handleTouchRequest(source mock.KvClient, pak *memd.Packet) 
 			return
 		}
 
+		extrasBuf := make([]byte, 0)
+		// TODO(brett19): Implement feature checking for mutation tokens.
+		if true {
+			mtBuf := make([]byte, 16)
+			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
+			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
+			extrasBuf = append(extrasBuf, mtBuf...)
+		}
+
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
+			Extras:  extrasBuf,
 		})
 	}
 }
@@ -561,12 +651,22 @@ func (x *kvImplCrud) handleUnlockRequest(source mock.KvClient, pak *memd.Packet)
 			return
 		}
 
+		extrasBuf := make([]byte, 0)
+		// TODO(brett19): Implement feature checking for mutation tokens.
+		if true {
+			mtBuf := make([]byte, 16)
+			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
+			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
+			extrasBuf = append(extrasBuf, mtBuf...)
+		}
+
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
+			Extras:  extrasBuf,
 		})
 	}
 }
@@ -786,6 +886,15 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			}
 		}
 
+		extrasBuf := make([]byte, 0)
+		// TODO(brett19): Implement feature checking for mutation tokens.
+		if true {
+			mtBuf := make([]byte, 16)
+			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
+			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
+			extrasBuf = append(extrasBuf, mtBuf...)
+		}
+
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
@@ -793,6 +902,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			Status:  memd.StatusSuccess,
 			Cas:     resp.Cas,
 			Value:   valueBytes,
+			Extras:  extrasBuf,
 		})
 	}
 }

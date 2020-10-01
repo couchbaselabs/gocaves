@@ -95,7 +95,9 @@ type StoreOptions struct {
 
 // StoreResult contains the results for various store operations.
 type StoreResult struct {
-	Cas uint64
+	Cas    uint64
+	VbUUID uint64
+	SeqNo  uint64
 }
 
 // Add performs an ADD operation.
@@ -124,9 +126,10 @@ func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 		return nil, ErrInternal
 	}
 
-	// TODO(brett19): Return mutation tokens with ADD responses.
 	return &StoreResult{
-		Cas: newDoc.Cas,
+		Cas:    newDoc.Cas,
+		VbUUID: newDoc.VbUUID,
+		SeqNo:  newDoc.SeqNo,
 	}, nil
 }
 
@@ -188,9 +191,10 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 		return nil, err
 	}
 
-	// TODO(brett19): Return mutation tokens with SET responses.
 	return &StoreResult{
-		Cas: newDoc.Cas,
+		Cas:    newDoc.Cas,
+		VbUUID: newDoc.VbUUID,
+		SeqNo:  newDoc.SeqNo,
 	}, nil
 }
 
@@ -239,9 +243,10 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 		return nil, err
 	}
 
-	// TODO(brett19): Return mutation tokens with REPLACE responses.
 	return &StoreResult{
-		Cas: newDoc.Cas,
+		Cas:    newDoc.Cas,
+		VbUUID: newDoc.VbUUID,
+		SeqNo:  newDoc.SeqNo,
 	}, nil
 }
 
@@ -255,7 +260,9 @@ type DeleteOptions struct {
 
 // DeleteResult contains the results of a DELETE operation.
 type DeleteResult struct {
-	Cas uint64
+	Cas    uint64
+	VbUUID uint64
+	SeqNo  uint64
 }
 
 // Delete performs an DELETE operation.
@@ -297,9 +304,10 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 		return nil, err
 	}
 
-	// TODO(brett19): Return mutation tokens with DELETE responses.
 	return &DeleteResult{
-		Cas: newDoc.Cas,
+		Cas:    newDoc.Cas,
+		VbUUID: newDoc.VbUUID,
+		SeqNo:  newDoc.SeqNo,
 	}, nil
 }
 
@@ -316,8 +324,10 @@ type CounterOptions struct {
 
 // CounterResult contains the results of a INCREMENT or DECREMENT operation.
 type CounterResult struct {
-	Cas   uint64
-	Value uint64
+	Cas    uint64
+	Value  uint64
+	VbUUID uint64
+	SeqNo  uint64
 }
 
 func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, error) {
@@ -396,10 +406,11 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 
 	docValue, _ := strconv.ParseUint(string(newDoc.Value), 10, 64)
 
-	// TODO(brett19): Return mutation tokens with a INCREMENT/DECREMENT responses.
 	return &CounterResult{
-		Cas:   newDoc.Cas,
-		Value: docValue,
+		Cas:    newDoc.Cas,
+		Value:  docValue,
+		VbUUID: newDoc.VbUUID,
+		SeqNo:  newDoc.SeqNo,
 	}, nil
 }
 
@@ -456,9 +467,10 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 		return nil, err
 	}
 
-	// TODO(brett19): Return mutation tokens with APPEND/PREPEND responses.
 	return &StoreResult{
-		Cas: newDoc.Cas,
+		Cas:    newDoc.Cas,
+		VbUUID: newDoc.VbUUID,
+		SeqNo:  newDoc.SeqNo,
 	}, nil
 }
 
@@ -487,21 +499,39 @@ func (e *Engine) Touch(opts TouchOptions) (*StoreResult, error) {
 		return nil, err
 	}
 
-	// We cheat for now.
-	resp, err := e.GetAndTouch(GetAndTouchOptions{
-		ReplicaIdx:   opts.ReplicaIdx,
-		Vbucket:      opts.Vbucket,
+	doc := &mockdb.Document{
+		VbID:         opts.Vbucket,
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
-		Expiry:       opts.Expiry,
-	})
+		Expiry:       e.parseExpiry(opts.Expiry),
+		Cas:          mockdb.GenerateNewCas(),
+	}
+
+	newDoc, err := e.db.Update(
+		doc.VbID, doc.CollectionID, doc.Key,
+		func(idoc *mockdb.Document) (*mockdb.Document, error) {
+			if idoc == nil || idoc.IsDeleted {
+				return nil, ErrDocNotFound
+			}
+
+			if e.docIsLocked(idoc) {
+				return nil, ErrLocked
+			}
+
+			// Otherwise we simply update the value
+			idoc.Expiry = doc.Expiry
+			idoc.LockExpiry = doc.LockExpiry
+			idoc.Cas = doc.Cas
+			return idoc, nil
+		})
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO(brett19): Return mutation tokens with TOUCH responses.
 	return &StoreResult{
-		Cas: resp.Cas,
+		Cas:    newDoc.Cas,
+		VbUUID: newDoc.VbUUID,
+		SeqNo:  newDoc.SeqNo,
 	}, err
 }
 
@@ -549,7 +579,6 @@ func (e *Engine) GetAndTouch(opts GetAndTouchOptions) (*GetResult, error) {
 		return nil, err
 	}
 
-	// TODO(brett19): Return mutation tokens with GET_AND_TOUCH responses.
 	return &GetResult{
 		Cas:      newDoc.Cas,
 		Datatype: newDoc.Datatype,
@@ -659,9 +688,10 @@ func (e *Engine) Unlock(opts UnlockOptions) (*StoreResult, error) {
 		return nil, err
 	}
 
-	// TODO(brett19): Return mutation tokens with UNLOCK responses.
 	return &StoreResult{
-		Cas: newDoc.Cas,
+		Cas:    newDoc.Cas,
+		VbUUID: newDoc.VbUUID,
+		SeqNo:  newDoc.SeqNo,
 	}, nil
 }
 
@@ -738,8 +768,10 @@ type MultiMutateOptions struct {
 
 // MultiMutateResult contains the results of a SD_MULTIMUTATE operation.
 type MultiMutateResult struct {
-	Cas uint64
-	Ops []*SubDocResult
+	Cas    uint64
+	Ops    []*SubDocResult
+	VbUUID uint64
+	SeqNo  uint64
 }
 
 // MultiMutate performs an SD_MULTIMUTATE operation.
@@ -864,8 +896,10 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		}
 
 		return &MultiMutateResult{
-			Cas: newDoc.Cas,
-			Ops: sdRes,
+			Cas:    newDoc.Cas,
+			Ops:    sdRes,
+			VbUUID: newDoc.VbUUID,
+			SeqNo:  newDoc.SeqNo,
 		}, nil
 	}
 
