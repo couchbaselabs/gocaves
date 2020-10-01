@@ -31,10 +31,14 @@ func (e *Engine) Get(opts GetOptions) (*GetResult, error) {
 	}
 
 	doc, err := e.db.Get(0, opts.Vbucket, opts.CollectionID, opts.Key)
-	if err == mockdb.ErrDocNotFound || doc.IsDeleted {
+	if err == mockdb.ErrDocNotFound {
 		return nil, ErrDocNotFound
 	} else if err != nil {
 		return nil, err
+	}
+
+	if doc.IsDeleted {
+		return nil, ErrDocNotFound
 	}
 
 	if e.docIsLocked(doc) {
@@ -58,10 +62,14 @@ func (e *Engine) GetReplica(opts GetOptions) (*GetResult, error) {
 	}
 
 	doc, err := e.db.Get(uint(repIdx), opts.Vbucket, opts.CollectionID, opts.Key)
-	if err == mockdb.ErrDocNotFound || doc.IsDeleted {
+	if err == mockdb.ErrDocNotFound {
 		return nil, ErrDocNotFound
 	} else if err != nil {
 		return nil, err
+	}
+
+	if doc.IsDeleted {
+		return nil, ErrDocNotFound
 	}
 
 	return &GetResult{
@@ -171,6 +179,7 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
 			idoc.Expiry = doc.Expiry
+			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
@@ -221,6 +230,7 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
 			idoc.Expiry = doc.Expiry
+			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
@@ -278,6 +288,7 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 
 			// Otherwise we simply update the value
 			idoc.IsDeleted = true
+			idoc.LockExpiry = time.Time{}
 			idoc.Cas = mockdb.GenerateNewCas()
 			return idoc, nil
 		})
@@ -374,6 +385,7 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
 			idoc.Expiry = doc.Expiry
+			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
@@ -435,6 +447,7 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 				idoc.Value = append(doc.Value, idoc.Value...)
 			}
 
+			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
@@ -527,6 +540,7 @@ func (e *Engine) GetAndTouch(opts GetAndTouchOptions) (*GetResult, error) {
 
 			// Otherwise we simply update the value
 			idoc.Expiry = doc.Expiry
+			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
@@ -652,10 +666,12 @@ func (e *Engine) Unlock(opts UnlockOptions) (*StoreResult, error) {
 
 // SubDocOp represents one sub-document operation.
 type SubDocOp struct {
-	Op        memd.SubDocOpType
-	Path      string
-	Value     []byte
-	SdOpFlags memd.SubdocFlag
+	Op           memd.SubDocOpType
+	Path         string
+	Value        []byte
+	CreatePath   bool
+	IsXattrPath  bool
+	ExpandMacros bool
 }
 
 // SubDocResult represents one result from a sub-document operation.
@@ -666,11 +682,11 @@ type SubDocResult struct {
 
 // MultiLookupOptions specifies options for an SD_MULTILOOKUP operation.
 type MultiLookupOptions struct {
-	Vbucket      uint
-	CollectionID uint
-	Key          []byte
-	Ops          []*SubDocOp
-	SdFlags      memd.SubdocDocFlag
+	Vbucket       uint
+	CollectionID  uint
+	Key           []byte
+	Ops           []*SubDocOp
+	AccessDeleted bool
 }
 
 // MultiLookupResult contains the results of a SD_MULTILOOKUP operation.
@@ -757,11 +773,14 @@ func (e *Engine) MultiLookup(opts MultiLookupOptions) (*MultiLookupResult, error
 
 // MultiMutateOptions specifies options for an SD_MULTIMUTATE operation.
 type MultiMutateOptions struct {
-	Vbucket      uint
-	CollectionID uint
-	Key          []byte
-	Ops          []*SubDocOp
-	SdFlags      memd.SubdocDocFlag
+	Vbucket         uint
+	CollectionID    uint
+	Key             []byte
+	Ops             []*SubDocOp
+	AccessDeleted   bool
+	CreateAsDeleted bool
+	CreateIfMissing bool
+	CreateOnly      bool
 }
 
 // MultiMutateResult contains the results of a SD_MULTIMUTATE operation.
@@ -777,11 +796,41 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 	}
 
 	for attemptIdx := 0; attemptIdx < 10; attemptIdx++ {
-		doc, err := e.db.Get(0, opts.Vbucket, opts.CollectionID, opts.Key)
-		if err == mockdb.ErrDocNotFound || doc.IsDeleted {
-			return nil, ErrDocNotFound
+		mdoc := &mockdb.Document{
+			VbID:         opts.Vbucket,
+			CollectionID: opts.CollectionID,
+			Key:          opts.Key,
+			Value:        []byte(`{}`),
+			Cas:          0,
+		}
+
+		doc, err := e.db.Get(0, mdoc.VbID, mdoc.CollectionID, mdoc.Key)
+		if err == mockdb.ErrDocNotFound {
+			if !opts.CreateIfMissing && !opts.CreateOnly {
+				return nil, ErrDocNotFound
+			}
 		} else if err != nil {
 			return nil, err
+		}
+
+		if opts.CreateOnly && doc != nil && !doc.IsDeleted {
+			return nil, ErrDocExists
+		}
+
+		if opts.CreateIfMissing || opts.CreateOnly {
+			if doc == nil {
+				doc = mdoc
+			} else if doc.IsDeleted {
+				doc.IsDeleted = false
+			}
+		}
+
+		if doc == nil {
+			return nil, ErrDocNotFound
+		}
+
+		if doc.IsDeleted && !opts.AccessDeleted {
+			return nil, ErrDocNotFound
 		}
 
 		if e.docIsLocked(doc) {
@@ -800,20 +849,29 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		newDoc, err := e.db.Update(
 			doc.VbID, doc.CollectionID, doc.Key,
 			func(idoc *mockdb.Document) (*mockdb.Document, error) {
-				if idoc == nil || idoc.IsDeleted {
-					return nil, ErrDocNotFound
+				if idoc == nil {
+					// Check if our source document existed or not
+					if doc.Cas != 0 {
+						// IsDeleted will be handled below as part of cas check.
+						return nil, ErrDocNotFound
+					}
+
+					idoc = doc
+				} else {
+					if e.docIsLocked(idoc) {
+						return nil, ErrLocked
+					}
+
+					if idoc.Cas != doc.Cas {
+						return nil, ErrCasMismatch
+					}
+
+					idoc.Value = doc.Value
+					idoc.Xattrs = doc.Xattrs
+					idoc.IsDeleted = doc.IsDeleted
 				}
 
-				if e.docIsLocked(idoc) {
-					return nil, ErrLocked
-				}
-
-				if idoc.Cas != doc.Cas {
-					return nil, ErrCasMismatch
-				}
-
-				idoc.Value = doc.Value
-				idoc.Xattrs = doc.Xattrs
+				idoc.LockExpiry = newMetaDoc.LockExpiry
 				idoc.Cas = newMetaDoc.Cas
 				return idoc, nil
 			})

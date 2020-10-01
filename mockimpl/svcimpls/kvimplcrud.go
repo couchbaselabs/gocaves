@@ -606,10 +606,10 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 				path := string(opData[byteIdx+4 : byteIdx+4+pathLen])
 
 				ops = append(ops, &crudproc.SubDocOp{
-					Op:        opCode,
-					Path:      path,
-					Value:     nil,
-					SdOpFlags: opFlags,
+					Op:          opCode,
+					Path:        path,
+					Value:       nil,
+					IsXattrPath: opFlags&memd.SubdocFlagXattrPath != 0,
 				})
 
 				byteIdx += 4 + pathLen - 1
@@ -622,11 +622,11 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 		}
 
 		resp, err := proc.MultiLookup(crudproc.MultiLookupOptions{
-			Vbucket:      uint(pak.Vbucket),
-			CollectionID: uint(pak.CollectionID),
-			Key:          pak.Key,
-			SdFlags:      docFlags,
-			Ops:          ops,
+			Vbucket:       uint(pak.Vbucket),
+			CollectionID:  uint(pak.CollectionID),
+			Key:           pak.Key,
+			AccessDeleted: docFlags&memd.SubdocDocFlagAccessDeleted != 0,
+			Ops:           ops,
 		})
 		if err != nil {
 			x.writeProcErr(source, pak, err)
@@ -711,10 +711,12 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 				value := opData[byteIdx+8+pathLen : byteIdx+8+pathLen+valueLen]
 
 				ops = append(ops, &crudproc.SubDocOp{
-					Op:        opCode,
-					Path:      path,
-					Value:     value,
-					SdOpFlags: opFlags,
+					Op:           opCode,
+					Path:         path,
+					Value:        value,
+					CreatePath:   opFlags&memd.SubdocFlagMkDirP != 0,
+					IsXattrPath:  opFlags&memd.SubdocFlagXattrPath != 0,
+					ExpandMacros: opFlags&memd.SubdocFlagExpandMacros != 0,
 				})
 
 				byteIdx += 8 + pathLen + valueLen - 1
@@ -727,11 +729,14 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 		}
 
 		resp, err := proc.MultiMutate(crudproc.MultiMutateOptions{
-			Vbucket:      uint(pak.Vbucket),
-			CollectionID: uint(pak.CollectionID),
-			Key:          pak.Key,
-			SdFlags:      docFlags,
-			Ops:          ops,
+			Vbucket:         uint(pak.Vbucket),
+			CollectionID:    uint(pak.CollectionID),
+			Key:             pak.Key,
+			AccessDeleted:   docFlags&memd.SubdocDocFlagAccessDeleted != 0,
+			CreateAsDeleted: docFlags&memd.SubdocDocFlagCreateAsDeleted != 0,
+			CreateIfMissing: docFlags&memd.SubdocDocFlagMkDoc != 0,
+			CreateOnly:      docFlags&memd.SubdocDocFlagAddDoc != 0,
+			Ops:             ops,
 		})
 		if err != nil {
 			x.writeProcErr(source, pak, err)

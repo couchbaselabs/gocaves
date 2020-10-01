@@ -80,12 +80,17 @@ func (e SubDocExecutor) executeSdOpGetCount(op *SubDocOp) (*SubDocResult, error)
 		return e.itemErrorResult(err)
 	}
 
-	arrData, isArr := pathData.([]interface{})
-	if !isArr {
+	elemCount := 0
+	switch typedPathData := pathData.(type) {
+	case []interface{}:
+		elemCount = len(typedPathData)
+	case map[string]interface{}:
+		elemCount = len(typedPathData)
+	default:
 		return e.itemErrorResult(ErrSdPathMismatch)
 	}
 
-	countBytes := []byte(fmt.Sprintf("%d", len(arrData)))
+	countBytes := []byte(fmt.Sprintf("%d", elemCount))
 
 	return &SubDocResult{
 		Value: countBytes,
@@ -106,7 +111,7 @@ func (e SubDocExecutor) executeSdOpDictSet(op *SubDocOp) (*SubDocResult, error) 
 		return e.itemErrorResult(err)
 	}
 
-	pathVal, err := docVal.GetByPath(op.Path, false, false)
+	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, true)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
@@ -139,7 +144,7 @@ func (e SubDocExecutor) executeSdOpDictAdd(op *SubDocOp) (*SubDocResult, error) 
 		return e.itemErrorResult(err)
 	}
 
-	pathVal, err := docVal.GetByPath(op.Path, false, false)
+	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, false)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
@@ -172,7 +177,7 @@ func (e SubDocExecutor) executeSdOpReplace(op *SubDocOp) (*SubDocResult, error) 
 		return e.itemErrorResult(err)
 	}
 
-	pathVal, err := docVal.GetByPath(op.Path, false, false)
+	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, false)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
@@ -205,7 +210,7 @@ func (e SubDocExecutor) executeSdOpDelete(op *SubDocOp) (*SubDocResult, error) {
 		return e.itemErrorResult(err)
 	}
 
-	pathVal, err := docVal.GetByPath(op.Path, false, true)
+	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, true)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}

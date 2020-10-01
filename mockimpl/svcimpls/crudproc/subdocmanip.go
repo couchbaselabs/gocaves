@@ -59,6 +59,10 @@ func (m *subDocManip) getByPathComp(comp *SubDocPathComponent, createPath bool) 
 }
 
 func (m *subDocManip) GetByPath(path string, createPath, createLast bool) (*subDocManip, error) {
+	if path == "" {
+		return m, nil
+	}
+
 	pathComps, err := ParsePath(path)
 	if err != nil {
 		return nil, ErrSdPathInvalid
