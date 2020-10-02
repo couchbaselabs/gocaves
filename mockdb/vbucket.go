@@ -70,12 +70,14 @@ type Vbucket struct {
 	documents      []*Document
 	maxSeqNo       uint64
 	replicaLatency time.Duration
+	persistLatency time.Duration
 	revData        []VbRevData
 }
 
 type newVbucketOptions struct {
 	Chrono         *mocktime.Chrono
 	ReplicaLatency time.Duration
+	PersistLatency time.Duration
 }
 
 func newVbucket(opts newVbucketOptions) (*Vbucket, error) {
@@ -89,6 +91,7 @@ func newVbucket(opts newVbucketOptions) (*Vbucket, error) {
 	return &Vbucket{
 		chrono:         opts.Chrono,
 		replicaLatency: opts.ReplicaLatency,
+		persistLatency: opts.PersistLatency,
 		revData:        revData,
 	}, nil
 }
@@ -120,7 +123,7 @@ func (s *Vbucket) findDocLocked(repIdx, collectionID uint, key []byte) *Document
 
 	var foundDoc *Document
 	for _, doc := range s.documents {
-		if repIdx > 0 && doc.ModifiedTime.After(repVisibleTime) {
+		if repIdx > 0 && !doc.ModifiedTime.Before(repVisibleTime) {
 			continue
 		}
 
@@ -163,13 +166,49 @@ func (s *Vbucket) pushDocMutationLocked(doc *Document) *Document {
 	return copyDocument(newDoc)
 }
 
-// MaxSeqNo returns the current maximum sequence number in
-// this particular vbucket.
-func (s *Vbucket) MaxSeqNo() uint64 {
+// VbMetaState holds some information about the meta-state of a vbucket.
+type VbMetaState struct {
+	VbUUID       uint64
+	CurrentSeqNo uint64
+	PersistSeqNo uint64
+}
+
+// CurrentMetaState returns the current sequence numbering information.  Returns
+// the vbuuid, seqno and persistSeqno.
+func (s *Vbucket) CurrentMetaState(repIdx uint) VbMetaState {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	return s.maxSeqNoLocked()
+	curTime := s.chrono.Now()
+
+	repLatency := time.Duration(repIdx) * s.replicaLatency
+	repVisibleTime := curTime.Add(-repLatency)
+
+	prsLatency := repLatency + s.persistLatency
+	prsVisibleTime := curTime.Add(-prsLatency)
+
+	var currentSeqNo uint64
+	var persistSeqNo uint64
+
+	for _, doc := range s.documents {
+		if !doc.ModifiedTime.After(repVisibleTime) {
+			if doc.SeqNo > currentSeqNo {
+				currentSeqNo = doc.SeqNo
+			}
+		}
+
+		if !doc.ModifiedTime.After(prsVisibleTime) {
+			if doc.SeqNo > persistSeqNo {
+				persistSeqNo = doc.SeqNo
+			}
+		}
+	}
+
+	return VbMetaState{
+		VbUUID:       s.currentUUIDLocked(),
+		CurrentSeqNo: currentSeqNo,
+		PersistSeqNo: persistSeqNo,
+	}
 }
 
 // Get returns a document in the vbucket by key

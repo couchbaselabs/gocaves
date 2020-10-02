@@ -22,6 +22,7 @@ type clusterInst struct {
 	numVbuckets     uint
 	chrono          *mocktime.Chrono
 	replicaLatency  time.Duration
+	persistLatency  time.Duration
 	tlsConfig       *tls.Config
 
 	buckets []*bucketInst
@@ -42,6 +43,9 @@ func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 	}
 	if opts.ReplicaLatency == 0 {
 		opts.ReplicaLatency = 50 * time.Millisecond
+	}
+	if opts.PersistLatency == 0 {
+		opts.PersistLatency = 100 * time.Millisecond
 	}
 
 	// TODO(brett19): Improve cluster/node certificate setup.
@@ -73,6 +77,7 @@ func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 		numVbuckets:     opts.NumVbuckets,
 		chrono:          opts.Chrono,
 		replicaLatency:  opts.ReplicaLatency,
+		persistLatency:  opts.PersistLatency,
 		buckets:         nil,
 		nodes:           nil,
 		tlsConfig: &tls.Config{

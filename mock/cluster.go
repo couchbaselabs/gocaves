@@ -13,6 +13,7 @@ type NewClusterOptions struct {
 	NumVbuckets     uint
 	InitialNode     NewNodeOptions
 	ReplicaLatency  time.Duration
+	PersistLatency  time.Duration
 }
 
 // Cluster represents an instance of a mock cluster

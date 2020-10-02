@@ -38,6 +38,7 @@ func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, er
 		NumReplicas:    1,
 		NumVbuckets:    parent.numVbuckets,
 		ReplicaLatency: parent.replicaLatency,
+		PersistLatency: parent.persistLatency,
 	})
 	if err != nil {
 		return nil, err

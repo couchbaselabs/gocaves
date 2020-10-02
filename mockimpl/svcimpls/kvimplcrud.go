@@ -28,6 +28,7 @@ func (x *kvImplCrud) Register(h *hookHelper) {
 	h.RegisterKvHandler(memd.CmdUnlockKey, x.handleUnlockRequest)
 	h.RegisterKvHandler(memd.CmdSubDocMultiLookup, x.handleMultiLookupRequest)
 	h.RegisterKvHandler(memd.CmdSubDocMultiMutation, x.handleMultiMutateRequest)
+	h.RegisterKvHandler(memd.CmdObserveSeqNo, x.handleObserveSeqNo)
 }
 
 func (x *kvImplCrud) writeStatusReply(source mock.KvClient, pak *memd.Packet, status memd.StatusCode) {
@@ -903,6 +904,42 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			Cas:     resp.Cas,
 			Value:   valueBytes,
 			Extras:  extrasBuf,
+		})
+	}
+}
+
+func (x *kvImplCrud) handleObserveSeqNo(source mock.KvClient, pak *memd.Packet) {
+	if proc := x.makeProc(source, pak); proc != nil {
+		if len(pak.Value) != 8 {
+			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
+			return
+		}
+
+		vbUUID := binary.BigEndian.Uint64(pak.Value)
+
+		resp, err := proc.ObserveSeqNo(crudproc.ObserveSeqNoOptions{
+			Vbucket: uint(pak.Vbucket),
+			VbUUID:  vbUUID,
+		})
+		if err != nil {
+			x.writeProcErr(source, pak, err)
+			return
+		}
+
+		// No support for failover variant yet...
+		valueBuf := make([]byte, 27)
+		valueBuf[0] = 0
+		binary.BigEndian.PutUint16(valueBuf[1:], pak.Vbucket)
+		binary.BigEndian.PutUint64(valueBuf[3:], resp.VbUUID)
+		binary.BigEndian.PutUint64(valueBuf[11:], resp.PersistSeqNo)
+		binary.BigEndian.PutUint64(valueBuf[19:], resp.CurrentSeqNo)
+
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: pak.Command,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusSuccess,
+			Value:   valueBuf,
 		})
 	}
 }

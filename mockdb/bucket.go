@@ -19,6 +19,7 @@ type NewBucketOptions struct {
 	NumReplicas    uint
 	NumVbuckets    uint
 	ReplicaLatency time.Duration
+	PersistLatency time.Duration
 }
 
 // NewBucket will create a new Bucket store.
@@ -32,6 +33,7 @@ func NewBucket(opts NewBucketOptions) (*Bucket, error) {
 		vbucket, err := newVbucket(newVbucketOptions{
 			Chrono:         opts.Chrono,
 			ReplicaLatency: opts.ReplicaLatency,
+			PersistLatency: opts.PersistLatency,
 		})
 		if err != nil {
 			return nil, err

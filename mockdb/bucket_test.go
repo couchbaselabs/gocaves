@@ -14,6 +14,7 @@ func TestBasic(t *testing.T) {
 		NumReplicas:    2,
 		NumVbuckets:    4,
 		ReplicaLatency: 50 * time.Millisecond,
+		PersistLatency: 100 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("failed to create bucket: %v", err)
@@ -49,6 +50,7 @@ func TestReplication(t *testing.T) {
 		NumReplicas:    2,
 		NumVbuckets:    4,
 		ReplicaLatency: 50 * time.Millisecond,
+		PersistLatency: 100 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("failed to create bucket: %v", err)

@@ -905,3 +905,32 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 
 	return nil, ErrSdToManyTries
 }
+
+// ObserveSeqNoOptions specifies options for an OBSERVE_SEQNO operation.
+type ObserveSeqNoOptions struct {
+	Vbucket uint
+	VbUUID  uint64
+}
+
+// ObserveSeqNoResult contains the results of a OBSERVE_SEQNO operation.
+type ObserveSeqNoResult struct {
+	VbUUID       uint64
+	CurrentSeqNo uint64
+	PersistSeqNo uint64
+}
+
+// ObserveSeqNo performs an OBSERVE_SEQNO operation.
+func (e *Engine) ObserveSeqNo(opts ObserveSeqNoOptions) (*ObserveSeqNoResult, error) {
+	repIdx := e.findReplicaIdx(opts.Vbucket)
+	if repIdx == -1 {
+		return nil, ErrNotMyVbucket
+	}
+
+	metaState := e.db.GetVbucket(opts.Vbucket).CurrentMetaState(uint(repIdx))
+
+	return &ObserveSeqNoResult{
+		VbUUID:       metaState.VbUUID,
+		CurrentSeqNo: metaState.CurrentSeqNo,
+		PersistSeqNo: metaState.PersistSeqNo,
+	}, nil
+}
