@@ -26,6 +26,7 @@ func TestBasic(t *testing.T) {
 		Value:     []byte("hello world"),
 		Xattrs:    nil,
 		IsDeleted: false,
+		Cas:       GenerateNewCas(),
 	})
 	if err != nil {
 		t.Fatalf("failed to insert document: %v", err)
@@ -62,6 +63,7 @@ func TestReplication(t *testing.T) {
 		Value:     []byte("hello world"),
 		Xattrs:    nil,
 		IsDeleted: false,
+		Cas:       GenerateNewCas(),
 	})
 	if err != nil {
 		t.Fatalf("failed to insert document: %v", err)
