@@ -3,7 +3,7 @@ package devmode
 import (
 	"log"
 
-	"github.com/couchbaselabs/gocaves/reporting"
+	"github.com/couchbaselabs/gocaves/cmd/reporting"
 )
 
 // Main wraps the linkmode cmd

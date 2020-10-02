@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/couchbaselabs/gocaves/reporting/webapp"
+	"github.com/couchbaselabs/gocaves/cmd/reporting/webapp"
 
 	"github.com/gorilla/websocket"
 )

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/couchbaselabs/gocaves/api"
+	"github.com/couchbaselabs/gocaves/cmd/api"
 )
 
 // Main wraps the linkmode cmd
