@@ -1,4 +1,4 @@
-package crudproc
+package kvproc
 
 import (
 	"testing"

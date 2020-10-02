@@ -6,7 +6,7 @@ import (
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockimpl/svcimpls/crudproc"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl/kvproc"
 )
 
 type kvImplCrud struct {
@@ -42,7 +42,7 @@ func (x *kvImplCrud) writeStatusReply(source mock.KvClient, pak *memd.Packet, st
 }
 
 // makeProc either writes a reply to the network, or returns a non-nil Engine to use.
-func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet) *crudproc.Engine {
+func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet) *kvproc.Engine {
 	selectedBucket := source.SelectedBucket()
 	if selectedBucket == nil {
 		x.writeStatusReply(source, pak, memd.StatusNoBucket)
@@ -52,7 +52,7 @@ func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet) *crudproc.
 	sourceNode := source.Source().Node()
 	vbOwnership := selectedBucket.VbucketOwnership(sourceNode)
 
-	return crudproc.New(selectedBucket.Store(), vbOwnership)
+	return kvproc.New(selectedBucket.Store(), vbOwnership)
 }
 
 func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
@@ -61,36 +61,36 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 	switch err {
 	case nil:
 		return memd.StatusSuccess
-	case crudproc.ErrNotSupported:
+	case kvproc.ErrNotSupported:
 		return memd.StatusNotSupported
-	case crudproc.ErrNotMyVbucket:
+	case kvproc.ErrNotMyVbucket:
 		return memd.StatusNotMyVBucket
-	case crudproc.ErrInternal:
+	case kvproc.ErrInternal:
 		return memd.StatusInternalError
-	case crudproc.ErrDocExists:
+	case kvproc.ErrDocExists:
 		return memd.StatusKeyExists
-	case crudproc.ErrDocNotFound:
+	case kvproc.ErrDocNotFound:
 		return memd.StatusKeyNotFound
-	case crudproc.ErrCasMismatch:
+	case kvproc.ErrCasMismatch:
 		return memd.StatusTmpFail
-	case crudproc.ErrLocked:
+	case kvproc.ErrLocked:
 		return memd.StatusLocked
-	case crudproc.ErrNotLocked:
+	case kvproc.ErrNotLocked:
 		return memd.StatusTmpFail
-	case crudproc.ErrSdToManyTries:
+	case kvproc.ErrSdToManyTries:
 		// TODO(brett19): Confirm too many sd retries is TMPFAIL.
 		return memd.StatusTmpFail
-	case crudproc.ErrSdNotJSON:
+	case kvproc.ErrSdNotJSON:
 		return memd.StatusSubDocNotJSON
-	case crudproc.ErrSdPathInvalid:
+	case kvproc.ErrSdPathInvalid:
 		return memd.StatusSubDocPathInvalid
-	case crudproc.ErrSdPathMismatch:
+	case kvproc.ErrSdPathMismatch:
 		return memd.StatusSubDocPathMismatch
-	case crudproc.ErrSdPathNotFound:
+	case kvproc.ErrSdPathNotFound:
 		return memd.StatusSubDocPathNotFound
-	case crudproc.ErrSdPathExists:
+	case kvproc.ErrSdPathExists:
 		return memd.StatusSubDocPathExists
-	case crudproc.ErrSdCantInsert:
+	case kvproc.ErrSdCantInsert:
 		return memd.StatusSubDocCantInsert
 	}
 
@@ -109,7 +109,7 @@ func (x *kvImplCrud) handleGetRequest(source mock.KvClient, pak *memd.Packet) {
 			return
 		}
 
-		resp, err := proc.Get(crudproc.GetOptions{
+		resp, err := proc.Get(kvproc.GetOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -142,7 +142,7 @@ func (x *kvImplCrud) handleGetReplicaRequest(source mock.KvClient, pak *memd.Pac
 			return
 		}
 
-		resp, err := proc.GetReplica(crudproc.GetOptions{
+		resp, err := proc.GetReplica(kvproc.GetOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -183,7 +183,7 @@ func (x *kvImplCrud) handleAddRequest(source mock.KvClient, pak *memd.Packet) {
 		flags := binary.BigEndian.Uint32(pak.Extras[0:])
 		expiry := binary.BigEndian.Uint32(pak.Extras[4:])
 
-		resp, err := proc.Add(crudproc.StoreOptions{
+		resp, err := proc.Add(kvproc.StoreOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -227,7 +227,7 @@ func (x *kvImplCrud) handleSetRequest(source mock.KvClient, pak *memd.Packet) {
 		flags := binary.BigEndian.Uint32(pak.Extras[0:])
 		expiry := binary.BigEndian.Uint32(pak.Extras[4:])
 
-		resp, err := proc.Set(crudproc.StoreOptions{
+		resp, err := proc.Set(kvproc.StoreOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -272,7 +272,7 @@ func (x *kvImplCrud) handleReplaceRequest(source mock.KvClient, pak *memd.Packet
 		flags := binary.BigEndian.Uint32(pak.Extras[0:])
 		expiry := binary.BigEndian.Uint32(pak.Extras[4:])
 
-		resp, err := proc.Replace(crudproc.StoreOptions{
+		resp, err := proc.Replace(kvproc.StoreOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -314,7 +314,7 @@ func (x *kvImplCrud) handleDeleteRequest(source mock.KvClient, pak *memd.Packet)
 			return
 		}
 
-		resp, err := proc.Delete(crudproc.DeleteOptions{
+		resp, err := proc.Delete(kvproc.DeleteOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -356,7 +356,7 @@ func (x *kvImplCrud) handleIncrementRequest(source mock.KvClient, pak *memd.Pack
 		initial := binary.BigEndian.Uint64(pak.Extras[8:])
 		expiry := binary.BigEndian.Uint32(pak.Extras[16:])
 
-		resp, err := proc.Increment(crudproc.CounterOptions{
+		resp, err := proc.Increment(kvproc.CounterOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -405,7 +405,7 @@ func (x *kvImplCrud) handleDecrementRequest(source mock.KvClient, pak *memd.Pack
 		initial := binary.BigEndian.Uint64(pak.Extras[8:])
 		expiry := binary.BigEndian.Uint32(pak.Extras[16:])
 
-		resp, err := proc.Decrement(crudproc.CounterOptions{
+		resp, err := proc.Decrement(kvproc.CounterOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -450,7 +450,7 @@ func (x *kvImplCrud) handleAppendRequest(source mock.KvClient, pak *memd.Packet)
 			return
 		}
 
-		resp, err := proc.Append(crudproc.StoreOptions{
+		resp, err := proc.Append(kvproc.StoreOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -490,7 +490,7 @@ func (x *kvImplCrud) handlePrependRequest(source mock.KvClient, pak *memd.Packet
 			return
 		}
 
-		resp, err := proc.Prepend(crudproc.StoreOptions{
+		resp, err := proc.Prepend(kvproc.StoreOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -532,7 +532,7 @@ func (x *kvImplCrud) handleTouchRequest(source mock.KvClient, pak *memd.Packet) 
 
 		expiry := binary.BigEndian.Uint32(pak.Extras[0:])
 
-		resp, err := proc.Touch(crudproc.TouchOptions{
+		resp, err := proc.Touch(kvproc.TouchOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -572,7 +572,7 @@ func (x *kvImplCrud) handleGATRequest(source mock.KvClient, pak *memd.Packet) {
 
 		expiry := binary.BigEndian.Uint32(pak.Extras[0:])
 
-		resp, err := proc.GetAndTouch(crudproc.GetAndTouchOptions{
+		resp, err := proc.GetAndTouch(kvproc.GetAndTouchOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -608,7 +608,7 @@ func (x *kvImplCrud) handleGetLockedRequest(source mock.KvClient, pak *memd.Pack
 
 		lockTime := binary.BigEndian.Uint32(pak.Extras[0:])
 
-		resp, err := proc.GetLocked(crudproc.GetLockedOptions{
+		resp, err := proc.GetLocked(kvproc.GetLockedOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -642,7 +642,7 @@ func (x *kvImplCrud) handleUnlockRequest(source mock.KvClient, pak *memd.Packet)
 			return
 		}
 
-		resp, err := proc.Unlock(crudproc.UnlockOptions{
+		resp, err := proc.Unlock(kvproc.UnlockOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -680,7 +680,7 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 			docFlags = memd.SubdocDocFlag(pak.Extras[0])
 		}
 
-		ops := make([]*crudproc.SubDocOp, 0)
+		ops := make([]*kvproc.SubDocOp, 0)
 		opData := pak.Value
 		for byteIdx := 0; byteIdx < len(opData); byteIdx++ {
 			opCode := memd.SubDocOpType(opData[byteIdx])
@@ -695,7 +695,7 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 			case memd.SubDocOpGetDoc:
 				if byteIdx+4 > len(opData) {
 					log.Printf("not enough bytes 1")
-					x.writeProcErr(source, pak, crudproc.ErrInternal)
+					x.writeProcErr(source, pak, kvproc.ErrInternal)
 					return
 				}
 
@@ -703,13 +703,13 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 				pathLen := int(binary.BigEndian.Uint16(opData[byteIdx+2:]))
 				if byteIdx+4+pathLen > len(opData) {
 					log.Printf("not enough bytes 2 - %d - %d", byteIdx, pathLen)
-					x.writeProcErr(source, pak, crudproc.ErrInternal)
+					x.writeProcErr(source, pak, kvproc.ErrInternal)
 					return
 				}
 
 				path := string(opData[byteIdx+4 : byteIdx+4+pathLen])
 
-				ops = append(ops, &crudproc.SubDocOp{
+				ops = append(ops, &kvproc.SubDocOp{
 					Op:          opCode,
 					Path:        path,
 					Value:       nil,
@@ -720,12 +720,12 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 
 			default:
 				log.Printf("unsupported op type")
-				x.writeProcErr(source, pak, crudproc.ErrNotSupported)
+				x.writeProcErr(source, pak, kvproc.ErrNotSupported)
 				return
 			}
 		}
 
-		resp, err := proc.MultiLookup(crudproc.MultiLookupOptions{
+		resp, err := proc.MultiLookup(kvproc.MultiLookupOptions{
 			Vbucket:       uint(pak.Vbucket),
 			CollectionID:  uint(pak.CollectionID),
 			Key:           pak.Key,
@@ -767,7 +767,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			docFlags = memd.SubdocDocFlag(pak.Extras[0])
 		}
 
-		ops := make([]*crudproc.SubDocOp, 0)
+		ops := make([]*kvproc.SubDocOp, 0)
 		opData := pak.Value
 		for byteIdx := 0; byteIdx < len(opData); byteIdx++ {
 			opCode := memd.SubDocOpType(opData[byteIdx])
@@ -798,7 +798,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			case memd.SubDocOpDeleteDoc:
 				if byteIdx+8 > len(opData) {
 					log.Printf("not enough bytes 11")
-					x.writeProcErr(source, pak, crudproc.ErrInternal)
+					x.writeProcErr(source, pak, kvproc.ErrInternal)
 					return
 				}
 
@@ -807,14 +807,14 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 				valueLen := int(binary.BigEndian.Uint32(opData[byteIdx+4:]))
 				if byteIdx+8+pathLen+valueLen > len(opData) {
 					log.Printf("not enough bytes 12 - %d - %d", byteIdx, pathLen)
-					x.writeProcErr(source, pak, crudproc.ErrInternal)
+					x.writeProcErr(source, pak, kvproc.ErrInternal)
 					return
 				}
 
 				path := string(opData[byteIdx+8 : byteIdx+8+pathLen])
 				value := opData[byteIdx+8+pathLen : byteIdx+8+pathLen+valueLen]
 
-				ops = append(ops, &crudproc.SubDocOp{
+				ops = append(ops, &kvproc.SubDocOp{
 					Op:           opCode,
 					Path:         path,
 					Value:        value,
@@ -827,12 +827,12 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 
 			default:
 				log.Printf("unsupported op type")
-				x.writeProcErr(source, pak, crudproc.ErrInternal)
+				x.writeProcErr(source, pak, kvproc.ErrInternal)
 				return
 			}
 		}
 
-		resp, err := proc.MultiMutate(crudproc.MultiMutateOptions{
+		resp, err := proc.MultiMutate(kvproc.MultiMutateOptions{
 			Vbucket:         uint(pak.Vbucket),
 			CollectionID:    uint(pak.CollectionID),
 			Key:             pak.Key,
@@ -918,7 +918,7 @@ func (x *kvImplCrud) handleObserveSeqNo(source mock.KvClient, pak *memd.Packet) 
 
 		vbUUID := binary.BigEndian.Uint64(pak.Value)
 
-		resp, err := proc.ObserveSeqNo(crudproc.ObserveSeqNoOptions{
+		resp, err := proc.ObserveSeqNo(kvproc.ObserveSeqNoOptions{
 			Vbucket: uint(pak.Vbucket),
 			VbUUID:  vbUUID,
 		})
