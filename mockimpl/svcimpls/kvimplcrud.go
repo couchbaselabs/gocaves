@@ -17,6 +17,7 @@ func (x *kvImplCrud) Register(h *hookHelper) {
 	h.RegisterKvHandler(memd.CmdSet, x.handleSetRequest)
 	h.RegisterKvHandler(memd.CmdReplace, x.handleReplaceRequest)
 	h.RegisterKvHandler(memd.CmdGet, x.handleGetRequest)
+	h.RegisterKvHandler(memd.CmdGetReplica, x.handleGetReplicaRequest)
 	h.RegisterKvHandler(memd.CmdDelete, x.handleDeleteRequest)
 	h.RegisterKvHandler(memd.CmdIncrement, x.handleIncrementRequest)
 	h.RegisterKvHandler(memd.CmdDecrement, x.handleDecrementRequest)
