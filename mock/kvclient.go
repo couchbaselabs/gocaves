@@ -2,7 +2,7 @@ package mock
 
 import (
 	"github.com/couchbase/gocbcore/v9/memd"
-	"github.com/couchbaselabs/gocaves/scramserver"
+	"github.com/couchbaselabs/gocaves/contrib/scramserver"
 )
 
 // KvClient represents all the state about a connected kv client.

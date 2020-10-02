@@ -5,7 +5,7 @@ import (
 	"net"
 
 	"github.com/couchbase/gocbcore/v9/memd"
-	"github.com/couchbaselabs/gocaves/ctxstore"
+	"github.com/couchbaselabs/gocaves/contrib/ctxstore"
 )
 
 // MemdClient represents a connected memd client.

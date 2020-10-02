@@ -3,8 +3,8 @@ package svcimpls
 import (
 	"bytes"
 
+	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/pathparse"
 )
 
 type mgmtImplConfig struct {

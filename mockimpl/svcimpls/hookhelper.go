@@ -2,8 +2,8 @@ package svcimpls
 
 import (
 	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/pathparse"
 )
 
 // hookHelper is simply a wrapper to simplify the setup of hooks.

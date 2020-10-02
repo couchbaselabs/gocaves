@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbaselabs/gocaves/contrib/scramserver"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/scramserver"
 	tmock "github.com/stretchr/testify/mock"
 )
 
