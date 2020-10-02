@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/couchbaselabs/gocaves/mocktime"
+	"github.com/couchbaselabs/gocaves/mock/mocktime"
 )
 
 // Bucket represents a Bucket store

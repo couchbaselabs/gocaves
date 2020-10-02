@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mockimpl/svcimpls"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl/svcimpls"
 )
 
 func testReadJSONFile(t *testing.T, path string) interface{} {

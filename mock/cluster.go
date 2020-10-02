@@ -3,7 +3,7 @@ package mock
 import (
 	"time"
 
-	"github.com/couchbaselabs/gocaves/mocktime"
+	"github.com/couchbaselabs/gocaves/mock/mocktime"
 )
 
 // NewClusterOptions allows the specification of initial options for a new cluster.

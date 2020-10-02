@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mockimpl"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl"
 )
 
 // TestResult represents the result of a test.

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/couchbaselabs/gocaves/mockimpl"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl"
 )
 
 type stdinData struct {

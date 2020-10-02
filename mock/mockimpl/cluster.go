@@ -9,9 +9,9 @@ import (
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mockimpl/hooks"
-	"github.com/couchbaselabs/gocaves/mockimpl/svcimpls"
-	"github.com/couchbaselabs/gocaves/mocktime"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl/hooks"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl/svcimpls"
+	"github.com/couchbaselabs/gocaves/mock/mocktime"
 	"github.com/google/uuid"
 )
 

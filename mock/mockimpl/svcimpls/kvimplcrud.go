@@ -6,7 +6,7 @@ import (
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mockimpl/svcimpls/crudproc"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl/svcimpls/crudproc"
 )
 
 type kvImplCrud struct {

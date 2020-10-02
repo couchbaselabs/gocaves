@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/couchbaselabs/gocaves/mocktime"
+	"github.com/couchbaselabs/gocaves/mock/mocktime"
 )
 
 // Document represents one document stored in the vbucket.  For the purposes

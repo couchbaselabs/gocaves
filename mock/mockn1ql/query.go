@@ -1,6 +1,6 @@
 package mockn1ql
 
-import "github.com/couchbaselabs/gocaves/mockdb"
+import "github.com/couchbaselabs/gocaves/mock/mockdb"
 
 // Index represents a single view index.
 type Index struct {

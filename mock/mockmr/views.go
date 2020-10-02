@@ -1,6 +1,6 @@
 package mockmr
 
-import "github.com/couchbaselabs/gocaves/mockdb"
+import "github.com/couchbaselabs/gocaves/mock/mockdb"
 
 // Index represents a single map reduce query.
 type Index struct {

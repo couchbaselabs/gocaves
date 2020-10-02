@@ -6,7 +6,7 @@ import (
 	"reflect"
 
 	"github.com/couchbase/gocbcore/v9/memd"
-	"github.com/couchbaselabs/gocaves/mockdb"
+	"github.com/couchbaselabs/gocaves/mock/mockdb"
 )
 
 func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([]*SubDocResult, error) {

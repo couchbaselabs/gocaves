@@ -1,6 +1,6 @@
 package mock
 
-import "github.com/couchbaselabs/gocaves/mockdb"
+import "github.com/couchbaselabs/gocaves/mock/mockdb"
 
 // BucketType specifies the type of bucket
 type BucketType uint

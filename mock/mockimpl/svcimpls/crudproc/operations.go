@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/couchbase/gocbcore/v9/memd"
-	"github.com/couchbaselabs/gocaves/mockdb"
+	"github.com/couchbaselabs/gocaves/mock/mockdb"
 )
 
 // GetOptions specifies options for a GET operation.

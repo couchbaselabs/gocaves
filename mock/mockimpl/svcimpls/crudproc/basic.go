@@ -3,7 +3,7 @@ package crudproc
 import (
 	"time"
 
-	"github.com/couchbaselabs/gocaves/mockdb"
+	"github.com/couchbaselabs/gocaves/mock/mockdb"
 )
 
 // Engine represents a specific engine.

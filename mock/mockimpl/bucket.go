@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mockdb"
+	"github.com/couchbaselabs/gocaves/mock/mockdb"
 	"github.com/google/uuid"
 )
 

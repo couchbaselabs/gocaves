@@ -2,26 +2,26 @@ package mockimpl
 
 import (
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mockimpl/servers"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
 )
 
-// analyticsService represents a analytics service running somewhere in the cluster.
-type analyticsService struct {
+// viewService represents a views service running somewhere in the cluster.
+type viewService struct {
 	clusterNode *clusterNodeInst
 	server      *servers.HTTPServer
 	tlsServer   *servers.HTTPServer
 }
 
-type newAnalyticsServiceOptions struct {
+type newViewServiceOptions struct {
 }
 
-func newAnalyticsService(parent *clusterNodeInst, opts newAnalyticsServiceOptions) (*analyticsService, error) {
-	svc := &analyticsService{
+func newViewService(parent *clusterNodeInst, opts newViewServiceOptions) (*viewService, error) {
+	svc := &viewService{
 		clusterNode: parent,
 	}
 
 	srv, err := servers.NewHTTPServer(servers.NewHTTPServiceOptions{
-		Name: "analytics",
+		Name: "view",
 		Handlers: servers.HTTPServerHandlers{
 			NewRequestHandler: svc.handleNewRequest,
 		},
@@ -33,7 +33,7 @@ func newAnalyticsService(parent *clusterNodeInst, opts newAnalyticsServiceOption
 
 	if parent.cluster.IsFeatureEnabled(mock.ClusterFeatureTLS) {
 		tlsSrv, err := servers.NewHTTPServer(servers.NewHTTPServiceOptions{
-			Name: "analytics",
+			Name: "view",
 			Handlers: servers.HTTPServerHandlers{
 				NewRequestHandler: svc.handleNewRequest,
 			},
@@ -49,17 +49,17 @@ func newAnalyticsService(parent *clusterNodeInst, opts newAnalyticsServiceOption
 }
 
 // Node returns the node which owns this service.
-func (s *analyticsService) Node() mock.ClusterNode {
+func (s *viewService) Node() mock.ClusterNode {
 	return s.clusterNode
 }
 
 // Hostname returns the hostname where this service can be accessed.
-func (s *analyticsService) Hostname() string {
+func (s *viewService) Hostname() string {
 	return "127.0.0.1"
 }
 
 // ListenPort returns the port this service is listening on.
-func (s *analyticsService) ListenPort() int {
+func (s *viewService) ListenPort() int {
 	if s.server == nil {
 		return -1
 	}
@@ -67,19 +67,19 @@ func (s *analyticsService) ListenPort() int {
 }
 
 // ListenPortTLS returns the TLS port this service is listening on.
-func (s *analyticsService) ListenPortTLS() int {
+func (s *viewService) ListenPortTLS() int {
 	if s.tlsServer == nil {
 		return -1
 	}
 	return s.tlsServer.ListenPort()
 }
 
-func (s *analyticsService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
-	return s.clusterNode.cluster.handleAnalyticsRequest(s, req)
+func (s *viewService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
+	return s.clusterNode.cluster.handleViewRequest(s, req)
 }
 
 // Close will shut down this service once it is no longer needed.
-func (s *analyticsService) Close() error {
+func (s *viewService) Close() error {
 	var errOut error
 	if s.server != nil {
 		errOut = s.server.Close()

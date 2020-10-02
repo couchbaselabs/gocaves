@@ -2,7 +2,7 @@ package mockimpl
 
 import (
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mockimpl/servers"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
 )
 
 // queryService represents a Querys service running somewhere in the cluster.

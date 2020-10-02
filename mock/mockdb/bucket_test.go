@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/couchbaselabs/gocaves/mocktime"
+	"github.com/couchbaselabs/gocaves/mock/mocktime"
 )
 
 func TestBasic(t *testing.T) {
