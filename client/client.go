@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +14,7 @@ import (
 
 type Client struct {
 	conn       net.Conn
-	encoder    *json.Encoder
+	reader     *bufio.Reader
 	decoder    *json.Decoder
 	shutdownCh chan struct{}
 }
@@ -89,9 +90,8 @@ func NewClient(opts NewClientOptions) (*Client, error) {
 
 	cli := &Client{
 		conn:       conn,
-		encoder:    json.NewEncoder(conn),
-		decoder:    json.NewDecoder(conn),
 		shutdownCh: shutdownCh,
+		reader:     bufio.NewReader(conn),
 	}
 
 	helloCmd, err := cli.readCommand()
@@ -116,14 +116,36 @@ func (c *Client) Shutdown() error {
 }
 
 func (c *Client) writeCommand(req map[string]interface{}) error {
-	return c.encoder.Encode(req)
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		log.Printf("fail to encode request bytes: %s", err)
+		return err
+	}
+
+	reqBytes = append(reqBytes, byte(0))
+
+	_, err = c.conn.Write(reqBytes)
+	if err != nil {
+		log.Printf("fail to write request bytes: %s", err)
+		return err
+	}
+
+	return nil
 }
 
 func (c *Client) readCommand() (map[string]interface{}, error) {
-	var resp map[string]interface{}
-
-	err := c.decoder.Decode(&resp)
+	respBytes, err := c.reader.ReadSlice(0)
 	if err != nil {
+		log.Printf("fail to read response bytes: %s", err)
+		return nil, err
+	}
+
+	respBytes = respBytes[:len(respBytes)-1]
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(respBytes, &resp)
+	if err != nil {
+		log.Printf("fail to parse response bytes: %s", err)
 		return nil, err
 	}
 

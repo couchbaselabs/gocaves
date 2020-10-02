@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,8 +13,7 @@ import (
 type Client struct {
 	conn    net.Conn
 	handler HandlerFunc
-	encoder *json.Encoder
-	decoder *json.Decoder
+	reader  *bufio.Reader
 	closeCh chan struct{}
 }
 
@@ -21,8 +21,7 @@ func newServerClient(conn net.Conn, handler HandlerFunc) (*Client, error) {
 	cli := &Client{
 		conn:    conn,
 		handler: handler,
-		decoder: json.NewDecoder(conn),
-		encoder: json.NewEncoder(conn),
+		reader:  bufio.NewReader(conn),
 		closeCh: make(chan struct{}, 1),
 	}
 
@@ -52,13 +51,14 @@ func ConnectAsServer(opts ConnectAsServerOptions) (*Client, error) {
 	cli := &Client{
 		conn:    conn,
 		handler: opts.Handler,
-		decoder: json.NewDecoder(conn),
-		encoder: json.NewEncoder(conn),
+		reader:  bufio.NewReader(conn),
 		closeCh: make(chan struct{}, 1),
 	}
 
-	helloBytes, _ := encodeCommandPacket(&CmdHello{})
-	cli.encoder.Encode(json.RawMessage(helloBytes))
+	err = cli.writePacket(&CmdHello{})
+	if err != nil {
+		return nil, err
+	}
 
 	err = cli.start()
 	if err != nil {
@@ -68,41 +68,67 @@ func ConnectAsServer(opts ConnectAsServerOptions) (*Client, error) {
 	return cli, nil
 }
 
+func (c *Client) readPacket() (interface{}, error) {
+	pktBytes, err := c.reader.ReadSlice(0)
+	if err != nil {
+		return nil, err
+	}
+
+	pktBytes = pktBytes[:len(pktBytes)-1]
+
+	var pkt cmdDecoder
+	err = json.Unmarshal(pktBytes, &pkt)
+	if err != nil {
+		return nil, err
+	}
+
+	return pkt.command, nil
+}
+
+func (c *Client) writePacket(pak interface{}) error {
+	pktBytes, err := encodeCommandPacket(pak)
+	if err != nil {
+		return err
+	}
+
+	pktBytes = append(pktBytes, byte(0))
+
+	_, err = c.conn.Write(pktBytes)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (c *Client) start() error {
 	go func() {
 
 		for {
-			var pkt cmdDecoder
-			err := c.decoder.Decode(&pkt)
+			pkt, err := c.readPacket()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					break
 				}
 
-				log.Printf("failed to decode request: %s", err)
+				log.Printf("failed to read request: %s", err)
 				break
 			}
 
-			resCmd := c.handler(pkt.command)
+			resCmd := c.handler(pkt)
 
 			if resCmd == nil {
 				log.Printf("handler returned no response, disconnecting client")
 				break
 			}
 
-			resBytes, err := encodeCommandPacket(resCmd)
-			if err != nil {
-				log.Printf("failed to encode response: %s", err)
-				break
-			}
-
-			err = c.encoder.Encode(json.RawMessage(resBytes))
+			err = c.writePacket(resCmd)
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					break
 				}
 
-				log.Printf("failed to encode response: %s", err)
+				log.Printf("failed to write response: %s", err)
 				break
 			}
 		}
