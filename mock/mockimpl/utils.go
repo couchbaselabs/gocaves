@@ -2,7 +2,7 @@ package mockimpl
 
 import "github.com/couchbaselabs/gocaves/mock"
 
-func clusterFeatureListContains(list []mock.ClusterFeature, feature mock.ClusterFeature) bool {
+func clusterFeatureListContains(list []mock.ClusterNodeFeature, feature mock.ClusterNodeFeature) bool {
 	// An empty list acts like a completely full list
 	if len(list) == 0 {
 		return true

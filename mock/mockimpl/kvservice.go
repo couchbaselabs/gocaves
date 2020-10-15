@@ -103,7 +103,7 @@ func newKvService(parent *clusterNodeInst, opts newKvServiceOptions) (*kvService
 	}
 	svc.server = srv
 
-	if parent.cluster.IsFeatureEnabled(mock.ClusterFeatureTLS) {
+	if parent.HasFeature(mock.ClusterNodeFeatureTLS) {
 		tlsSrv, err := servers.NewMemdService(servers.NewMemdServerOptions{
 			Handlers: servers.MemdServerHandlers{
 				NewClientHandler:  svc.handleNewTLSMemdClient,

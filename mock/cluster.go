@@ -8,12 +8,11 @@ import (
 
 // NewClusterOptions allows the specification of initial options for a new cluster.
 type NewClusterOptions struct {
-	Chrono          *mocktime.Chrono
-	EnabledFeatures []ClusterFeature
-	NumVbuckets     uint
-	InitialNode     NewNodeOptions
-	ReplicaLatency  time.Duration
-	PersistLatency  time.Duration
+	Chrono         *mocktime.Chrono
+	NumVbuckets    uint
+	InitialNode    NewNodeOptions
+	ReplicaLatency time.Duration
+	PersistLatency time.Duration
 }
 
 // Cluster represents an instance of a mock cluster

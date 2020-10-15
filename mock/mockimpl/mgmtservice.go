@@ -31,7 +31,7 @@ func newMgmtService(parent *clusterNodeInst, opts newMgmtServiceOptions) (*mgmtS
 	}
 	svc.server = srv
 
-	if parent.cluster.IsFeatureEnabled(mock.ClusterFeatureTLS) {
+	if parent.HasFeature(mock.ClusterNodeFeatureTLS) {
 		tlsSrv, err := servers.NewHTTPServer(servers.NewHTTPServiceOptions{
 			Name: "mgmt",
 			Handlers: servers.HTTPServerHandlers{

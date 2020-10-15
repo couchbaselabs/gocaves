@@ -9,9 +9,10 @@ import (
 
 // clusterNodeInst specifies a node within a cluster instance.
 type clusterNodeInst struct {
-	cluster *clusterInst
-	id      string
-	errMap  *mock.ErrorMap
+	cluster         *clusterInst
+	enabledFeatures []mock.ClusterNodeFeature
+	id              string
+	errMap          *mock.ErrorMap
 
 	kvService        *kvService
 	mgmtService      *mgmtService
@@ -21,14 +22,26 @@ type clusterNodeInst struct {
 	analyticsService *analyticsService
 }
 
+func validateFeatures([]mock.ClusterNodeFeature) error {
+	// This function is designed to avoid having two features enabled which
+	// cause conflicting behaviours or unimplementable combinations.
+
+	return nil
+}
+
 // newClusterNode creates a new ClusterNode instance
 func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNodeInst, error) {
-	node := &clusterNodeInst{
-		id:      uuid.New().String(),
-		cluster: parent,
+	err := validateFeatures(opts.Features)
+	if err != nil {
+		return nil, err
 	}
 
-	var err error
+	node := &clusterNodeInst{
+		id:              uuid.New().String(),
+		enabledFeatures: opts.Features,
+		cluster:         parent,
+	}
+
 	node.errMap, err = mock.NewErrorMap()
 	if err != nil {
 		log.Printf("cluster node failed to load error map: %s", err)
@@ -36,7 +49,7 @@ func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNode
 		return nil, err
 	}
 
-	if serviceTypeListContains(opts.EnabledServices, mock.ServiceTypeKeyValue) {
+	if serviceTypeListContains(opts.Services, mock.ServiceTypeKeyValue) {
 		kvService, err := newKvService(node, newKvServiceOptions{})
 		if err != nil {
 			log.Printf("cluster node failed to start kv service: %s", err)
@@ -47,7 +60,7 @@ func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNode
 		node.kvService = kvService
 	}
 
-	if serviceTypeListContains(opts.EnabledServices, mock.ServiceTypeMgmt) {
+	if serviceTypeListContains(opts.Services, mock.ServiceTypeMgmt) {
 		mgmtService, err := newMgmtService(node, newMgmtServiceOptions{})
 		if err != nil {
 			log.Printf("cluster node failed to start mgmt service: %s", err)
@@ -58,7 +71,7 @@ func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNode
 		node.mgmtService = mgmtService
 	}
 
-	if serviceTypeListContains(opts.EnabledServices, mock.ServiceTypeViews) {
+	if serviceTypeListContains(opts.Services, mock.ServiceTypeViews) {
 		viewService, err := newViewService(node, newViewServiceOptions{})
 		if err != nil {
 			log.Printf("cluster node failed to start view service: %s", err)
@@ -69,7 +82,7 @@ func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNode
 		node.viewService = viewService
 	}
 
-	if serviceTypeListContains(opts.EnabledServices, mock.ServiceTypeQuery) {
+	if serviceTypeListContains(opts.Services, mock.ServiceTypeQuery) {
 		queryService, err := newQueryService(node, newQueryServiceOptions{})
 		if err != nil {
 			log.Printf("cluster node failed to start query service: %s", err)
@@ -80,7 +93,7 @@ func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNode
 		node.queryService = queryService
 	}
 
-	if serviceTypeListContains(opts.EnabledServices, mock.ServiceTypeSearch) {
+	if serviceTypeListContains(opts.Services, mock.ServiceTypeSearch) {
 		searchService, err := newSearchService(node, newSearchServiceOptions{})
 		if err != nil {
 			log.Printf("cluster node failed to start search service: %s", err)
@@ -91,7 +104,7 @@ func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNode
 		node.searchService = searchService
 	}
 
-	if serviceTypeListContains(opts.EnabledServices, mock.ServiceTypeAnalytics) {
+	if serviceTypeListContains(opts.Services, mock.ServiceTypeAnalytics) {
 		analyticsService, err := newAnalyticsService(node, newAnalyticsServiceOptions{})
 		if err != nil {
 			log.Printf("cluster node failed to start analytics service: %s", err)
@@ -104,6 +117,17 @@ func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNode
 
 	log.Printf("new cluster node created")
 	return node, nil
+}
+
+// HasFeature will indicate whether this cluster node has a specific feature enabled.
+func (n *clusterNodeInst) HasFeature(feature mock.ClusterNodeFeature) bool {
+	for _, supportedFeature := range n.enabledFeatures {
+		if supportedFeature == feature {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ID returns the uuid of this node.

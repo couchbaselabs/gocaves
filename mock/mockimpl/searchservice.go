@@ -31,7 +31,7 @@ func newSearchService(parent *clusterNodeInst, opts newSearchServiceOptions) (*s
 	}
 	svc.server = srv
 
-	if parent.cluster.IsFeatureEnabled(mock.ClusterFeatureTLS) {
+	if parent.HasFeature(mock.ClusterNodeFeatureTLS) {
 		tlsSrv, err := servers.NewHTTPServer(servers.NewHTTPServiceOptions{
 			Name: "search",
 			Handlers: servers.HTTPServerHandlers{

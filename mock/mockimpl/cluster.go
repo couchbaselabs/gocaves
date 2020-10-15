@@ -17,13 +17,12 @@ import (
 
 // clusterInst represents an instance of a mock cluster
 type clusterInst struct {
-	id              string
-	enabledFeatures []mock.ClusterFeature
-	numVbuckets     uint
-	chrono          *mocktime.Chrono
-	replicaLatency  time.Duration
-	persistLatency  time.Duration
-	tlsConfig       *tls.Config
+	id             string
+	numVbuckets    uint
+	chrono         *mocktime.Chrono
+	replicaLatency time.Duration
+	persistLatency time.Duration
+	tlsConfig      *tls.Config
 
 	buckets []*bucketInst
 	nodes   []*clusterNodeInst
@@ -72,14 +71,13 @@ func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 	cert, _ := tls.X509KeyPair(certPem, keyPem)
 
 	cluster := &clusterInst{
-		id:              uuid.New().String(),
-		enabledFeatures: opts.EnabledFeatures,
-		numVbuckets:     opts.NumVbuckets,
-		chrono:          opts.Chrono,
-		replicaLatency:  opts.ReplicaLatency,
-		persistLatency:  opts.PersistLatency,
-		buckets:         nil,
-		nodes:           nil,
+		id:             uuid.New().String(),
+		numVbuckets:    opts.NumVbuckets,
+		chrono:         opts.Chrono,
+		replicaLatency: opts.ReplicaLatency,
+		persistLatency: opts.PersistLatency,
+		buckets:        nil,
+		nodes:          nil,
 		tlsConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		},
@@ -160,17 +158,6 @@ func (c *clusterInst) GetBucket(name string) mock.Bucket {
 		}
 	}
 	return nil
-}
-
-// IsFeatureEnabled will indicate whether this cluster has a specific feature enabled.
-func (c *clusterInst) IsFeatureEnabled(feature mock.ClusterFeature) bool {
-	for _, supportedFeature := range c.enabledFeatures {
-		if supportedFeature == feature {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (c *clusterInst) updateConfig() {
