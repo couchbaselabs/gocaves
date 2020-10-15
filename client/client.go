@@ -12,6 +12,7 @@ import (
 	"path"
 )
 
+// Client represents a single CAVES client instance.
 type Client struct {
 	conn       net.Conn
 	reader     *bufio.Reader
@@ -19,6 +20,7 @@ type Client struct {
 	shutdownCh chan struct{}
 }
 
+// NewClientOptions provides options for the NewClient method.
 type NewClientOptions struct {
 	Path          string
 	Version       string
@@ -26,6 +28,7 @@ type NewClientOptions struct {
 	ReportingAddr string
 }
 
+// NewClient instantiates a new CAVES instance and returns an interface to control it.
 func NewClient(opts NewClientOptions) (*Client, error) {
 	log.Printf("Starting CAVES")
 
@@ -166,6 +169,7 @@ func (c *Client) roundTripCommand(req map[string]interface{}) (map[string]interf
 	return resp, nil
 }
 
+// CreateCluster instantiates a new CAVES test cluster.
 func (c *Client) CreateCluster(clusterID string) (string, error) {
 	resp, err := c.roundTripCommand(map[string]interface{}{
 		"type": "createcluster",
@@ -179,6 +183,7 @@ func (c *Client) CreateCluster(clusterID string) (string, error) {
 	return connStr, nil
 }
 
+// StartTesting begins a test suite run within CAVES.
 func (c *Client) StartTesting(runID string, clientName string) (string, error) {
 	resp, err := c.roundTripCommand(map[string]interface{}{
 		"type":   "starttesting",
@@ -194,6 +199,7 @@ func (c *Client) StartTesting(runID string, clientName string) (string, error) {
 	return connStr, nil
 }
 
+// EndTesting stops an already running CAVES test suite.
 func (c *Client) EndTesting(runID string) (interface{}, error) {
 	resp, err := c.roundTripCommand(map[string]interface{}{
 		"type": "endtesting",
@@ -207,6 +213,7 @@ func (c *Client) EndTesting(runID string) (interface{}, error) {
 	return report, err
 }
 
+// TestStartedSpec provides information about a specific started test.
 type TestStartedSpec struct {
 	ConnStr        string
 	BucketName     string
@@ -214,6 +221,7 @@ type TestStartedSpec struct {
 	CollectionName string
 }
 
+// StartTest begins a specific test within a CAVES test suite.
 func (c *Client) StartTest(runID, testName string) (*TestStartedSpec, error) {
 	resp, err := c.roundTripCommand(map[string]interface{}{
 		"type": "starttest",
@@ -236,6 +244,7 @@ func (c *Client) StartTest(runID, testName string) (*TestStartedSpec, error) {
 	}, nil
 }
 
+// EndTest stops a running CAVES test suite test.
 func (c *Client) EndTest(runID string) error {
 	_, err := c.roundTripCommand(map[string]interface{}{
 		"type": "endtest",
@@ -244,6 +253,7 @@ func (c *Client) EndTest(runID string) error {
 	return err
 }
 
+// TimeTravelRun allows a specific run to be time-travelled.
 func (c *Client) TimeTravelRun(runID string) error {
 	_, err := c.roundTripCommand(map[string]interface{}{
 		"type": "timetravel",
@@ -252,6 +262,7 @@ func (c *Client) TimeTravelRun(runID string) error {
 	return err
 }
 
+// TimeTravelCluster allows a specific cluster to be time-travelled.
 func (c *Client) TimeTravelCluster(clusterID string) error {
 	_, err := c.roundTripCommand(map[string]interface{}{
 		"type":    "timetravel",
