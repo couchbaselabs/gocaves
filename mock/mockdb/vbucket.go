@@ -137,11 +137,9 @@ func (s *Vbucket) findDocLocked(repIdx, collectionID uint, key []byte) *Document
 		foundDoc = copyDocument(foundDoc)
 
 		// We cheat and convert an expired document directly to being deleted.
-		if foundDoc != nil {
-			// TODO(brett19): Need to emit a delete mutation when a document expires.
-			if !foundDoc.Expiry.IsZero() && !s.chrono.Now().Before(foundDoc.Expiry) {
-				foundDoc.IsDeleted = true
-			}
+		// TODO(brett19): Need to emit a delete mutation when a document expires.
+		if !foundDoc.Expiry.IsZero() && !s.chrono.Now().Before(foundDoc.Expiry) {
+			foundDoc.IsDeleted = true
 		}
 
 		// We also cheat and clean this up here...
