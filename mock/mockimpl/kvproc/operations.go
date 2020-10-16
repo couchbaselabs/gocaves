@@ -295,6 +295,7 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 			// TODO(brett19): Check if DELETE generates a new CAS or not.
 
 			// Otherwise we simply update the value
+			idoc.Expiry = e.db.Chrono().Now()
 			idoc.IsDeleted = true
 			idoc.LockExpiry = time.Time{}
 			idoc.Cas = mockdb.GenerateNewCas()
