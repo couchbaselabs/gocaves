@@ -35,17 +35,11 @@ const iterCount = 4096
 
 // newScramServer creates a new ScramServer
 func newScramServer(hashFnName string) (*scramServer, error) {
-	var hashFn func() hash.Hash
-	switch hashFnName {
-	case "SCRAM-SHA512":
-		hashFn = sha512.New
-	case "SCRAM-SHA256":
-		hashFn = sha256.New
-	case "SCRAM-SHA1":
-		hashFn = sha1.New
-	default:
-		return nil, fmt.Errorf("unknown hash function: %s", hashFnName)
+	hashFn, err := parseHashFn(hashFnName)
+	if err != nil {
+		return nil, err
 	}
+
 	nonceLen := 6
 	buf := make([]byte, nonceLen+b64.EncodedLen(nonceLen))
 	if _, err := rand.Read(buf[:nonceLen]); err != nil {
@@ -68,6 +62,38 @@ func newScramServer(hashFnName string) (*scramServer, error) {
 	s.out.Grow(256)
 
 	return s, nil
+}
+
+func newScramServerWithSaltAndNonce(hashFnName, salt, nonce string) (*scramServer, error) {
+	hashFn, err := parseHashFn(hashFnName)
+	if err != nil {
+		return nil, err
+	}
+
+	s := &scramServer{
+		n:      []byte(nonce),
+		salt:   []byte(salt),
+		hashFn: hashFn,
+	}
+	s.out.Grow(256)
+
+	return s, nil
+}
+
+func parseHashFn(hashFnName string) (func() hash.Hash, error) {
+	var hashFn func() hash.Hash
+	switch hashFnName {
+	case "SCRAM-SHA512":
+		hashFn = sha512.New
+	case "SCRAM-SHA256":
+		hashFn = sha256.New
+	case "SCRAM-SHA1":
+		hashFn = sha1.New
+	default:
+		return nil, fmt.Errorf("unknown hash function: %s", hashFnName)
+	}
+
+	return hashFn, nil
 }
 
 func (s *scramServer) authMessage() []byte {
@@ -207,6 +233,8 @@ func (s *scramServer) Step1(in []byte) error {
 	if err != nil {
 		return err
 	}
+
+	s.out.WriteString("v=")
 	s.out.Write(srvSig)
 
 	return nil

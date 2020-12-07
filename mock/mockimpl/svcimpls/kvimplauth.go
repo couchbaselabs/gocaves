@@ -1,6 +1,7 @@
 package svcimpls
 
 import (
+	"fmt"
 	"log"
 	"strings"
 
@@ -22,9 +23,9 @@ func (x *kvImplAuth) handleSASLListMechsRequest(source mock.KvClient, pak *memd.
 	// TODO(brett19): Implement actual auth mechanism configuration support.
 	supportedMechs := []string{
 		"PLAIN",
-		"SCRAM_SHA1",
-		"SCRAM_SHA256",
-		"SCRAM_SHA512",
+		"SCRAM-SHA1",
+		"SCRAM-SHA256",
+		"SCRAM-SHA512",
 	}
 
 	supportedBytes := []byte(strings.Join(supportedMechs, " "))
@@ -94,6 +95,7 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 		}
 
 		// TODO: lookup of the username here to get password which scram server will then salt
+		fmt.Println(string(outBytes))
 		scram.SetPassword("password")
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -160,6 +162,7 @@ func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packe
 		x.handleAuthClient(source, pak, authMech, scram.Username(), scram.Password())
 		return
 	}
+	fmt.Println(string(outBytes))
 
 	source.WritePacket(&memd.Packet{
 		Magic:   memd.CmdMagicRes,
