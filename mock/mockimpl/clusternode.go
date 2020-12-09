@@ -13,6 +13,7 @@ type clusterNodeInst struct {
 	enabledFeatures []mock.ClusterNodeFeature
 	id              string
 	errMap          *mock.ErrorMap
+	hostname        string
 
 	kvService        *kvService
 	mgmtService      *mgmtService
@@ -40,6 +41,7 @@ func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNode
 		id:              uuid.New().String(),
 		enabledFeatures: opts.Features,
 		cluster:         parent,
+		hostname:        "127.0.0.1",
 	}
 
 	node.errMap, err = mock.NewErrorMap()
@@ -173,6 +175,10 @@ func (n *clusterNodeInst) AnalyticsService() mock.AnalyticsService {
 // ErrorMap returns the error map for this node.
 func (n *clusterNodeInst) ErrorMap() *mock.ErrorMap {
 	return n.errMap
+}
+
+func (n *clusterNodeInst) Hostname() string {
+	return n.hostname
 }
 
 func (n *clusterNodeInst) cleanup() {

@@ -17,7 +17,7 @@ func (x *kvImplCccp) handleGetClusterConfigReq(source mock.KvClient, pak *memd.P
 	var configBytes []byte
 	if selectedBucket == nil {
 		// Send a global terse configuration
-		configBytes = GenClusterConfig(source.Source().Node().Cluster(), source.Source().Node())
+		configBytes = GenTerseClusterConfig(source.Source().Node().Cluster(), source.Source().Node())
 	} else {
 		configBytes = GenTerseBucketConfig(selectedBucket, source.Source().Node())
 	}

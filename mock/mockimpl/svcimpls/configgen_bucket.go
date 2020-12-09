@@ -140,7 +140,6 @@ func GenTerseBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 
 	config["bucketCapabilitiesVer"] = ""
 	config["bucketCapabilities"] = []string{
-		"collections",
 		"durableWrite",
 		"tombstonedUserXAttrs",
 		"couchapi",
