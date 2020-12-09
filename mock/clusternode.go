@@ -34,4 +34,7 @@ type ClusterNode interface {
 
 	// ErrorMap returns the error map for this node.
 	ErrorMap() *ErrorMap
+
+	// HostName returns the address for this node.
+	Hostname() string
 }

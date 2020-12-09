@@ -20,6 +20,9 @@ type Cluster interface {
 	// ID returns the uuid of this cluster.
 	ID() string
 
+	// ConfigRev returns the current configuration revision for this cluster.
+	ConfigRev() uint
+
 	// AddNode will add a new node to a cluster.
 	AddNode(opts NewNodeOptions) (ClusterNode, error)
 

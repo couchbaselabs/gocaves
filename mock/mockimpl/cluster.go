@@ -23,6 +23,7 @@ type clusterInst struct {
 	replicaLatency time.Duration
 	persistLatency time.Duration
 	tlsConfig      *tls.Config
+	configRev      uint
 
 	buckets []*bucketInst
 	nodes   []*clusterNodeInst
@@ -160,7 +161,13 @@ func (c *clusterInst) GetBucket(name string) mock.Bucket {
 	return nil
 }
 
+// ConfigRev returns the current configuration revision for this cluster.
+func (c *clusterInst) ConfigRev() uint {
+	return c.configRev
+}
+
 func (c *clusterInst) updateConfig() {
+	c.configRev++
 }
 
 // ConnectionString returns the basic non-TLS connection string for this cluster.
