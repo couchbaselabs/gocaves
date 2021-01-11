@@ -92,6 +92,8 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 		return memd.StatusSubDocPathExists
 	case kvproc.ErrSdCantInsert:
 		return memd.StatusSubDocCantInsert
+	case kvproc.ErrSdBadCombo:
+		return memd.StatusSubDocBadCombo
 	}
 
 	log.Printf("Recieved unexpected crud proc error: %s", err)
