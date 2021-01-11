@@ -592,7 +592,7 @@ func (e SubDocExecutor) executeSdOpArrayAddUnique(op *SubDocOp) (*SubDocResult, 
 	}
 
 	if foundExisting {
-		return e.itemErrorResult(ErrSdCantInsert)
+		return e.itemErrorResult(ErrSdPathExists)
 	}
 
 	arrVal = append(arrVal, valueObj)
