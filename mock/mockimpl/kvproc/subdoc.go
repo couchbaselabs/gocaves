@@ -9,7 +9,13 @@ import (
 	"github.com/couchbaselabs/gocaves/mock/mockdb"
 )
 
+const subdocMultiMaxPaths = 16
+
 func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([]*SubDocResult, error) {
+	if len(ops) > subdocMultiMaxPaths {
+		return nil, ErrSdBadCombo
+	}
+
 	opReses := make([]*SubDocResult, len(ops))
 
 	for opIdx, op := range ops {
