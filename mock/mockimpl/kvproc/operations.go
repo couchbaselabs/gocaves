@@ -676,7 +676,7 @@ func (e *Engine) Unlock(opts UnlockOptions) (*StoreResult, error) {
 			}
 
 			if idoc.Cas != opts.Cas {
-				return nil, ErrCasMismatch
+				return nil, ErrLocked
 			}
 
 			// Otherwise we simply mark it as no longer locked.
