@@ -51,8 +51,10 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 		case memd.SubDocOpCounter:
 			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpCounter(op)
 		case memd.SubDocOpSetDoc:
-		case memd.SubDocOpAddDoc:
+			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDictSetFullDoc(op)
 		case memd.SubDocOpDeleteDoc:
+			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDeleteFullDoc(op)
+		case memd.SubDocOpAddDoc:
 		}
 
 		if err != nil {
@@ -604,6 +606,59 @@ func (e SubDocExecutor) executeSdOpArrayAddUnique(op *SubDocOp) (*SubDocResult, 
 	arrVal = append(arrVal, valueObj)
 
 	err = pathVal.Replace(arrVal)
+	if err != nil {
+		return e.itemErrorResult(err)
+	}
+
+	e.doc.Value, err = docVal.GetJSON()
+	if err != nil {
+		return e.itemErrorResult(err)
+	}
+
+	return &SubDocResult{
+		Value: nil,
+		Err:   nil,
+	}, nil
+}
+
+func (e SubDocExecutor) executeSdOpDeleteFullDoc(op *SubDocOp) (*SubDocResult, error) {
+	if op.Path != "" {
+		return e.itemErrorResult(ErrInvalidArgument)
+	}
+	if len(op.Value) != 0 {
+		return e.itemErrorResult(ErrInvalidArgument)
+	}
+
+	e.doc.IsDeleted = true
+
+	return &SubDocResult{
+		Value: nil,
+		Err:   nil,
+	}, nil
+}
+
+func (e SubDocExecutor) executeSdOpDictSetFullDoc(op *SubDocOp) (*SubDocResult, error) {
+	if op.Path != "" {
+		return e.itemErrorResult(ErrInvalidArgument)
+	}
+
+	docVal, err := newSubDocManip(e.doc.Value)
+	if err != nil {
+		return e.itemErrorResult(err)
+	}
+
+	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, true)
+	if err != nil {
+		return e.itemErrorResult(err)
+	}
+
+	var valueObj interface{}
+	err = json.Unmarshal(op.Value, &valueObj)
+	if err != nil {
+		return e.itemErrorResult(err)
+	}
+
+	err = pathVal.Set(valueObj)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
