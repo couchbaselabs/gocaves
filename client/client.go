@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"time"
 )
 
 // Client represents a single CAVES client instance.
@@ -254,19 +255,21 @@ func (c *Client) EndTest(runID string) error {
 }
 
 // TimeTravelRun allows a specific run to be time-travelled.
-func (c *Client) TimeTravelRun(runID string) error {
+func (c *Client) TimeTravelRun(runID string, duration time.Duration) error {
 	_, err := c.roundTripCommand(map[string]interface{}{
-		"type": "timetravel",
-		"run":  runID,
+		"type":      "timetravel",
+		"run":       runID,
+		"amount_ms": duration.Milliseconds(),
 	})
 	return err
 }
 
 // TimeTravelCluster allows a specific cluster to be time-travelled.
-func (c *Client) TimeTravelCluster(clusterID string) error {
+func (c *Client) TimeTravelCluster(clusterID string, duration time.Duration) error {
 	_, err := c.roundTripCommand(map[string]interface{}{
-		"type":    "timetravel",
-		"cluster": clusterID,
+		"type":      "timetravel",
+		"cluster":   clusterID,
+		"amount_ms": duration.Milliseconds(),
 	})
 	return err
 }
