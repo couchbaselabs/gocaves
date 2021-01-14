@@ -78,6 +78,18 @@ type CmdEndedTest struct {
 	Error string
 }
 
+// CmdAddBucket requests a new mock bucket be created.
+type CmdAddBucket struct {
+	ClusterID   string `json:"cluster"`
+	BucketName  string `json:"name"`
+	NumReplicas uint   `json:"replicas"`
+	BucketType  string `json:"bucket_type"`
+}
+
+// CmdAddedBucket represents the reply to an add bucket request.
+type CmdAddedBucket struct {
+}
+
 var cmdsMap = map[string]reflect.Type{
 	"hello":          reflect.TypeOf(CmdHello{}),
 	"createcluster":  reflect.TypeOf(CmdCreateCluster{}),
@@ -92,6 +104,8 @@ var cmdsMap = map[string]reflect.Type{
 	"endedtest":      reflect.TypeOf(CmdEndedTest{}),
 	"timetravel":     reflect.TypeOf(CmdTimeTravel{}),
 	"timetravelled":  reflect.TypeOf(CmdTimeTravelled{}),
+	"addbucket":      reflect.TypeOf(CmdAddBucket{}),
+	"addedbucket":    reflect.TypeOf(CmdAddedBucket{}),
 }
 
 func encodeCommandPacket(command interface{}) ([]byte, error) {

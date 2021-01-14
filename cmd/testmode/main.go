@@ -120,6 +120,14 @@ func (m *Main) handleAPIRequest(pkt interface{}) interface{} {
 		m.testRuns.TimeTravel(pktTyped.RunID, ttAmnt)
 
 		return &api.CmdTimeTravelled{}
+	case *api.CmdAddBucket:
+		err := m.clusterMgr.AddBucket(pktTyped.ClusterID, pktTyped.BucketName, pktTyped.BucketType, pktTyped.NumReplicas)
+		if err != nil {
+			log.Printf("failed to add bucket: %s", err)
+			return &api.CmdAddedBucket{}
+		}
+
+		return &api.CmdAddedBucket{}
 	}
 
 	return nil

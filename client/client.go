@@ -273,3 +273,15 @@ func (c *Client) TimeTravelCluster(clusterID string, duration time.Duration) err
 	})
 	return err
 }
+
+// AddBucketCluster adds a bucket to a specific cluster
+func (c *Client) AddBucketCluster(clusterID string, name, typ string, replicas uint) error {
+	_, err := c.roundTripCommand(map[string]interface{}{
+		"type":        "addbucket",
+		"cluster":     clusterID,
+		"name":        name,
+		"bucket_type": typ,
+		"replicas":    replicas,
+	})
+	return err
+}
