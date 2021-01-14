@@ -62,3 +62,25 @@ func (m *clusterManager) RemoveCluster(clusterID string) error {
 	//return ncluster.Cluster.Destroy()
 	return nil
 }
+
+func (m *clusterManager) AddBucket(clusterID, name, typ string, replicas uint) error {
+	ncluster := m.Get(clusterID)
+	if ncluster == nil {
+		return errors.New("invalid cluster id")
+	}
+
+	var bucketType mock.BucketType
+	switch typ {
+	case "couchbase":
+		bucketType = mock.BucketTypeCouchbase
+	case "memcached":
+		bucketType = mock.BucketTypeMemcached
+	}
+
+	_, err := ncluster.Mock.AddBucket(mock.NewBucketOptions{
+		Name:        name,
+		Type:        bucketType,
+		NumReplicas: replicas,
+	})
+	return err
+}
