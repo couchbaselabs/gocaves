@@ -3,6 +3,7 @@ package mockdb
 import (
 	"bytes"
 	"errors"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -110,6 +111,11 @@ func (s *Vbucket) currentUUIDLocked() uint64 {
 	return curRevData.VbUUID
 }
 
+func (s *Vbucket) hasDocExpired(doc *Document) bool {
+	// TODO(brett19): Need to emit a delete mutation when a document expires.
+	return !doc.Expiry.IsZero() && !s.chrono.Now().Before(doc.Expiry)
+}
+
 func (s *Vbucket) findDocLocked(repIdx, collectionID uint, key []byte) *Document {
 	// TODO(brett19): Maybe someday we can improve the performance of this by
 	// scanning from end-to-start instead of start-to-end...
@@ -137,8 +143,7 @@ func (s *Vbucket) findDocLocked(repIdx, collectionID uint, key []byte) *Document
 		foundDoc = copyDocument(foundDoc)
 
 		// We cheat and convert an expired document directly to being deleted.
-		// TODO(brett19): Need to emit a delete mutation when a document expires.
-		if !foundDoc.Expiry.IsZero() && !s.chrono.Now().Before(foundDoc.Expiry) {
+		if s.hasDocExpired(foundDoc) {
 			foundDoc.IsDeleted = true
 		}
 
@@ -220,6 +225,65 @@ func (s *Vbucket) Get(repIdx, collectionID uint, key []byte) (*Document, error) 
 	}
 
 	return foundDoc, nil
+}
+
+// GetRandom returns a random, not deleted or expired, document in the vbucket
+func (s *Vbucket) GetRandom(repIdx, collectionID uint) *Document {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if len(s.documents) == 0 {
+		return nil
+	}
+
+	// Calculate when replica becomes visible
+	repLatency := time.Duration(repIdx) * s.replicaLatency
+	repVisibleTime := s.chrono.Now().Add(-repLatency)
+
+	var foundDoc *Document
+	start := rand.Intn(len(s.documents))
+	curr := start
+	for {
+		doc := s.documents[curr]
+
+		if !doc.ModifiedTime.Before(repVisibleTime) {
+			continue
+		}
+
+		if doc.CollectionID == collectionID {
+			foundDoc = doc
+		}
+
+		if foundDoc != nil {
+			// Need to COW this.
+			foundDoc = copyDocument(foundDoc)
+
+			if s.hasDocExpired(foundDoc) {
+				foundDoc = nil
+				continue
+			}
+
+			// We also cheat and clean this up here...
+			if !s.chrono.Now().Before(foundDoc.LockExpiry) {
+				foundDoc.LockExpiry = time.Time{}
+			}
+		}
+
+		if foundDoc != nil {
+			break
+		}
+
+		curr++
+		if curr == len(s.documents) {
+			curr = 0
+		}
+
+		if curr == start {
+			break
+		}
+	}
+
+	return foundDoc
 }
 
 // GetAllWithin returns a list of all the mutations that have occurred

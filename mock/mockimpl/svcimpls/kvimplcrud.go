@@ -17,6 +17,7 @@ func (x *kvImplCrud) Register(h *hookHelper) {
 	h.RegisterKvHandler(memd.CmdSet, x.handleSetRequest)
 	h.RegisterKvHandler(memd.CmdReplace, x.handleReplaceRequest)
 	h.RegisterKvHandler(memd.CmdGet, x.handleGetRequest)
+	h.RegisterKvHandler(memd.CmdGetRandom, x.handleGetRandomRequest)
 	h.RegisterKvHandler(memd.CmdGetReplica, x.handleGetReplicaRequest)
 	h.RegisterKvHandler(memd.CmdDelete, x.handleDeleteRequest)
 	h.RegisterKvHandler(memd.CmdIncrement, x.handleIncrementRequest)
@@ -135,6 +136,38 @@ func (x *kvImplCrud) handleGetRequest(source mock.KvClient, pak *memd.Packet) {
 			Datatype: resp.Datatype,
 			Value:    resp.Value,
 			Extras:   extrasBuf,
+		})
+	}
+}
+
+func (x *kvImplCrud) handleGetRandomRequest(source mock.KvClient, pak *memd.Packet) {
+	if proc := x.makeProc(source, pak); proc != nil {
+		if len(pak.Extras) != 0 {
+			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
+			return
+		}
+
+		resp, err := proc.GetRandom(kvproc.GetRandomOptions{
+			CollectionID: uint(pak.CollectionID),
+		})
+		if err != nil {
+			x.writeProcErr(source, pak, err)
+			return
+		}
+
+		extrasBuf := make([]byte, 4)
+		binary.BigEndian.PutUint32(extrasBuf[0:], resp.Flags)
+
+		source.WritePacket(&memd.Packet{
+			Magic:    memd.CmdMagicRes,
+			Command:  pak.Command,
+			Opaque:   pak.Opaque,
+			Status:   memd.StatusSuccess,
+			Cas:      resp.Cas,
+			Datatype: resp.Datatype,
+			Value:    resp.Value,
+			Extras:   extrasBuf,
+			Key:      resp.Key,
 		})
 	}
 }

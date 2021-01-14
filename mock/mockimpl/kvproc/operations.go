@@ -55,6 +55,43 @@ func (e *Engine) Get(opts GetOptions) (*GetResult, error) {
 	}, nil
 }
 
+// GetRandomOptions specifies options for a GET_RANDOM operation.
+type GetRandomOptions struct {
+	CollectionID uint
+}
+
+// GetRandomResult contains the results of a GET_RANDOM operation.
+type GetRandomResult struct {
+	Cas      uint64
+	Datatype uint8
+	Value    []byte
+	Flags    uint32
+	Key      []byte
+}
+
+// GetRandom performs a GET_RANDOM operation.
+func (e *Engine) GetRandom(opts GetRandomOptions) (*GetRandomResult, error) {
+	doc, err := e.db.GetRandom(0, opts.CollectionID)
+	if err == mockdb.ErrDocNotFound {
+		return nil, ErrDocNotFound
+	} else if err != nil {
+		return nil, err
+	}
+
+	if e.docIsLocked(doc) {
+		// If the doc is locked, we return -1 as the CAS instead.
+		doc.Cas = 0xFFFFFFFFFFFFFFFF
+	}
+
+	return &GetRandomResult{
+		Cas:      doc.Cas,
+		Datatype: doc.Datatype,
+		Value:    doc.Value,
+		Flags:    doc.Flags,
+		Key:      doc.Key,
+	}, nil
+}
+
 // GetReplica performs a GET_REPLICA operation.
 func (e *Engine) GetReplica(opts GetOptions) (*GetResult, error) {
 	repIdx := e.findReplicaIdx(opts.Vbucket)

@@ -2,6 +2,7 @@ package mockdb
 
 import (
 	"errors"
+	"math/rand"
 	"time"
 
 	"github.com/couchbaselabs/gocaves/mock/mocktime"
@@ -63,6 +64,35 @@ func (b *Bucket) Get(repIdx, vbIdx uint, collectionID uint, key []byte) (*Docume
 	}
 
 	return vbucket.Get(repIdx, collectionID, key)
+}
+
+// GetRandom fetches a random document from a particular replica and vbucket index.
+func (b *Bucket) GetRandom(repIdx, collectionID uint) (*Document, error) {
+	max := len(b.vbuckets)
+	start := uint(rand.Intn(max))
+	curr := start
+	for {
+		vbucket := b.GetVbucket(curr)
+		if vbucket == nil {
+			continue
+		}
+
+		found := vbucket.GetRandom(repIdx, collectionID)
+		if found != nil {
+			return found, nil
+		}
+
+		curr++
+		if curr == uint(max) {
+			curr = 0
+		}
+
+		if curr == start {
+			break
+		}
+	}
+
+	return nil, ErrDocNotFound
 }
 
 // Insert inserts a document into the master replica of a vbucket.
