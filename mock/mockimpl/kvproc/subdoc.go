@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock/mockdb"
@@ -392,7 +393,7 @@ func (e SubDocExecutor) executeSdOpCounter(op *SubDocOp) (*SubDocResult, error) 
 	}
 
 	return &SubDocResult{
-		Value: nil,
+		Value: []byte(strconv.FormatInt(newVal, 10)),
 		Err:   nil,
 	}, nil
 }
