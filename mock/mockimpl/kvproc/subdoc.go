@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock/mockdb"
+	"hash/crc32"
 )
 
 const subdocMultiMaxPaths = 16
@@ -20,43 +22,96 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 	opReses := make([]*SubDocResult, len(ops))
 
 	for opIdx, op := range ops {
-		var opRes *SubDocResult
-		var err error
+		var opDoc *mockdb.Document
+		if op.IsXattrPath {
+			// TODO: This should maybe move up to the operations level at some point?
+			var err error
+			opDoc, err = createXattrDoc(doc, op)
+			if err != nil {
+				opReses[opIdx] = &SubDocResult{
+					Value: nil,
+					Err:   err,
+				}
+				continue
+			}
+		} else {
+			opDoc = doc
+		}
+		base := baseSubDocExecutor{
+			doc:     opDoc,
+			newMeta: newMeta,
+		}
 
+		var executor SubDocExecutor
 		switch op.Op {
 		case memd.SubDocOpGet:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpGet(op)
+			executor = SubDocGetExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpExists:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpExists(op)
+			executor = SubDocExistsExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpGetCount:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpGetCount(op)
+			executor = SubDocGetCountExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpGetDoc:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpGetDoc(op)
-
+			executor = SubDocGetDocExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpDictAdd:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDictAdd(op)
+			executor = SubDocDictAddExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpDictSet:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDictSet(op)
+			executor = SubDocDictSetExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpDelete:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDelete(op)
+			executor = SubDocDeleteExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpReplace:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpReplace(op)
+			executor = SubDocReplaceExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpArrayPushLast:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpArrayPushLast(op)
+			executor = SubDocArrayPushLastExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpArrayPushFirst:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpArrayPushFirst(op)
+			executor = SubDocArrayPushFirstExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpArrayInsert:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpArrayInsert(op)
+			executor = SubDocArrayInsertExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpArrayAddUnique:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpArrayAddUnique(op)
+			executor = SubDocArrayAddUniqueExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpCounter:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpCounter(op)
+			executor = SubDocCounterExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpSetDoc:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDictSetFullDoc(op)
+			executor = SubDocDictSetFullExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpDeleteDoc:
-			opRes, err = SubDocExecutor{doc, newMeta}.executeSdOpDeleteFullDoc(op)
+			executor = SubDocDeleteFullDocExecutor{
+				baseSubDocExecutor: base,
+			}
 		case memd.SubDocOpAddDoc:
 		}
+
+		if executor == nil {
+			return nil, ErrInternal
+		}
+
+		opRes, err := executor.Execute(op)
 
 		if err != nil {
 			return nil, err
@@ -65,26 +120,181 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 			return nil, ErrInternal
 		}
 
+		if op.IsXattrPath && opRes.Err == nil && subdocOpIsMutation(op) {
+			pathComps, err := ParseSubDocPath(op.Path)
+			if err != nil {
+				// It'd be very strange to actually get here.
+				opReses[opIdx] = &SubDocResult{
+					Value: nil,
+					Err:   err,
+				}
+				continue
+			}
+
+			key := pathComps[0].Path
+
+			// We created a fake document for the xattr so we need to strip it down to only the value.
+			v := opDoc.Value[len(fmt.Sprintf("{\"%s\":", key)):]
+			v = v[:len(v)-1] // }
+			doc.Xattrs[key] = v
+		}
+
 		opReses[opIdx] = opRes
 	}
 
 	return opReses, nil
 }
 
+func createXattrDoc(doc *mockdb.Document, op *SubDocOp) (*mockdb.Document, error) {
+	if err := validateXattrPath(op); err != nil {
+		return nil, err
+	}
+
+	pathComps, err := ParseSubDocPath(op.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	key := pathComps[0].Path
+
+	if key == "$document" {
+		if subdocOpIsMutation(op) {
+			return nil, ErrSdCannotModifyVattr
+		}
+
+		return createVattrDoc(doc), nil
+	}
+
+	xattr, ok := doc.Xattrs[key]
+	if !ok {
+		return &mockdb.Document{
+			Value: []byte("{}"),
+		}, nil
+	}
+
+	v := []byte(fmt.Sprintf("{\"%s\":", key))
+	v = append(v, xattr...)
+	v = append(v, '}')
+
+	return &mockdb.Document{
+		Value: v,
+	}, nil
+}
+
+func createVattrDoc(doc *mockdb.Document) *mockdb.Document {
+	// TODO: revid
+	table := crc32.MakeTable(crc32.Castagnoli)
+
+	expiry := int64(0)
+	if !doc.Expiry.IsZero() {
+		expiry = doc.Expiry.Unix()
+	}
+
+	v := []byte{'{'}
+	v = append(v, "\"$document\":"...)
+	v = append(v, '{')
+	v = append(v, fmt.Sprintf("\"exptime\":%d,", expiry)...)
+	v = append(v, fmt.Sprintf("\"CAS\":\"0x%016x\",", doc.Cas)...)
+	v = append(v, fmt.Sprintf("\"datatype\":%s,", datatypeToString(doc.Datatype))...)
+	v = append(v, fmt.Sprintf("\"deleted\":%t,", doc.IsDeleted)...)
+	v = append(v, fmt.Sprintf("\"flags\":%d,", doc.Flags)...)
+	v = append(v, fmt.Sprintf("\"last_modified\":\"%d\",", doc.ModifiedTime.Unix())...)
+	v = append(v, fmt.Sprintf("\"seqno\":\"0x%016x\",", doc.SeqNo)...)
+	v = append(v, fmt.Sprintf("\"value_bytes\":%d,", len(doc.Value))...)
+	v = append(v, fmt.Sprintf("\"vbucket_uuid\":\"0x%016x\",", doc.VbUUID)...)
+	v = append(v, fmt.Sprintf("\"value_crc32c\":\"0x%x\"", crc32.Checksum(doc.Value, table))...)
+	v = append(v, '}')
+	v = append(v, '}')
+
+	return &mockdb.Document{
+		Value: v,
+	}
+}
+
+func datatypeToString(datatype uint8) []string {
+	if datatype == 0x00 {
+		return []string{"\"raw\""}
+	}
+
+	var typ []string
+	if datatype&0x01 == 1 {
+		typ = append(typ, "\"json\"")
+	}
+	if datatype&0x02 == 1 {
+		typ = append(typ, "\"snappy\"")
+	}
+	if datatype&0x04 == 1 {
+		typ = append(typ, "\"xattr\"")
+	}
+
+	return typ
+}
+
+func subdocOpIsMutation(op *SubDocOp) bool {
+	switch op.Op {
+	case memd.SubDocOpDictAdd:
+		return true
+	case memd.SubDocOpDictSet:
+		return true
+	case memd.SubDocOpDelete:
+		return true
+	case memd.SubDocOpReplace:
+		return true
+	case memd.SubDocOpArrayPushLast:
+		return true
+	case memd.SubDocOpArrayPushFirst:
+		return true
+	case memd.SubDocOpArrayInsert:
+		return true
+	case memd.SubDocOpArrayAddUnique:
+		return true
+	case memd.SubDocOpCounter:
+		return true
+	case memd.SubDocOpSetDoc:
+		return true
+	case memd.SubDocOpDeleteDoc:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateXattrPath(op *SubDocOp) error {
+	trimmedPath := strings.TrimSpace(op.Path)
+	if trimmedPath == "" {
+		return ErrSdInvalidXattr
+	}
+	if trimmedPath == "[" {
+		return ErrSdInvalidXattr
+	}
+
+	return nil
+}
+
 // SubDocExecutor is an executor for subdocument operations.
-type SubDocExecutor struct {
+type SubDocExecutor interface {
+	Execute(op *SubDocOp) (*SubDocResult, error)
+}
+
+type baseSubDocExecutor struct {
 	doc     *mockdb.Document
 	newMeta *mockdb.Document
 }
 
-func (e SubDocExecutor) itemErrorResult(err error) (*SubDocResult, error) {
+func (e baseSubDocExecutor) itemErrorResult(err error) (*SubDocResult, error) {
 	return &SubDocResult{
 		Value: nil,
 		Err:   err,
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpGet(op *SubDocOp) (*SubDocResult, error) {
+// SubDocGetExecutor is an executor for subdocument get operations.
+type SubDocGetExecutor struct {
+	baseSubDocExecutor
+}
+
+// Execute performs the subdocument operation.
+func (e SubDocGetExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	docVal, err := newSubDocManip(e.doc.Value)
 	if err != nil {
 		return e.itemErrorResult(err)
@@ -106,7 +316,13 @@ func (e SubDocExecutor) executeSdOpGet(op *SubDocOp) (*SubDocResult, error) {
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpExists(op *SubDocOp) (*SubDocResult, error) {
+// SubDocExistsExecutor is an executor for subdocument operations.
+type SubDocExistsExecutor struct {
+	baseSubDocExecutor
+}
+
+// Execute performs the subdocument operation.
+func (e SubDocExistsExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	docVal, err := newSubDocManip(e.doc.Value)
 	if err != nil {
 		return e.itemErrorResult(err)
@@ -128,7 +344,13 @@ func (e SubDocExecutor) executeSdOpExists(op *SubDocOp) (*SubDocResult, error) {
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpGetCount(op *SubDocOp) (*SubDocResult, error) {
+// SubDocGetCountExecutor is an executor for subdocument operations.
+type SubDocGetCountExecutor struct {
+	baseSubDocExecutor
+}
+
+// Execute performs the subdocument operation.
+func (e SubDocGetCountExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	docVal, err := newSubDocManip(e.doc.Value)
 	if err != nil {
 		return e.itemErrorResult(err)
@@ -162,36 +384,55 @@ func (e SubDocExecutor) executeSdOpGetCount(op *SubDocOp) (*SubDocResult, error)
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpGetDoc(op *SubDocOp) (*SubDocResult, error) {
+// SubDocGetDocExecutor is an executor for subdocument operations.
+type SubDocGetDocExecutor struct {
+	baseSubDocExecutor
+}
+
+// Execute performs the subdocument operation.
+func (e SubDocGetDocExecutor) Execute(_ *SubDocOp) (*SubDocResult, error) {
+	// TODO: check what happens with a full doc against an xattr
 	return &SubDocResult{
 		Value: e.doc.Value,
 		Err:   nil,
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpDictSet(op *SubDocOp) (*SubDocResult, error) {
-	docVal, err := newSubDocManip(e.doc.Value)
+func doBasicMutation(doc []byte, op *SubDocOp, mutationFn func(pathVal *subDocManip, valueObj interface{}) error) ([]byte, error) {
+	docVal, err := newSubDocManip(doc)
 	if err != nil {
-		return e.itemErrorResult(err)
+		return nil, err
 	}
 
 	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, true)
 	if err != nil {
-		return e.itemErrorResult(err)
+		return nil, err
 	}
 
 	var valueObj interface{}
 	err = json.Unmarshal(op.Value, &valueObj)
 	if err != nil {
-		return e.itemErrorResult(err)
+		return nil, err
 	}
 
-	err = pathVal.Set(valueObj)
+	err = mutationFn(pathVal, valueObj)
 	if err != nil {
-		return e.itemErrorResult(err)
+		return nil, err
 	}
 
-	e.doc.Value, err = docVal.GetJSON()
+	return docVal.GetJSON()
+}
+
+// SubDocDictSetExecutor is an executor for subdocument operations.
+type SubDocDictSetExecutor struct {
+	baseSubDocExecutor
+}
+
+func (e SubDocDictSetExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
+	var err error
+	e.doc.Value, err = doBasicMutation(e.doc.Value, op, func(pathVal *subDocManip, valueObj interface{}) error {
+		return pathVal.Set(valueObj)
+	})
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
@@ -202,29 +443,17 @@ func (e SubDocExecutor) executeSdOpDictSet(op *SubDocOp) (*SubDocResult, error) 
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpDictAdd(op *SubDocOp) (*SubDocResult, error) {
-	docVal, err := newSubDocManip(e.doc.Value)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
+// SubDocDictAddExecutor is an executor for subdocument operations.
+type SubDocDictAddExecutor struct {
+	baseSubDocExecutor
+}
 
-	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, false)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	var valueObj interface{}
-	err = json.Unmarshal(op.Value, &valueObj)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	err = pathVal.Insert(valueObj)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	e.doc.Value, err = docVal.GetJSON()
+// Execute performs the subdocument operation.
+func (e SubDocDictAddExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
+	var err error
+	e.doc.Value, err = doBasicMutation(e.doc.Value, op, func(pathVal *subDocManip, valueObj interface{}) error {
+		return pathVal.Insert(valueObj)
+	})
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
@@ -235,29 +464,17 @@ func (e SubDocExecutor) executeSdOpDictAdd(op *SubDocOp) (*SubDocResult, error) 
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpReplace(op *SubDocOp) (*SubDocResult, error) {
-	docVal, err := newSubDocManip(e.doc.Value)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
+// SubDocReplaceExecutor is an executor for subdocument operations.
+type SubDocReplaceExecutor struct {
+	baseSubDocExecutor
+}
 
-	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, false)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	var valueObj interface{}
-	err = json.Unmarshal(op.Value, &valueObj)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	err = pathVal.Replace(valueObj)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	e.doc.Value, err = docVal.GetJSON()
+// Execute performs the subdocument operation.
+func (e SubDocReplaceExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
+	var err error
+	e.doc.Value, err = doBasicMutation(e.doc.Value, op, func(pathVal *subDocManip, valueObj interface{}) error {
+		return pathVal.Replace(valueObj)
+	})
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
@@ -268,7 +485,13 @@ func (e SubDocExecutor) executeSdOpReplace(op *SubDocOp) (*SubDocResult, error) 
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpDelete(op *SubDocOp) (*SubDocResult, error) {
+// SubDocDeleteExecutor is an executor for subdocument operations.
+type SubDocDeleteExecutor struct {
+	baseSubDocExecutor
+}
+
+// Execute performs the subdocument operation.
+func (e SubDocDeleteExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	docVal, err := newSubDocManip(e.doc.Value)
 	if err != nil {
 		return e.itemErrorResult(err)
@@ -351,7 +574,13 @@ func (e SubDocExecutor) executeSdOpDelete(op *SubDocOp) (*SubDocResult, error) {
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpCounter(op *SubDocOp) (*SubDocResult, error) {
+// SubDocCounterExecutor is an executor for subdocument operations.
+type SubDocCounterExecutor struct {
+	baseSubDocExecutor
+}
+
+// Execute performs the subdocument operation.
+func (e SubDocCounterExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	docVal, err := newSubDocManip(e.doc.Value)
 	if err != nil {
 		return e.itemErrorResult(err)
@@ -398,37 +627,51 @@ func (e SubDocExecutor) executeSdOpCounter(op *SubDocOp) (*SubDocResult, error) 
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpArrayPushFirst(op *SubDocOp) (*SubDocResult, error) {
-	docVal, err := newSubDocManip(e.doc.Value)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
+func subDocArrayPush(docVal *subDocManip, op *SubDocOp, pushFront bool) error {
 	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, false)
 	if err != nil {
-		return e.itemErrorResult(err)
+		return err
 	}
 
 	var fullValue []interface{}
 	fullValueBytes := append([]byte("["), append(append([]byte{}, op.Value...), []byte("]")...)...)
 	err = json.Unmarshal(fullValueBytes, &fullValue)
 	if err != nil {
-		return e.itemErrorResult(err)
+		return err
 	}
 
 	val, err := pathVal.Get()
 	if err != nil {
-		return e.itemErrorResult(err)
+		return err
 	}
 
 	arrVal, isArr := val.([]interface{})
 	if !isArr {
-		return e.itemErrorResult(ErrSdPathMismatch)
+		return ErrSdPathMismatch
 	}
 
-	arrVal = append(fullValue, arrVal...)
+	if pushFront {
+		arrVal = append(fullValue, arrVal...)
+	} else {
+		arrVal = append(arrVal, fullValue...)
+	}
 
-	err = pathVal.Replace(arrVal)
+	return pathVal.Replace(arrVal)
+}
+
+// SubDocArrayPushFirstExecutor is an executor for subdocument operations.
+type SubDocArrayPushFirstExecutor struct {
+	baseSubDocExecutor
+}
+
+// Execute performs the subdocument operation.
+func (e SubDocArrayPushFirstExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
+	docVal, err := newSubDocManip(e.doc.Value)
+	if err != nil {
+		return e.itemErrorResult(err)
+	}
+
+	err = subDocArrayPush(docVal, op, true)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
@@ -444,37 +687,19 @@ func (e SubDocExecutor) executeSdOpArrayPushFirst(op *SubDocOp) (*SubDocResult, 
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpArrayPushLast(op *SubDocOp) (*SubDocResult, error) {
+// SubDocArrayPushLastExecutor is an executor for subdocument operations.
+type SubDocArrayPushLastExecutor struct {
+	baseSubDocExecutor
+}
+
+// Execute performs the subdocument operation.
+func (e SubDocArrayPushLastExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	docVal, err := newSubDocManip(e.doc.Value)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
 
-	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, false)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	var fullValue []interface{}
-	fullValueBytes := append([]byte("["), append(append([]byte{}, op.Value...), []byte("]")...)...)
-	err = json.Unmarshal(fullValueBytes, &fullValue)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	val, err := pathVal.Get()
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	arrVal, isArr := val.([]interface{})
-	if !isArr {
-		return e.itemErrorResult(ErrSdPathMismatch)
-	}
-
-	arrVal = append(arrVal, fullValue...)
-
-	err = pathVal.Replace(arrVal)
+	err = subDocArrayPush(docVal, op, false)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
@@ -490,7 +715,13 @@ func (e SubDocExecutor) executeSdOpArrayPushLast(op *SubDocOp) (*SubDocResult, e
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpArrayInsert(op *SubDocOp) (*SubDocResult, error) {
+// SubDocArrayInsertExecutor is an executor for subdocument operations.
+type SubDocArrayInsertExecutor struct {
+	baseSubDocExecutor
+}
+
+// Execute performs the subdocument operation.
+func (e SubDocArrayInsertExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	docVal, err := newSubDocManip(e.doc.Value)
 	if err != nil {
 		return e.itemErrorResult(err)
@@ -565,7 +796,13 @@ func (e SubDocExecutor) executeSdOpArrayInsert(op *SubDocOp) (*SubDocResult, err
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpArrayAddUnique(op *SubDocOp) (*SubDocResult, error) {
+// SubDocArrayAddUniqueExecutor is an executor for subdocument operations.
+type SubDocArrayAddUniqueExecutor struct {
+	baseSubDocExecutor
+}
+
+// Execute performs the subdocument operation.
+func (e SubDocArrayAddUniqueExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	docVal, err := newSubDocManip(e.doc.Value)
 	if err != nil {
 		return e.itemErrorResult(err)
@@ -622,7 +859,13 @@ func (e SubDocExecutor) executeSdOpArrayAddUnique(op *SubDocOp) (*SubDocResult, 
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpDeleteFullDoc(op *SubDocOp) (*SubDocResult, error) {
+// SubDocDeleteFullDocExecutor is an executor for subdocument operations.
+type SubDocDeleteFullDocExecutor struct {
+	baseSubDocExecutor
+}
+
+// Execute performs the subdocument operation.
+func (e SubDocDeleteFullDocExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	if op.Path != "" {
 		return e.itemErrorResult(ErrInvalidArgument)
 	}
@@ -638,7 +881,12 @@ func (e SubDocExecutor) executeSdOpDeleteFullDoc(op *SubDocOp) (*SubDocResult, e
 	}, nil
 }
 
-func (e SubDocExecutor) executeSdOpDictSetFullDoc(op *SubDocOp) (*SubDocResult, error) {
+// SubDocExistsExecutor is an executor for subdocument operations.
+type SubDocDictSetFullExecutor struct {
+	baseSubDocExecutor
+}
+
+func (e SubDocDictSetFullExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	if op.Path != "" {
 		return e.itemErrorResult(ErrInvalidArgument)
 	}

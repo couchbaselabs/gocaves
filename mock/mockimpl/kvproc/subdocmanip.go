@@ -11,6 +11,13 @@ type subDocManip struct {
 }
 
 func newSubDocManip(data []byte) (*subDocManip, error) {
+	if len(data) == 0 {
+		return &subDocManip{
+			root: nil,
+			path: nil,
+		}, nil
+	}
+
 	var val interface{}
 	err := json.Unmarshal(data, &val)
 	if err != nil {
