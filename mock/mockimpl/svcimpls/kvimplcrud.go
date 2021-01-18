@@ -97,6 +97,10 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 		return memd.StatusSubDocBadCombo
 	case kvproc.ErrInvalidArgument:
 		return memd.StatusInvalidArgs
+	case kvproc.ErrSdInvalidXattr:
+		return memd.StatusCode(0x87)
+	case kvproc.ErrSdCannotModifyVattr:
+		return memd.StatusSubDocXattrCannotModifyVAttr
 	}
 
 	log.Printf("Recieved unexpected crud proc error: %s", err)
@@ -800,8 +804,12 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Packet) {
 	if proc := x.makeProc(source, pak); proc != nil {
 		var docFlags memd.SubdocDocFlag
-		if len(pak.Extras) >= 1 {
-			docFlags = memd.SubdocDocFlag(pak.Extras[0])
+		if len(pak.Extras) > 0 {
+			if len(pak.Extras) == 1 {
+				docFlags = memd.SubdocDocFlag(pak.Extras[0])
+			} else {
+				docFlags = memd.SubdocDocFlag(pak.Extras[len(pak.Extras)-1])
+			}
 		}
 
 		ops := make([]*kvproc.SubDocOp, 0)

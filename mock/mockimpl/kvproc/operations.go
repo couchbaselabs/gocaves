@@ -832,6 +832,7 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			Key:          opts.Key,
 			Value:        nil,
 			Cas:          0,
+			Xattrs:       make(map[string][]byte),
 		}
 
 		// We need to dynamically decide what the root of the document
