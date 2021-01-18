@@ -60,3 +60,55 @@ func TestSubdocManipArr(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, docJSON1, []byte(`{"a":["b","c","d","f"]}`))
 }
+
+func TestSubdocManipArrOfArr(t *testing.T) {
+	docRoot, err := newSubDocManip([]byte(`{"a":[["b","c"],["d","e"]]}`))
+	assert.NoError(t, err)
+
+	a0, err := docRoot.GetByPath("a[1][1]", false, false)
+	assert.NoError(t, err)
+
+	a0JSON, err := a0.GetJSON()
+	assert.NoError(t, err)
+	assert.Equal(t, a0JSON, []byte(`"e"`))
+
+	aN1, err := docRoot.GetByPath("a[-1]", false, false)
+	assert.NoError(t, err)
+
+	aN1JSON, err := aN1.GetJSON()
+	assert.NoError(t, err)
+	assert.Equal(t, aN1JSON, []byte(`["d","e"]`))
+
+	err = aN1.Set("f")
+	assert.NoError(t, err)
+
+	docJSON1, err := docRoot.GetJSON()
+	assert.NoError(t, err)
+	assert.Equal(t, docJSON1, []byte(`{"a":[["b","c"],"f"]}`))
+}
+
+func TestSubdocManipArrOfObj(t *testing.T) {
+	docRoot, err := newSubDocManip([]byte(`{"a":[[{"b":"c"}],[{"d":"e"},{"fa":"ga"}]]}`))
+	assert.NoError(t, err)
+
+	a0, err := docRoot.GetByPath("a[1][1].fa", false, false)
+	assert.NoError(t, err)
+
+	a0JSON, err := a0.GetJSON()
+	assert.NoError(t, err)
+	assert.Equal(t, a0JSON, []byte(`"ga"`))
+
+	aN1, err := docRoot.GetByPath("a[-1]", false, false)
+	assert.NoError(t, err)
+
+	aN1JSON, err := aN1.GetJSON()
+	assert.NoError(t, err)
+	assert.Equal(t, aN1JSON, []byte(`[{"d":"e"},{"fa":"ga"}]`))
+
+	err = aN1.Set("f")
+	assert.NoError(t, err)
+
+	docJSON1, err := docRoot.GetJSON()
+	assert.NoError(t, err)
+	assert.Equal(t, docJSON1, []byte(`{"a":[[{"b":"c"}],"f"]}`))
+}

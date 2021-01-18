@@ -98,7 +98,7 @@ func (m *subDocManip) Get() (interface{}, error) {
 	case int:
 		arrType := m.root.([]interface{})
 		if typedPath < 0 {
-			if 1-typedPath >= len(arrType) {
+			if len(arrType)+typedPath < 0 {
 				return nil, ErrSdPathNotFound
 			}
 			return arrType[len(arrType)+typedPath], nil
