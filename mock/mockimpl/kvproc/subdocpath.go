@@ -115,8 +115,6 @@ func ParseSubDocPath(path string) ([]SubDocPathComponent, error) {
 				// end of the string now
 				return parts, nil
 			}
-
-			charIdx++
 		} else if char == '\\' {
 			if charIdx+1 == len(path) {
 				// escape without a character
@@ -127,14 +125,14 @@ func ParseSubDocPath(path string) ([]SubDocPathComponent, error) {
 			charIdx++
 			charIdx++
 		} else if char == '.' {
-			if compBuffer == "" {
+			if compBuffer == "" && len(parts) == 0 {
 				return nil, errors.New("period with no content")
+			} else if compBuffer != "" {
+				parts = append(parts, SubDocPathComponent{
+					Path: compBuffer,
+				})
+				compBuffer = ""
 			}
-
-			parts = append(parts, SubDocPathComponent{
-				Path: compBuffer,
-			})
-			compBuffer = ""
 		} else {
 			compBuffer += string(char)
 		}
