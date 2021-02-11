@@ -4,6 +4,7 @@ import (
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/contrib/scramserver"
 	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
 )
 
@@ -15,7 +16,6 @@ type kvClient struct {
 
 	authenticatedUserName string
 	selectedBucketName    string
-	// scramServer           scramserver.ScramServer
 }
 
 // IsTLS returns whether this client is connected via TLS
@@ -39,6 +39,26 @@ func (c *kvClient) SetAuthenticatedUserName(userName string) {
 // AuthenticatedUserName gets the name of the user who is authenticated.
 func (c *kvClient) AuthenticatedUserName() string {
 	return c.authenticatedUserName
+}
+
+// CheckAuthenticated verifies that the currently authenticated user has the specified permissions.
+func (c *kvClient) CheckAuthenticated(permission mockauth.Permission, collectionID uint32) bool {
+	user := c.service.Node().Cluster().Users().GetUser(c.AuthenticatedUserName())
+	if user == nil {
+		return false
+	}
+
+	b := c.SelectedBucket()
+	var bucket, scope, col string
+	if b != nil {
+		scope, col = b.CollectionManifest().GetByID(collectionID)
+		bucket = b.Name()
+	}
+	if !user.HasPermission(permission, bucket, scope, col) {
+		return false
+	}
+
+	return true
 }
 
 // SetSelectedBucketName sets the currently selected bucket's name.

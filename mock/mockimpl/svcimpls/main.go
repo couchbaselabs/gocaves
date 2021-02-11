@@ -26,6 +26,7 @@ func Register(opts RegisterOptions) {
 	(&kvImplErrMap{}).Register(h)
 	(&kvImplHello{}).Register(h)
 	(&mgmtImplConfig{}).Register(h)
+	(&mgmtImplUser{}).Register(h)
 }
 
 func replyWithError(source mock.KvClient, pak *memd.Packet, err error) {

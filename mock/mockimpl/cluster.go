@@ -3,6 +3,7 @@ package mockimpl
 import (
 	"crypto/tls"
 	"fmt"
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"log"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ type clusterInst struct {
 
 	buckets []*bucketInst
 	nodes   []*clusterNodeInst
+
+	auth *mockauth.Engine
 
 	kvInHooks  hooks.KvHookManager
 	kvOutHooks hooks.KvHookManager
@@ -82,6 +85,7 @@ func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 		tlsConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		},
+		auth: mockauth.NewEngine(),
 	}
 
 	// Since it doesn't make sense to have no nodes in a cluster, we force
@@ -199,6 +203,10 @@ func (c *clusterInst) KvOutHooks() mock.KvHookManager {
 // MgmtHooks returns the hook manager for management requests.
 func (c *clusterInst) MgmtHooks() mock.MgmtHookManager {
 	return &c.mgmtHooks
+}
+
+func (c *clusterInst) Users() mock.UserService {
+	return c.auth
 }
 
 func (c *clusterInst) handleKvPacketIn(source *kvClient, pak *memd.Packet) {

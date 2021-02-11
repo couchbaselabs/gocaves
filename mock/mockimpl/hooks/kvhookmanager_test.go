@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"testing"
 
 	"github.com/couchbase/gocbcore/v9/memd"
@@ -22,6 +23,9 @@ func (c *fakeKvClient) SelectedBucketName() string               { return "" }
 func (c *fakeKvClient) SelectedBucket() mock.Bucket              { return nil }
 func (c *fakeKvClient) WritePacket(pak *memd.Packet) error       { return nil }
 func (c *fakeKvClient) Close() error                             { return nil }
+func (c *fakeKvClient) CheckAuthenticated(permission mockauth.Permission, collectionID uint32) bool {
+	return true
+}
 
 func TestKvHooksBasic(t *testing.T) {
 	hookInvokes := make([]int, 0)

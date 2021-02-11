@@ -1,8 +1,11 @@
 package mockimpl
 
 import (
+	"encoding/base64"
 	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
+	"strings"
 )
 
 // mgmtService represents a management service running somewhere in the cluster.
@@ -88,4 +91,39 @@ func (s *mgmtService) Close() error {
 		errOut = s.tlsServer.Close()
 	}
 	return errOut
+}
+
+// CheckAuthenticated verifies that the currently authenticated user has the specified permissions.
+func (s *mgmtService) CheckAuthenticated(permission mockauth.Permission, bucket, scope, collection string,
+	req *mock.HTTPRequest) bool {
+	authHeader := req.Header.Get("Authorization")
+	if authHeader == "" {
+		return false
+	}
+
+	split := strings.SplitN(authHeader, " ", 2)
+	if len(split) != 2 || split[0] != "Basic" {
+		return false
+	}
+
+	p, err := base64.StdEncoding.DecodeString(split[1])
+	if err != nil {
+		return false
+	}
+
+	userpassword := strings.SplitN(string(p), ":", 2)
+	if len(userpassword) != 2 {
+		return false
+	}
+
+	user := s.Node().Cluster().Users().GetUser(userpassword[0])
+	if user == nil {
+		return false
+	}
+
+	if user.Password != userpassword[1] {
+		return false
+	}
+
+	return user.HasPermission(permission, bucket, scope, collection)
 }

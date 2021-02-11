@@ -3,6 +3,7 @@ package mock
 import (
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/contrib/scramserver"
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 )
 
 // KvClient represents all the state about a connected kv client.
@@ -18,6 +19,9 @@ type KvClient interface {
 
 	// AuthenticatedUserName gets the name of the user who is authenticated.
 	AuthenticatedUserName() string
+
+	// CheckAuthenticated verifies that the currently authenticated user has the specified permissions.
+	CheckAuthenticated(permission mockauth.Permission, collectionID uint32) bool
 
 	// SetSelectedBucketName sets the currently selected bucket's name.
 	SetSelectedBucketName(bucketName string)
