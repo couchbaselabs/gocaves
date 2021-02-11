@@ -2,6 +2,7 @@ package svcimpls
 
 import (
 	"encoding/binary"
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"log"
 
 	"github.com/couchbase/gocbcore/v9/memd"
@@ -43,7 +44,7 @@ func (x *kvImplCrud) writeStatusReply(source mock.KvClient, pak *memd.Packet, st
 }
 
 // makeProc either writes a reply to the network, or returns a non-nil Engine to use.
-func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet) *kvproc.Engine {
+func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet, permission mockauth.Permission) *kvproc.Engine {
 	selectedBucket := source.SelectedBucket()
 	if selectedBucket == nil {
 		x.writeStatusReply(source, pak, memd.StatusNoBucket)
@@ -52,6 +53,13 @@ func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet) *kvproc.En
 
 	sourceNode := source.Source().Node()
 	vbOwnership := selectedBucket.VbucketOwnership(sourceNode)
+
+	if !source.CheckAuthenticated(permission, pak.CollectionID) {
+		// TODO(chvck): CheckAuthenticated needs to change, this could be actually be auth or access error depending on the user
+		// access levels.
+		x.writeStatusReply(source, pak, memd.StatusAuthError)
+		return nil
+	}
 
 	return kvproc.New(selectedBucket.Store(), vbOwnership)
 }
@@ -112,7 +120,7 @@ func (x *kvImplCrud) writeProcErr(source mock.KvClient, pak *memd.Packet, err er
 }
 
 func (x *kvImplCrud) handleGetRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead); proc != nil {
 		if len(pak.Extras) != 0 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -145,7 +153,7 @@ func (x *kvImplCrud) handleGetRequest(source mock.KvClient, pak *memd.Packet) {
 }
 
 func (x *kvImplCrud) handleGetRandomRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead); proc != nil {
 		if len(pak.Extras) != 0 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -177,7 +185,7 @@ func (x *kvImplCrud) handleGetRandomRequest(source mock.KvClient, pak *memd.Pack
 }
 
 func (x *kvImplCrud) handleGetReplicaRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead); proc != nil {
 		if len(pak.Extras) != 0 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -210,7 +218,7 @@ func (x *kvImplCrud) handleGetReplicaRequest(source mock.KvClient, pak *memd.Pac
 }
 
 func (x *kvImplCrud) handleAddRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		if len(pak.Extras) != 8 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -259,7 +267,7 @@ func (x *kvImplCrud) handleAddRequest(source mock.KvClient, pak *memd.Packet) {
 }
 
 func (x *kvImplCrud) handleSetRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		if len(pak.Extras) != 8 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -304,7 +312,7 @@ func (x *kvImplCrud) handleSetRequest(source mock.KvClient, pak *memd.Packet) {
 }
 
 func (x *kvImplCrud) handleReplaceRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		if len(pak.Extras) != 8 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -349,7 +357,7 @@ func (x *kvImplCrud) handleReplaceRequest(source mock.KvClient, pak *memd.Packet
 }
 
 func (x *kvImplCrud) handleDeleteRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		if len(pak.Extras) != 0 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -387,7 +395,7 @@ func (x *kvImplCrud) handleDeleteRequest(source mock.KvClient, pak *memd.Packet)
 }
 
 func (x *kvImplCrud) handleIncrementRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		if len(pak.Extras) != 20 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -436,7 +444,7 @@ func (x *kvImplCrud) handleIncrementRequest(source mock.KvClient, pak *memd.Pack
 }
 
 func (x *kvImplCrud) handleDecrementRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		if len(pak.Extras) != 20 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -485,7 +493,7 @@ func (x *kvImplCrud) handleDecrementRequest(source mock.KvClient, pak *memd.Pack
 }
 
 func (x *kvImplCrud) handleAppendRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		if len(pak.Extras) != 0 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -525,7 +533,7 @@ func (x *kvImplCrud) handleAppendRequest(source mock.KvClient, pak *memd.Packet)
 }
 
 func (x *kvImplCrud) handlePrependRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		if len(pak.Extras) != 0 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -565,7 +573,7 @@ func (x *kvImplCrud) handlePrependRequest(source mock.KvClient, pak *memd.Packet
 }
 
 func (x *kvImplCrud) handleTouchRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		if len(pak.Extras) != 4 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -605,7 +613,7 @@ func (x *kvImplCrud) handleTouchRequest(source mock.KvClient, pak *memd.Packet) 
 }
 
 func (x *kvImplCrud) handleGATRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		if len(pak.Extras) != 4 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -641,7 +649,7 @@ func (x *kvImplCrud) handleGATRequest(source mock.KvClient, pak *memd.Packet) {
 }
 
 func (x *kvImplCrud) handleGetLockedRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead); proc != nil {
 		if len(pak.Extras) != 4 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -677,7 +685,7 @@ func (x *kvImplCrud) handleGetLockedRequest(source mock.KvClient, pak *memd.Pack
 }
 
 func (x *kvImplCrud) handleUnlockRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		if len(pak.Extras) != 0 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
@@ -715,7 +723,7 @@ func (x *kvImplCrud) handleUnlockRequest(source mock.KvClient, pak *memd.Packet)
 }
 
 func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead); proc != nil {
 		var docFlags memd.SubdocDocFlag
 		if len(pak.Extras) >= 1 {
 			docFlags = memd.SubdocDocFlag(pak.Extras[0])
@@ -802,7 +810,7 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 }
 
 func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		var docFlags memd.SubdocDocFlag
 		if len(pak.Extras) > 0 {
 			if len(pak.Extras) == 1 {
@@ -955,7 +963,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 }
 
 func (x *kvImplCrud) handleObserveSeqNo(source mock.KvClient, pak *memd.Packet) {
-	if proc := x.makeProc(source, pak); proc != nil {
+	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead); proc != nil {
 		if len(pak.Value) != 8 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return

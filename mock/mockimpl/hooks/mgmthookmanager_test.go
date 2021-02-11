@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"testing"
 
 	tmock "github.com/stretchr/testify/mock"
@@ -17,6 +18,9 @@ func (m *fakeMgmtService) Hostname() string       { return "" }
 func (m *fakeMgmtService) ListenPort() int        { return 0 }
 func (m *fakeMgmtService) ListenPortTLS() int     { return 0 }
 func (m *fakeMgmtService) Close() error           { return nil }
+func (c *fakeMgmtService) CheckAuthenticated(permission mockauth.Permission, bucket, scope, collection string, request *mock.HTTPRequest) bool {
+	return true
+}
 
 func TestMgmtHooksBasic(t *testing.T) {
 	hookInvokes := make([]int, 0)

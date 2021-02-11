@@ -49,4 +49,7 @@ type Cluster interface {
 
 	// Chrono returns the chrono object in use by the cluster.
 	Chrono() *mocktime.Chrono
+
+	// Users returns the user service for the cluster.
+	Users() UserService
 }

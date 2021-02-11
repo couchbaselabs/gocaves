@@ -52,6 +52,21 @@ func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, er
 		numReplicas: opts.NumReplicas,
 		numVbuckets: parent.numVbuckets,
 		store:       bucketStore,
+		collManifest: mock.CollectionManifest{
+			Rev: 0,
+			Scopes: map[uint32]mock.CollectionManifestScopeEntry{
+				0: {
+					Name: "_default",
+					Uid:  0,
+				},
+			},
+			Collections: map[uint32]mock.CollectionManifestCollectionEntry{
+				0: {
+					Uid:  0,
+					Name: "_default",
+				},
+			},
+		},
 	}
 
 	// Initially set up the vbucket map with nothing in it.

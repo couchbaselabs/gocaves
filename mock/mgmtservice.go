@@ -1,5 +1,7 @@
 package mock
 
+import "github.com/couchbaselabs/gocaves/mock/mockauth"
+
 // MgmtService represents a management service running somewhere in the cluster.
 type MgmtService interface {
 	// Node returns the node which owns this service.
@@ -16,4 +18,7 @@ type MgmtService interface {
 
 	// Close will shut down this service once it is no longer needed.
 	Close() error
+
+	// CheckAuthenticated verifies that the currently authenticated user has the specified permissions.
+	CheckAuthenticated(permission mockauth.Permission, bucket, scope, collection string, request *HTTPRequest) bool
 }

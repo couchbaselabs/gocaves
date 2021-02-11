@@ -126,14 +126,20 @@ func (s *HTTPServer) Close() error {
 }
 
 func (s *HTTPServer) handleHTTP(w http.ResponseWriter, req *http.Request) {
+	if err := req.ParseForm(); err != nil {
+		// If the content type isn't form then ParseForm will not error, to get here something
+		// is wrong with the request.
+		w.WriteHeader(400)
+		return
+	}
 	resp := s.handlers.NewRequestHandler(&mock.HTTPRequest{
 		IsTLS:  s.tlsConfig != nil,
 		Method: req.Method,
 		URL:    req.URL,
 		Header: req.Header,
 		Body:   req.Body,
+		Form:   req.Form,
 	})
-
 	if resp == nil {
 		// If nobody decides to answer the request, we write 501 Unsupported.
 		w.WriteHeader(501)

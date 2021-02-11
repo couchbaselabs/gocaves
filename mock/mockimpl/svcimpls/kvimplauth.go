@@ -1,7 +1,7 @@
 package svcimpls
 
 import (
-	"fmt"
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"log"
 	"strings"
 
@@ -42,8 +42,8 @@ func (x *kvImplAuth) handleSASLListMechsRequest(source mock.KvClient, pak *memd.
 func (x *kvImplAuth) handleAuthClient(source mock.KvClient, pak *memd.Packet, mech, username, password string) {
 	log.Printf("AUTH ATTEMPT: %s, %s, %s", mech, username, password)
 
-	// TODO(brett19): Need to implement password validation here...
-	if username != "Administrator" {
+	user := source.Source().Node().Cluster().Users().GetUser(username)
+	if user == nil {
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
@@ -65,8 +65,6 @@ func (x *kvImplAuth) handleAuthClient(source mock.KvClient, pak *memd.Packet, me
 
 func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packet) {
 	authMech := string(pak.Key)
-
-	log.Printf("AUTH START: %+v, %s", authMech, pak.Value)
 
 	switch authMech {
 	case "SCRAM-SHA512":
@@ -94,9 +92,19 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 			return
 		}
 
-		// TODO: lookup of the username here to get password which scram server will then salt
-		fmt.Println(string(outBytes))
-		scram.SetPassword("password")
+		user := source.Source().Node().Cluster().Users().GetUser(scram.Username())
+		if user == nil {
+			log.Printf("AUTHNONO %s\n", scram.Username())
+			source.WritePacket(&memd.Packet{
+				Magic:   memd.CmdMagicRes,
+				Command: pak.Command,
+				Opaque:  pak.Opaque,
+				Status:  memd.StatusAuthError,
+			})
+			return
+		}
+
+		scram.SetPassword(user.Password)
 		source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: memd.CmdSASLAuth,
@@ -157,13 +165,7 @@ func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packe
 		return
 	}
 
-	if outBytes == nil {
-		// SASL completed
-		x.handleAuthClient(source, pak, authMech, scram.Username(), scram.Password())
-		return
-	}
-	fmt.Println(string(outBytes))
-
+	source.SetAuthenticatedUserName(scram.Username())
 	source.WritePacket(&memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdSASLStep,
@@ -174,6 +176,18 @@ func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packe
 }
 
 func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.Packet) {
+	if !source.CheckAuthenticated(mockauth.PermissionSelect, pak.CollectionID) {
+		// TODO(chvck): CheckAuthenticated needs to change, this could be actually be auth or access error depending on the user
+		// access levels.
+		source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: memd.CmdGetClusterConfig,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusAuthError,
+		})
+		return
+	}
+
 	source.SetSelectedBucketName(string(pak.Key))
 	if source.SelectedBucket() == nil {
 		source.SetSelectedBucketName("")

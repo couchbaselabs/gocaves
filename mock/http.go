@@ -15,6 +15,7 @@ type HTTPRequest struct {
 	URL    *url.URL
 	Header http.Header
 	Body   io.Reader
+	Form   url.Values
 }
 
 // PeekBody will return the full body and swap the reader with a
