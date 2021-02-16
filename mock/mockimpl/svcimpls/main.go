@@ -25,6 +25,7 @@ func Register(opts RegisterOptions) {
 	(&kvImplCrud{}).Register(h)
 	(&kvImplErrMap{}).Register(h)
 	(&kvImplHello{}).Register(h)
+	(&kvImplPing{}).Register(h)
 	(&mgmtImplConfig{}).Register(h)
 	(&mgmtImplUser{}).Register(h)
 }
