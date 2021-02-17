@@ -31,9 +31,13 @@ type clusterInst struct {
 
 	auth *mockauth.Engine
 
-	kvInHooks  hooks.KvHookManager
-	kvOutHooks hooks.KvHookManager
-	mgmtHooks  hooks.MgmtHookManager
+	analyticsHooks hooks.AnalyticsHookManager
+	kvInHooks      hooks.KvHookManager
+	kvOutHooks     hooks.KvHookManager
+	mgmtHooks      hooks.MgmtHookManager
+	queryHooks     hooks.QueryHookManager
+	searchHooks    hooks.SearchHookManager
+	viewHooks      hooks.ViewHookManager
 }
 
 // NewCluster instantiates a new cluster instance.
@@ -97,9 +101,13 @@ func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 	// same package as us or we end up with a circular dependancy.  Maybe fix it with
 	// interfaces later...
 	svcimpls.Register(svcimpls.RegisterOptions{
-		KvInHooks:  &cluster.kvInHooks,
-		KvOutHooks: &cluster.kvOutHooks,
-		MgmtHooks:  &cluster.mgmtHooks,
+		AnalyticsHooks: &cluster.analyticsHooks,
+		KvInHooks:      &cluster.kvInHooks,
+		KvOutHooks:     &cluster.kvOutHooks,
+		MgmtHooks:      &cluster.mgmtHooks,
+		QueryHooks:     &cluster.queryHooks,
+		SearchHooks:    &cluster.searchHooks,
+		ViewHooks:      &cluster.viewHooks,
 	})
 
 	return cluster, nil
@@ -240,24 +248,20 @@ func (c *clusterInst) handleMgmtRequest(source *mgmtService, req *mock.HTTPReque
 
 func (c *clusterInst) handleViewRequest(source *viewService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received view request %p %+v", source, req)
-	// TODO(brett19): Implement views request processing
-	return nil
+	return c.viewHooks.Invoke(source, req)
 }
 
 func (c *clusterInst) handleQueryRequest(source *queryService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received query request %p %+v", source, req)
-	// TODO(brett19): Implement query request processing
-	return nil
+	return c.queryHooks.Invoke(source, req)
 }
 
 func (c *clusterInst) handleSearchRequest(source *searchService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	log.Printf("received search request %p %+v", source, req)
-	// TODO(brett19): Implement search request processing
-	return nil
+	log.Printf("received search request %p %+v\n\n\n\n", source, req)
+	return c.searchHooks.Invoke(source, req)
 }
 
 func (c *clusterInst) handleAnalyticsRequest(source *analyticsService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	log.Printf("received analytics request %p %+v", source, req)
-	// TODO(brett19): Implement analytics request processing
-	return nil
+	return c.analyticsHooks.Invoke(source, req)
 }

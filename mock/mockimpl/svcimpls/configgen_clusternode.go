@@ -219,6 +219,13 @@ func GenExtClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBu
 		servicePorts["cbasSSL"] = n.AnalyticsService().ListenPortTLS()
 	}
 
+	if n.SearchService() != nil && n.SearchService().ListenPort() > 0 {
+		servicePorts["fts"] = n.SearchService().ListenPort()
+	}
+	if n.SearchService() != nil && n.SearchService().ListenPortTLS() > 0 {
+		servicePorts["ftsSSL"] = n.SearchService().ListenPortTLS()
+	}
+
 	config["services"] = servicePorts
 	config["thisNode"] = n == reqNode
 	config["hostname"] = n.Hostname()

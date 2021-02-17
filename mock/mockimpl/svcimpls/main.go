@@ -7,19 +7,28 @@ import (
 
 // RegisterOptions specifies options used for impl registration
 type RegisterOptions struct {
-	KvInHooks  mock.KvHookManager
-	KvOutHooks mock.KvHookManager
-	MgmtHooks  mock.MgmtHookManager
+	AnalyticsHooks mock.AnalyticsHookManager
+	KvInHooks      mock.KvHookManager
+	KvOutHooks     mock.KvHookManager
+	MgmtHooks      mock.MgmtHookManager
+	QueryHooks     mock.QueryHookManager
+	SearchHooks    mock.SearchHookManager
+	ViewHooks      mock.ViewHookManager
 }
 
 // Register registers all known hooks.
 func Register(opts RegisterOptions) {
 	h := &hookHelper{
-		KvInHooks:  opts.KvInHooks,
-		KvOutHooks: opts.KvOutHooks,
-		MgmtHooks:  opts.MgmtHooks,
+		AnalyticsHooks: opts.AnalyticsHooks,
+		KvInHooks:      opts.KvInHooks,
+		KvOutHooks:     opts.KvOutHooks,
+		MgmtHooks:      opts.MgmtHooks,
+		QueryHooks:     opts.QueryHooks,
+		SearchHooks:    opts.SearchHooks,
+		ViewHooks:      opts.ViewHooks,
 	}
 
+	(&analyticsImplPing{}).Register(h)
 	(&kvImplAuth{}).Register(h)
 	(&kvImplCccp{}).Register(h)
 	(&kvImplCrud{}).Register(h)
@@ -27,7 +36,11 @@ func Register(opts RegisterOptions) {
 	(&kvImplHello{}).Register(h)
 	(&kvImplPing{}).Register(h)
 	(&mgmtImplConfig{}).Register(h)
+	(&mgmtImplPing{}).Register(h)
 	(&mgmtImplUser{}).Register(h)
+	(&queryImplPing{}).Register(h)
+	(&searchImplPing{}).Register(h)
+	(&viewImplPing{}).Register(h)
 }
 
 func replyWithError(source mock.KvClient, pak *memd.Packet, err error) {
