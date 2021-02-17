@@ -12,17 +12,7 @@ import (
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
-type mgmtImplUser struct {
-}
-
-func (x *mgmtImplUser) Register(h *hookHelper) {
-	h.RegisterMgmtHandler("PUT", "/settings/rbac/users/*/*", x.handleUpsertUser)
-	h.RegisterMgmtHandler("GET", "/settings/rbac/users/*", x.handleGetAllUsers)
-	h.RegisterMgmtHandler("GET", "/settings/rbac/users/*/*", x.handleGetUser)
-	h.RegisterMgmtHandler("DELETE", "/settings/rbac/users/*/*", x.handleDropUser)
-}
-
-func (x *mgmtImplUser) handleUpsertUser(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (x *mgmtImpl) handleUpsertUser(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	if !source.CheckAuthenticated(mockauth.PermissionUserManage, "", "", "", req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
@@ -65,7 +55,7 @@ func (x *mgmtImplUser) handleUpsertUser(source mock.MgmtService, req *mock.HTTPR
 	}
 }
 
-func (x *mgmtImplUser) handleGetUser(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (x *mgmtImpl) handleGetUser(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	if !source.CheckAuthenticated(mockauth.PermissionUserRead, "", "", "", req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
@@ -105,7 +95,7 @@ func (x *mgmtImplUser) handleGetUser(source mock.MgmtService, req *mock.HTTPRequ
 	}
 }
 
-func (x *mgmtImplUser) handleGetAllUsers(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (x *mgmtImpl) handleGetAllUsers(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	if !source.CheckAuthenticated(mockauth.PermissionUserRead, "", "", "", req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
@@ -142,7 +132,7 @@ func (x *mgmtImplUser) handleGetAllUsers(source mock.MgmtService, req *mock.HTTP
 	}
 }
 
-func (x *mgmtImplUser) handleDropUser(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (x *mgmtImpl) handleDropUser(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	if !source.CheckAuthenticated(mockauth.PermissionUserManage, "", "", "", req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,

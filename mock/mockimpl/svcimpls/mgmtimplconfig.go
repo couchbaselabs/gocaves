@@ -8,15 +8,7 @@ import (
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
-type mgmtImplConfig struct {
-}
-
-func (x *mgmtImplConfig) Register(h *hookHelper) {
-	h.RegisterMgmtHandler("GET", "/pools/default", x.handleGetPoolConfig)
-	h.RegisterMgmtHandler("GET", "/pools/default/buckets/*", x.handleGetBucketConfig)
-}
-
-func (x *mgmtImplConfig) handleGetPoolConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (x *mgmtImpl) handleGetPoolConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	if !source.CheckAuthenticated(mockauth.PermissionSettings, "", "", "", req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
@@ -32,7 +24,7 @@ func (x *mgmtImplConfig) handleGetPoolConfig(source mock.MgmtService, req *mock.
 	}
 }
 
-func (x *mgmtImplConfig) handleGetBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (x *mgmtImpl) handleGetBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*")
 	bucketName := pathParts[0]
 	if !source.CheckAuthenticated(mockauth.PermissionSettings, bucketName, "", "", req) {

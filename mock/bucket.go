@@ -36,7 +36,7 @@ type Bucket interface {
 	ConfigRev() uint
 
 	// CollectionManifest returns the collection manifest of this bucket.
-	CollectionManifest() CollectionManifest
+	CollectionManifest() *CollectionManifest
 
 	// Store returns the data-store for this bucket.
 	Store() *mockdb.Bucket

@@ -35,12 +35,10 @@ func Register(opts RegisterOptions) {
 	(&kvImplErrMap{}).Register(h)
 	(&kvImplHello{}).Register(h)
 	(&kvImplPing{}).Register(h)
-	(&mgmtImplConfig{}).Register(h)
-	(&mgmtImplPing{}).Register(h)
-	(&mgmtImplUser{}).Register(h)
 	(&queryImplPing{}).Register(h)
 	(&searchImplPing{}).Register(h)
 	(&viewImplPing{}).Register(h)
+	(&mgmtImpl{}).Register(h)
 }
 
 func replyWithError(source mock.KvClient, pak *memd.Packet, err error) {
