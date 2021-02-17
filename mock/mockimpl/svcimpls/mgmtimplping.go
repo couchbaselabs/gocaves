@@ -5,14 +5,7 @@ import (
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
-type mgmtImplPing struct {
-}
-
-func (x *mgmtImplPing) Register(h *hookHelper) {
-	h.RegisterMgmtHandler("GET", "/", x.handlePing)
-}
-
-func (x *mgmtImplPing) handlePing(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+func (x *mgmtImpl) handlePing(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	// TODO(chvck): double check that http ping handlers don't need auth
 
 	return &mock.HTTPResponse{

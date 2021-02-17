@@ -26,7 +26,7 @@ type bucketInst struct {
 	// directly so we can avoid needing to have a cyclical dependancy.
 	vbMap [][]string
 
-	collManifest mock.CollectionManifest
+	collManifest *mock.CollectionManifest
 }
 
 func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, error) {
@@ -45,28 +45,14 @@ func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, er
 	}
 
 	bucket := &bucketInst{
-		id:          uuid.New().String(),
-		cluster:     parent,
-		name:        opts.Name,
-		bucketType:  opts.Type,
-		numReplicas: opts.NumReplicas,
-		numVbuckets: parent.numVbuckets,
-		store:       bucketStore,
-		collManifest: mock.CollectionManifest{
-			Rev: 0,
-			Scopes: map[uint32]mock.CollectionManifestScopeEntry{
-				0: {
-					Name: "_default",
-					Uid:  0,
-				},
-			},
-			Collections: map[uint32]mock.CollectionManifestCollectionEntry{
-				0: {
-					Uid:  0,
-					Name: "_default",
-				},
-			},
-		},
+		id:           uuid.New().String(),
+		cluster:      parent,
+		name:         opts.Name,
+		bucketType:   opts.Type,
+		numReplicas:  opts.NumReplicas,
+		numVbuckets:  parent.numVbuckets,
+		store:        bucketStore,
+		collManifest: mock.NewCollectionManifest(),
 	}
 
 	// Initially set up the vbucket map with nothing in it.
@@ -102,7 +88,7 @@ func (b bucketInst) ConfigRev() uint {
 }
 
 // CollectionManifest returns the collection manifest of this bucket.
-func (b bucketInst) CollectionManifest() mock.CollectionManifest {
+func (b bucketInst) CollectionManifest() *mock.CollectionManifest {
 	return b.collManifest
 }
 
