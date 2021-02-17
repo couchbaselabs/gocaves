@@ -164,7 +164,7 @@ func (n *clusterNodeInst) QueryService() mock.QueryService {
 
 // SearchService returns the search service for this node.
 func (n *clusterNodeInst) SearchService() mock.SearchService {
-	return n.analyticsService
+	return n.searchService
 }
 
 // AnalyticsService returns the analytics service for this node.
