@@ -19,41 +19,7 @@ func fakeFunc() {
 	cmd.Start()
 }
 
-func TestBasic(t *testing.T) {
-	gocb.SetLogger(gocb.DefaultStdioLogger())
-
-	caves, err := cavescli.NewClient(cavescli.NewClientOptions{
-		Path:          "../../main.go",
-		ReportingAddr: "127.0.0.1:9659",
-	})
-	if err != nil {
-		t.Fatalf("failed to setup caves: %s", err)
-	}
-
-	runID := uuid.New().String()
-
-	connStr, err := caves.StartTesting(runID, "FakeSDK v3.0.3-df13221")
-	if err != nil {
-		t.Fatalf("failed to start testing: %s", err)
-	}
-
-	t.Logf("got connection string: %s", connStr)
-
-	cluster, err := gocb.Connect(connStr, gocb.ClusterOptions{
-		Authenticator: gocb.PasswordAuthenticator{
-			Username: "Administrator",
-			Password: "password",
-		},
-	})
-	if err != nil {
-		t.Fatalf("failed to connect to caves cluster: %s", err)
-	}
-
-	bucket := cluster.Bucket("default")
-	collection := bucket.DefaultCollection()
-
-	bucket.WaitUntilReady(10*time.Second, nil)
-
+func _testExample(t *testing.T, caves *cavescli.Client, runID string, collection *gocb.Collection) {
 	spec, err := caves.StartTest(runID, "kv/crud/SetGet")
 	if err != nil {
 		t.Fatalf("failed to start test: %s", err)
@@ -89,6 +55,44 @@ func TestBasic(t *testing.T) {
 	}
 
 	log.Printf("ended test")
+}
+
+func TestBasic(t *testing.T) {
+	gocb.SetLogger(gocb.DefaultStdioLogger())
+
+	caves, err := cavescli.NewClient(cavescli.NewClientOptions{
+		Path:          "../../main.go",
+		ReportingAddr: "127.0.0.1:9659",
+	})
+	if err != nil {
+		t.Fatalf("failed to setup caves: %s", err)
+	}
+
+	runID := uuid.New().String()
+
+	connStr, err := caves.StartTesting(runID, "FakeSDK v3.0.3-df13221")
+	if err != nil {
+		t.Fatalf("failed to start testing: %s", err)
+	}
+
+	t.Logf("got connection string: %s", connStr)
+
+	cluster, err := gocb.Connect(connStr, gocb.ClusterOptions{
+		Authenticator: gocb.PasswordAuthenticator{
+			Username: "Administrator",
+			Password: "password",
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to connect to caves cluster: %s", err)
+	}
+
+	bucket := cluster.Bucket("default")
+	collection := bucket.DefaultCollection()
+
+	bucket.WaitUntilReady(10*time.Second, nil)
+
+	_testExample(t, caves, runID, collection)
 
 	report, err := caves.EndTesting(runID)
 	if err != nil {
