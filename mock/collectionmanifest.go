@@ -74,6 +74,29 @@ func (m *CollectionManifest) GetByID(collectionID uint32) (string, string) {
 	return scope.Name, col.Name
 }
 
+// GetByName retrieves a collection uid by scope and collection name.
+func (m *CollectionManifest) GetByName(scope, collection string) (uint64, uint32, error) {
+	m.lock.Lock()
+	scopes := m.Scopes
+	collections := m.Collections
+	rev := m.Rev
+	defer m.lock.Unlock()
+
+	for _, scop := range scopes {
+		if scop != nil && scop.Name == scope {
+			for _, col := range collections {
+				if col != nil && col.ScopeUid == scop.Uid && col.Name == collection {
+					return rev, col.Uid, nil
+				}
+			}
+
+			return 0, 0, ErrCollectionNotFound
+		}
+	}
+
+	return 0, 0, ErrScopeNotFound
+}
+
 // AddCollection adds a new collection to the manifest.
 func (m *CollectionManifest) AddCollection(scope, collection string, maxTTL uint32) (uint64, error) {
 	m.lock.Lock()
@@ -130,7 +153,7 @@ func (m *CollectionManifest) DropCollection(scope, collection string) (uint64, e
 	for _, scop := range m.Scopes {
 		if scop != nil && scop.Name == scope {
 			for _, col := range m.Collections {
-				if col != nil && col.Name == collection {
+				if col != nil && col.ScopeUid == scop.Uid && col.Name == collection {
 					m.Rev++
 					m.Collections[col.Uid] = nil
 					return m.Rev, nil
@@ -165,8 +188,8 @@ func (m *CollectionManifest) DropScope(scope string) (uint64, error) {
 	return 0, ErrScopeNotFound
 }
 
-// GetAllScopes gets all scopes, including their collections, from the manifest.
-func (m *CollectionManifest) GetAllScopes() (uint64, []CollectionManifestScope) {
+// GetManifest gets the current manifest represented as a list of scopes, including collections, and the manifest uid.
+func (m *CollectionManifest) GetManifest() (uint64, []CollectionManifestScope) {
 	m.lock.Lock()
 	scopes := m.Scopes
 	collections := m.Collections

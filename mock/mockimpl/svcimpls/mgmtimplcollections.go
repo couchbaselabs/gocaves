@@ -291,29 +291,9 @@ func (x *mgmtImpl) handleGetAllScopes(source mock.MgmtService, req *mock.HTTPReq
 	}
 
 	manifest := bucket.CollectionManifest()
-	uid, scopes := manifest.GetAllScopes()
+	uid, scopes := manifest.GetManifest()
 
-	jsonMani := jsonManifest{
-		Uid:    uid,
-		Scopes: make([]jsonScope, len(scopes)),
-	}
-
-	for i, scop := range scopes {
-		jsonScop := jsonScope{
-			Uid:         scop.Uid,
-			Name:        scop.Name,
-			Collections: make([]jsonCollection, len(scop.Collections)),
-		}
-
-		for j, col := range scop.Collections {
-			jsonScop.Collections[j] = jsonCollection{
-				Uid:    col.Uid,
-				Name:   col.Name,
-				MaxTTL: col.MaxTTL,
-			}
-		}
-		jsonMani.Scopes[i] = jsonScop
-	}
+	jsonMani := buildJSONManifest(uid, scopes)
 
 	b, err := json.Marshal(jsonMani)
 	if err != nil {
@@ -329,19 +309,45 @@ func (x *mgmtImpl) handleGetAllScopes(source mock.MgmtService, req *mock.HTTPReq
 	}
 }
 
+func buildJSONManifest(uid uint64, scopes []mock.CollectionManifestScope) jsonManifest {
+	jsonMani := jsonManifest{
+		Uid:    strconv.Itoa(int(uid)),
+		Scopes: make([]jsonScope, len(scopes)),
+	}
+
+	for i, scop := range scopes {
+		jsonScop := jsonScope{
+			Uid:         strconv.Itoa(int(scop.Uid)),
+			Name:        scop.Name,
+			Collections: make([]jsonCollection, len(scop.Collections)),
+		}
+
+		for j, col := range scop.Collections {
+			jsonScop.Collections[j] = jsonCollection{
+				Uid:    strconv.Itoa(int(col.Uid)),
+				Name:   col.Name,
+				MaxTTL: col.MaxTTL,
+			}
+		}
+		jsonMani.Scopes[i] = jsonScop
+	}
+
+	return jsonMani
+}
+
 type jsonManifest struct {
-	Uid    uint64      `json:"uid"`
+	Uid    string      `json:"uid"`
 	Scopes []jsonScope `json:"scopes"`
 }
 
 type jsonScope struct {
-	Uid         uint32           `json:"uid"`
+	Uid         string           `json:"uid"`
 	Name        string           `json:"name"`
 	Collections []jsonCollection `json:"collections"`
 }
 
 type jsonCollection struct {
-	Uid    uint32 `json:"uid"`
+	Uid    string `json:"uid"`
 	Name   string `json:"name"`
 	MaxTTL uint32 `json:"maxTTL,omitempty"`
 }
