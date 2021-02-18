@@ -198,7 +198,7 @@ func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 		Flags:        opts.Flags,
 		Datatype:     opts.Datatype,
 		Expiry:       e.parseExpiry(opts.Expiry),
-		Cas:          mockdb.GenerateNewCas(),
+		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
 	newDoc, err := e.db.Insert(doc)
@@ -233,7 +233,7 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 		Flags:        opts.Flags,
 		Datatype:     opts.Datatype,
 		Expiry:       e.parseExpiry(opts.Expiry),
-		Cas:          mockdb.GenerateNewCas(),
+		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
 	newDoc, err := e.db.Update(
@@ -300,7 +300,7 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 		Flags:        opts.Flags,
 		Datatype:     opts.Datatype,
 		Expiry:       e.parseExpiry(opts.Expiry),
-		Cas:          mockdb.GenerateNewCas(),
+		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
 	newDoc, err := e.db.Update(
@@ -388,7 +388,7 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 			idoc.Expiry = e.db.Chrono().Now()
 			idoc.IsDeleted = true
 			idoc.LockExpiry = time.Time{}
-			idoc.Cas = mockdb.GenerateNewCas()
+			idoc.Cas = mockdb.GenerateNewCas(e.HLC())
 			return idoc, nil
 		})
 	if err != nil {
@@ -434,7 +434,7 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 		Flags:        0,
 		Datatype:     0,
 		Expiry:       e.parseExpiry(opts.Expiry),
-		Cas:          mockdb.GenerateNewCas(),
+		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
 	newDoc, err := e.db.Update(
@@ -525,7 +525,7 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
 		Value:        opts.Value,
-		Cas:          mockdb.GenerateNewCas(),
+		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
 	newDoc, err := e.db.Update(
@@ -598,7 +598,7 @@ func (e *Engine) Touch(opts TouchOptions) (*StoreResult, error) {
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
 		Expiry:       e.parseExpiry(opts.Expiry),
-		Cas:          mockdb.GenerateNewCas(),
+		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
 	newDoc, err := e.db.Update(
@@ -649,7 +649,7 @@ func (e *Engine) GetAndTouch(opts GetAndTouchOptions) (*GetResult, error) {
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
 		Expiry:       e.parseExpiry(opts.Expiry),
-		Cas:          mockdb.GenerateNewCas(),
+		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
 	newDoc, err := e.db.Update(
@@ -721,7 +721,7 @@ func (e *Engine) GetLocked(opts GetLockedOptions) (*GetResult, error) {
 			}
 
 			idoc.LockExpiry = lockExpiryTime
-			idoc.Cas = mockdb.GenerateNewCas()
+			idoc.Cas = mockdb.GenerateNewCas(e.HLC())
 			return idoc, nil
 		})
 	if err != nil {
@@ -949,7 +949,7 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		}
 
 		newMetaDoc := &mockdb.Document{
-			Cas: mockdb.GenerateNewCas(),
+			Cas: mockdb.GenerateNewCas(e.HLC()),
 		}
 
 		sdRes, err := e.executeSdOps(doc, newMetaDoc, opts.Ops)
