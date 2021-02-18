@@ -802,6 +802,7 @@ type MultiMutateOptions struct {
 	CreateAsDeleted bool
 	CreateIfMissing bool
 	CreateOnly      bool
+	Expiry          uint32
 }
 
 // MultiMutateResult contains the results of a SD_MULTIMUTATE operation.
@@ -833,6 +834,7 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			Value:        nil,
 			Cas:          0,
 			Xattrs:       make(map[string][]byte),
+			Expiry:       e.parseExpiry(opts.Expiry),
 		}
 
 		// We need to dynamically decide what the root of the document
@@ -922,6 +924,7 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 					idoc.Value = doc.Value
 					idoc.Xattrs = doc.Xattrs
 					idoc.IsDeleted = doc.IsDeleted
+					idoc.Expiry = doc.Expiry
 				}
 
 				idoc.LockExpiry = newMetaDoc.LockExpiry

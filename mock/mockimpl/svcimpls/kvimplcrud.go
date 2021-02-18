@@ -812,11 +812,16 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Packet) {
 	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite); proc != nil {
 		var docFlags memd.SubdocDocFlag
+		var expiry uint32
 		if len(pak.Extras) > 0 {
 			if len(pak.Extras) == 1 {
 				docFlags = memd.SubdocDocFlag(pak.Extras[0])
 			} else {
-				docFlags = memd.SubdocDocFlag(pak.Extras[len(pak.Extras)-1])
+				if len(pak.Extras) != 5 {
+					x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
+				}
+				expiry = binary.BigEndian.Uint32(pak.Extras[0:])
+				docFlags = memd.SubdocDocFlag(pak.Extras[4])
 			}
 		}
 
@@ -894,6 +899,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			CreateIfMissing: docFlags&memd.SubdocDocFlagMkDoc != 0,
 			CreateOnly:      docFlags&memd.SubdocDocFlagAddDoc != 0,
 			Ops:             ops,
+			Expiry:          expiry,
 		})
 		if err != nil {
 			x.writeProcErr(source, pak, err)
