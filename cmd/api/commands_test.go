@@ -12,14 +12,14 @@ func TestConnStrCommands(t *testing.T) {
 	}
 	testBytes := []byte(`{"type":"createdcluster","connstr":"hello-world"}`)
 
-	encodedBytes, err := encodeCommandPacket(testObj)
+	encodedBytes, err := EncodeCommandPacket(testObj)
 	if err != nil {
 		t.Fatalf("failed to encode bytes: %s", err)
 	}
 
 	assert.Equal(t, testBytes, encodedBytes)
 
-	decodedObj, err := decodeCommandPacket(encodedBytes)
+	decodedObj, err := DecodeCommandPacket(encodedBytes)
 	if err != nil {
 		t.Fatalf("failed to decode command: %s", err)
 	}

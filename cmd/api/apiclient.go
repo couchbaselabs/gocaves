@@ -86,7 +86,7 @@ func (c *Client) readPacket() (interface{}, error) {
 }
 
 func (c *Client) writePacket(pak interface{}) error {
-	pktBytes, err := encodeCommandPacket(pak)
+	pktBytes, err := EncodeCommandPacket(pak)
 	if err != nil {
 		return err
 	}

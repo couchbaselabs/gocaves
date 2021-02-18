@@ -1,9 +1,7 @@
-package devmode
+package reporting
 
 import (
 	"log"
-
-	"github.com/couchbaselabs/gocaves/cmd/reporting"
 )
 
 // Main wraps the linkmode cmd
@@ -12,7 +10,7 @@ type Main struct {
 
 // Go starts the app
 func (m *Main) Go() {
-	srv, err := reporting.NewServer(reporting.NewServerOptions{
+	srv, err := NewServer(NewServerOptions{
 		ListenPort: 9659,
 	})
 	if err != nil {

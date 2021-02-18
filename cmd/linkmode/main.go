@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"net"
+
+	"github.com/couchbaselabs/gocaves/cmd/api"
 )
 
 // Main wraps the linkmode cmd
@@ -27,8 +29,9 @@ func (m *Main) Go() {
 		return
 	}
 
-	// TODO(brett19): Should probably use the API package to do this...
-	cliConn.Write([]byte(`{"type":"hello"}`))
+	pktBytes, _ := api.EncodeCommandPacket(&api.CmdHello{})
+	pktBytes = append(pktBytes, byte(0))
+	cliConn.Write(pktBytes)
 
 	go func() {
 		log.Printf("Starting server to client copying")
