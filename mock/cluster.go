@@ -38,6 +38,9 @@ type Cluster interface {
 	// ConnectionString returns the basic non-TLS connection string for this cluster.
 	ConnectionString() string
 
+	// MgmtHosts returns a list of non-TLS mgmt endpoints for this cluster.
+	MgmtAddrs() []string
+
 	// KvInHooks returns the hook manager for incoming kv packets.
 	KvInHooks() KvHookManager
 

@@ -82,7 +82,8 @@ func (m *Main) handleAPIRequest(pkt interface{}) interface{} {
 		}
 
 		return &api.CmdCreatedCluster{
-			ConnStr: cluster.Mock.ConnectionString(),
+			MgmtAddrs: cluster.Mock.MgmtAddrs(),
+			ConnStr:   cluster.Mock.ConnectionString(),
 		}
 	case *api.CmdStartTesting:
 		run, err := m.testRuns.NewRun(pktTyped.RunID, pktTyped.ClientName)

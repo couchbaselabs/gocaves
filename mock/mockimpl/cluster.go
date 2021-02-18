@@ -3,13 +3,13 @@ package mockimpl
 import (
 	"crypto/tls"
 	"fmt"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"log"
 	"strings"
 	"time"
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockimpl/hooks"
 	"github.com/couchbaselabs/gocaves/mock/mockimpl/svcimpls"
 	"github.com/couchbaselabs/gocaves/mock/mocktime"
@@ -192,6 +192,18 @@ func (c *clusterInst) ConnectionString() string {
 		}
 	}
 	return "couchbase://" + strings.Join(nodesList, ",")
+}
+
+// MgmtHosts returns a list of non-TLS mgmt endpoints for this cluster.
+func (c *clusterInst) MgmtAddrs() []string {
+	nodesList := make([]string, 0)
+	for _, node := range c.nodes {
+		if node.mgmtService != nil {
+			nodesList = append(nodesList,
+				fmt.Sprintf("http://%s:%d", node.mgmtService.Hostname(), node.mgmtService.ListenPort()))
+		}
+	}
+	return nodesList
 }
 
 func (c *clusterInst) Chrono() *mocktime.Chrono {
