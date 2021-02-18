@@ -163,27 +163,65 @@ func (x *mgmtImpl) handleDropUser(source mock.MgmtService, req *mock.HTTPRequest
 	}
 }
 
-type jsonOrigin struct {
+func (x *mgmtImpl) handleGetRoles(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+	if !source.CheckAuthenticated(mockauth.PermissionUserRead, "", "", "", req) {
+		return &mock.HTTPResponse{
+			StatusCode: 401,
+			Body:       bytes.NewReader([]byte{}),
+		}
+	}
+
+	roles := source.Node().Cluster().Users().GetAllClusterRoles()
+	jsonRoles := []jsonClusterRole{}
+	for _, r := range roles {
+		jsonRoles = append(jsonRoles, jsonClusterRole{
+			Role:        r.Role,
+			Name:        r.Name,
+			Description: r.Description,
+		})
+	}
+
+	b, err := json.Marshal(jsonRoles)
+	if err != nil {
+		return &mock.HTTPResponse{
+			StatusCode: 500,
+			Body:       bytes.NewReader([]byte(err.Error())),
+		}
+	}
+
+	return &mock.HTTPResponse{
+		StatusCode: 200,
+		Body:       bytes.NewReader(b),
+	}
+}
+
+type jsonClusterRole struct {
+	Name        string `json:"name"`
+	Role        string `json:"role"`
+	Description string `json:"desc"`
+}
+
+type jsonUserOrigin struct {
 	Name string `json:"name,omitempty"`
 	Type string `json:"type"`
 }
 
-type jsonRole struct {
-	Role       string       `json:"role"`
-	Bucket     string       `json:"bucket_name,omitempty"`
-	Scope      string       `json:"scope_name,omitempty"`
-	Collection string       `json:"collection_name,omitempty"`
-	Origins    []jsonOrigin `json:"origins,omitempty"`
+type jsonUserRole struct {
+	Role       string           `json:"role"`
+	Bucket     string           `json:"bucket_name,omitempty"`
+	Scope      string           `json:"scope_name,omitempty"`
+	Collection string           `json:"collection_name,omitempty"`
+	Origins    []jsonUserOrigin `json:"origins,omitempty"`
 }
 
 type jsonUser struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name,omitempty"`
-	Roles           []jsonRole `json:"roles"`
-	Groups          []string   `json:"groups"`
-	Domain          string     `json:"domain,omitempty"`
-	ExternalGroups  []string   `json:"external_groups,omitempty"`
-	PasswordChanged time.Time  `json:"password_change_date,omitempty"`
+	ID              string         `json:"id"`
+	Name            string         `json:"name,omitempty"`
+	Roles           []jsonUserRole `json:"roles"`
+	Groups          []string       `json:"groups"`
+	Domain          string         `json:"domain,omitempty"`
+	ExternalGroups  []string       `json:"external_groups,omitempty"`
+	PasswordChanged time.Time      `json:"password_change_date,omitempty"`
 }
 
 func newJsonUser(user *mockauth.User) jsonUser {
@@ -191,14 +229,14 @@ func newJsonUser(user *mockauth.User) jsonUser {
 	for _, g := range user.Groups {
 		groups = append(groups, g.Name)
 	}
-	roles := []jsonRole{}
+	roles := []jsonUserRole{}
 	for _, r := range user.Roles {
-		roles = append(roles, jsonRole{
+		roles = append(roles, jsonUserRole{
 			Role:       r.Name,
 			Bucket:     r.BucketName,
 			Scope:      r.ScopeName,
 			Collection: r.CollectionName,
-			Origins: []jsonOrigin{ // TODO(chvck): origins
+			Origins: []jsonUserOrigin{ // TODO(chvck): origins
 				{
 					Type: "user",
 				},
