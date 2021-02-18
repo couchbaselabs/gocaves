@@ -18,7 +18,8 @@ type CmdCreateCluster struct {
 
 // CmdCreatedCluster represents the reply to a create cluster request.
 type CmdCreatedCluster struct {
-	ConnStr string `json:"connstr"`
+	MgmtAddrs []string `json:"mgmt_addrs"`
+	ConnStr   string   `json:"connstr"`
 }
 
 // CmdTimeTravel allows a test run or cluster to be time travelled.
