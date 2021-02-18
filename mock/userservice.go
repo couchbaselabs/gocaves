@@ -14,4 +14,7 @@ type UserService interface {
 
 	// DropUser will remove a specific user from the cluster.
 	DropUser(username string) error
+
+	// GetAllClusterRoles will return all roles from the cluster.
+	GetAllClusterRoles() []*mockauth.ClusterRole
 }

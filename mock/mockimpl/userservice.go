@@ -38,16 +38,15 @@ func (c *userService) GetUser(username string) *mockauth.User {
 
 // GetAllUsers will return all of the users from the cluster.
 func (c *userService) GetAllUsers() []*mockauth.User {
-	users := c.users.GetAllUsers()
-	var userInsts []*mockauth.User
-	for _, u := range users {
-		userInsts = append(userInsts, u)
-	}
-
-	return userInsts
+	return c.users.GetAllUsers()
 }
 
 // DropUser will remove a specific user from the cluster.
 func (c *userService) DropUser(username string) error {
 	return c.users.DropUser(username)
+}
+
+// GetAllClusterRoles will return all roles from the cluster.
+func (c *userService) GetAllClusterRoles() []*mockauth.ClusterRole {
+	return c.users.GetAllClusterRoles()
 }

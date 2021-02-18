@@ -5,28 +5,34 @@ import (
 	"strings"
 )
 
-type Role struct {
+type UserRole struct {
 	Name           string
 	BucketName     string
 	ScopeName      string
 	CollectionName string
 }
 
-func (r *Role) anyBucket() bool {
+type ClusterRole struct {
+	Role        string
+	Name        string
+	Description string
+}
+
+func (r *UserRole) anyBucket() bool {
 	return r.BucketName == "" || r.BucketName == "*"
 }
 
-func (r *Role) anyScope() bool {
+func (r *UserRole) anyScope() bool {
 	return r.ScopeName == "" || r.ScopeName == "*"
 }
 
-func (r *Role) anyCollection() bool {
+func (r *UserRole) anyCollection() bool {
 	return r.CollectionName == "" || r.CollectionName == "*"
 }
 
 type Group struct {
 	Name  string
-	Roles []*Role
+	Roles []*UserRole
 }
 
 type User struct {
@@ -34,7 +40,7 @@ type User struct {
 	Username    string
 	Password    string
 	Groups      []*Group
-	Roles       []*Role
+	Roles       []*UserRole
 }
 
 func (u *User) HasPermission(permission Permission, bucket, scope, collection string) bool {
@@ -108,20 +114,51 @@ type UpsertUserOptions struct {
 type Engine struct {
 	users  []*User
 	groups []*Group
-	roles  []string
+	roles  []*ClusterRole
 }
 
 func NewEngine() *Engine {
 	return &Engine{
-		roles: []string{
-			"admin", "ro_admin", "security_admin", "cluster_admin", "bucket_admin", "scope_admin", "bucket_full_access",
-			"views_admin", "views_reader", "replication_admin", "data_reader", "data_writer", "data_dcp_reader",
-			"data_backup", "data_monitoring", "fts_admin", "fts_searcher", "query_select", "query_update",
-			"query_insert", "query_delete", "query_manage_index", "query_system_catalog", "query_external_access",
-			"query_manage_global_functions", "query_execute_global_functions", "query_manage_functions",
-			"query_execute_functions", "query_manage_global_external_functions", "query_execute_global_external_functions",
-			"query_manage_external_functions", "query_execute_external_functions", "replication_target", "analytics_manager",
-			"analytics_reader", "analytics_select", "analytics_admin", "mobile_sync_gateway", "external_stats_reader",
+		roles: []*ClusterRole{
+			{Role: "admin"},
+			{Role: "ro_admin"},
+			{Role: "security_admin"},
+			{Role: "cluster_admin"},
+			{Role: "bucket_admin"},
+			{Role: "scope_admin"},
+			{Role: "bucket_full_access"},
+			{Role: "views_admin"},
+			{Role: "views_reader"},
+			{Role: "replication_admin"},
+			{Role: "data_reader"},
+			{Role: "data_writer"},
+			{Role: "data_dcp_reader"},
+			{Role: "data_backup"},
+			{Role: "data_monitoring"},
+			{Role: "fts_admin"},
+			{Role: "fts_searcher"},
+			{Role: "query_select"},
+			{Role: "query_update"},
+			{Role: "query_insert"},
+			{Role: "query_delete"},
+			{Role: "query_manage_index"},
+			{Role: "query_system_catalog"},
+			{Role: "query_external_access"},
+			{Role: "query_manage_global_functions"},
+			{Role: "query_execute_global_functions"},
+			{Role: "query_manage_functions"},
+			{Role: "query_execute_functions"},
+			{Role: "query_manage_global_external_functions"},
+			{Role: "query_execute_global_external_functions"},
+			{Role: "query_manage_external_functions"},
+			{Role: "query_execute_external_functions"},
+			{Role: "replication_target"},
+			{Role: "analytics_manager"},
+			{Role: "analytics_reader"},
+			{Role: "analytics_select"},
+			{Role: "analytics_admin"},
+			{Role: "mobile_sync_gateway"},
+			{Role: "external_stats_reader"},
 		},
 	}
 }
@@ -131,10 +168,10 @@ func (e *Engine) UpsertUser(opts UpsertUserOptions) error {
 		return errors.New("username must be set")
 	}
 
-	var roles []*Role
+	var roles []*UserRole
 	// TODO(chvck): role validation
 	for _, role := range opts.Roles {
-		r := &Role{}
+		r := &UserRole{}
 		// Roles can be of the form "rolename" or "rolename[bucketname:<scope>:<collection>]"
 		role = strings.TrimSuffix(role, "]")
 		if split := strings.Split(role, "["); len(split) == 2 {
@@ -203,6 +240,10 @@ func (e *Engine) GetUser(username string) *User {
 
 func (e *Engine) GetAllUsers() []*User {
 	return e.users
+}
+
+func (e *Engine) GetAllClusterRoles() []*ClusterRole {
+	return e.roles
 }
 
 func (e *Engine) DropUser(username string) error {

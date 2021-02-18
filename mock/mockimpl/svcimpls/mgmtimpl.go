@@ -16,4 +16,5 @@ func (x *mgmtImpl) Register(h *hookHelper) {
 	h.RegisterMgmtHandler("GET", "/settings/rbac/users/*", x.handleGetAllUsers)
 	h.RegisterMgmtHandler("GET", "/settings/rbac/users/*/*", x.handleGetUser)
 	h.RegisterMgmtHandler("DELETE", "/settings/rbac/users/*/*", x.handleDropUser)
+	h.RegisterMgmtHandler("GET", "/settings/rbac/roles", x.handleGetRoles)
 }
