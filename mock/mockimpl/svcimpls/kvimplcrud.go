@@ -32,6 +32,8 @@ func (x *kvImplCrud) Register(h *hookHelper) {
 	h.RegisterKvHandler(memd.CmdSubDocMultiLookup, x.handleMultiLookupRequest)
 	h.RegisterKvHandler(memd.CmdSubDocMultiMutation, x.handleMultiMutateRequest)
 	h.RegisterKvHandler(memd.CmdObserveSeqNo, x.handleObserveSeqNo)
+	h.RegisterKvHandler(memd.CmdCollectionsGetManifest, x.handleManifestRequest)
+	h.RegisterKvHandler(memd.CmdCollectionsGetID, x.handleGetCollectionIDRequest)
 }
 
 func (x *kvImplCrud) writeStatusReply(source mock.KvClient, pak *memd.Packet, status memd.StatusCode) {
@@ -109,6 +111,10 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 		return memd.StatusCode(0x87)
 	case kvproc.ErrSdCannotModifyVattr:
 		return memd.StatusSubDocXattrCannotModifyVAttr
+	case mock.ErrScopeNotFound:
+		return memd.StatusScopeUnknown
+	case mock.ErrCollectionNotFound:
+		return memd.StatusCollectionUnknown
 	}
 
 	log.Printf("Recieved unexpected crud proc error: %s", err)
