@@ -2,6 +2,7 @@ package kvproc
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -642,7 +643,12 @@ func subDocArrayPush(docVal *subDocManip, op *SubDocOp, pushFront bool) error {
 
 	val, err := pathVal.Get()
 	if err != nil {
-		return err
+		if errors.Is(err, ErrSdPathNotFound) {
+			val = []interface{}{}
+			pathVal.Set(val)
+		} else {
+			return err
+		}
 	}
 
 	arrVal, isArr := val.([]interface{})
