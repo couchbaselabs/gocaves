@@ -14,6 +14,7 @@ import (
 // Main wraps the linkmode cmd
 type Main struct {
 	SdkPort    int
+	ListenPort int
 	ReportAddr string
 
 	testRuns   testRunManager
@@ -22,6 +23,22 @@ type Main struct {
 
 // Go starts the app
 func (m *Main) Go() {
+	if m.SdkPort == 0 {
+		srv, err := api.NewServer(api.NewServerOptions{
+			ListenPort: m.ListenPort,
+			Handler:    m.handleAPIRequest,
+		})
+		if err != nil {
+			log.Printf("failed to start listen server: %s", err)
+			return
+		}
+
+		log.Printf("CAVES listen server started on: :%d", srv.ListenPort())
+
+		<-make(chan struct{})
+		return
+	}
+
 	cli, err := api.ConnectAsServer(api.ConnectAsServerOptions{
 		Address: fmt.Sprintf("127.0.0.1:%d", m.SdkPort),
 		Handler: m.handleAPIRequest,

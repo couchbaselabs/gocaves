@@ -6,9 +6,9 @@ import (
 	"os"
 
 	"github.com/couchbaselabs/gocaves/checksuite"
-	"github.com/couchbaselabs/gocaves/cmd/devmode"
 	"github.com/couchbaselabs/gocaves/cmd/linkmode"
 	"github.com/couchbaselabs/gocaves/cmd/mockmode"
+	"github.com/couchbaselabs/gocaves/cmd/reporting"
 	"github.com/couchbaselabs/gocaves/cmd/testmode"
 )
 
@@ -16,6 +16,14 @@ var controlPortFlag = flag.Int("control-port", 0, "specifies we are running in a
 var linkAddrFlag = flag.String("link-addr", "", "specifies a caves dev server to connect to")
 var reportingAddrFlag = flag.String("reporting-addr", "", "specifies a caves reporting server to use")
 var mockOnlyFlag = flag.Bool("mock-only", false, "specifies only to use the mock")
+var listenPortFlag = flag.Int("listen-port", 0, "specifies a port for the listen server")
+
+func parseReportingAddr() string {
+	if reportingAddrFlag == nil {
+		return ""
+	}
+	return *reportingAddrFlag
+}
 
 // Start will start the CAVES system.
 func Start() {
@@ -43,17 +51,18 @@ func Start() {
 		}).Go()
 	} else if controlPortFlag != nil && *controlPortFlag > 0 {
 		// Standard test-suite mode
-		reportAddr := ""
-		if reportingAddrFlag != nil {
-			reportAddr = *reportingAddrFlag
-		}
-
 		(&testmode.Main{
 			SdkPort:    *controlPortFlag,
-			ReportAddr: reportAddr,
+			ReportAddr: parseReportingAddr(),
+		}).Go()
+	} else if listenPortFlag != nil && *listenPortFlag > 0 {
+		// Development mode
+		(&testmode.Main{
+			ListenPort: *listenPortFlag,
+			ReportAddr: parseReportingAddr(),
 		}).Go()
 	} else {
 		// Development mode
-		(&devmode.Main{}).Go()
+		(&reporting.Main{}).Go()
 	}
 }
