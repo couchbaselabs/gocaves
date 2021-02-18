@@ -57,9 +57,13 @@ func (e *Engine) parseExpiry(expiry uint32) time.Time {
 
 	// TODO(brett19): Check if this is the right edge for expiry.
 	if expiry > 30*24*60*60 {
-		return time.Unix(int64(expiry), 0)
+		return time.Unix(int64(expiry), 0).Add(e.db.Chrono().TimeShift())
 	}
 
 	expiryDura := time.Duration(expiry) * time.Second
 	return e.db.Chrono().Now().Add(expiryDura)
+}
+
+func (e *Engine) HLC() time.Time {
+	return e.db.Chrono().Now()
 }

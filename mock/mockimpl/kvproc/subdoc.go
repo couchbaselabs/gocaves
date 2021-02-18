@@ -28,7 +28,7 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 		if op.IsXattrPath {
 			// TODO: This should maybe move up to the operations level at some point?
 			var err error
-			opDoc, err = createXattrDoc(doc, op)
+			opDoc, err = e.createXattrDoc(doc, op)
 			if err != nil {
 				opReses[opIdx] = &SubDocResult{
 					Value: nil,
@@ -147,7 +147,7 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 	return opReses, nil
 }
 
-func createXattrDoc(doc *mockdb.Document, op *SubDocOp) (*mockdb.Document, error) {
+func (e *Engine) createXattrDoc(doc *mockdb.Document, op *SubDocOp) (*mockdb.Document, error) {
 	if err := validateXattrPath(op); err != nil {
 		return nil, err
 	}
@@ -164,7 +164,13 @@ func createXattrDoc(doc *mockdb.Document, op *SubDocOp) (*mockdb.Document, error
 			return nil, ErrSdCannotModifyVattr
 		}
 
-		return createVattrDoc(doc), nil
+		return e.createVattrDoc(doc), nil
+	} else if key == "$vbucket" {
+		if subdocOpIsMutation(op) {
+			return nil, ErrSdCannotModifyVattr
+		}
+
+		return e.createVbucketDoc(), nil
 	}
 
 	xattr, ok := doc.Xattrs[key]
@@ -183,7 +189,15 @@ func createXattrDoc(doc *mockdb.Document, op *SubDocOp) (*mockdb.Document, error
 	}, nil
 }
 
-func createVattrDoc(doc *mockdb.Document) *mockdb.Document {
+func (e *Engine) createVbucketDoc() *mockdb.Document {
+	v := []byte(fmt.Sprintf(`{"$vbucket":{"HLC":{"mode":"real","now":"%d"}}}`, e.HLC().Unix()))
+
+	return &mockdb.Document{
+		Value: v,
+	}
+}
+
+func (e *Engine) createVattrDoc(doc *mockdb.Document) *mockdb.Document {
 	// TODO: revid
 	table := crc32.MakeTable(crc32.Castagnoli)
 
