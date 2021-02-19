@@ -16,6 +16,7 @@ type kvClient struct {
 
 	authenticatedUserName string
 	selectedBucketName    string
+	features              []memd.HelloFeature
 }
 
 // IsTLS returns whether this client is connected via TLS
@@ -74,6 +75,19 @@ func (c *kvClient) SelectedBucketName() string {
 // SelectedBucket returns the currently selected bucket.
 func (c *kvClient) SelectedBucket() mock.Bucket {
 	return c.service.clusterNode.cluster.GetBucket(c.selectedBucketName)
+}
+
+func (c *kvClient) SetFeatures(features []memd.HelloFeature) {
+	c.features = features
+}
+
+func (c *kvClient) HasFeature(feature memd.HelloFeature) bool {
+	for _, foundFeature := range c.features {
+		if foundFeature == feature {
+			return true
+		}
+	}
+	return false
 }
 
 // Source returns the KvService which owns this client.

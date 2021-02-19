@@ -32,6 +32,12 @@ type KvClient interface {
 	// SelectedBucket returns the currently selected bucket.
 	SelectedBucket() Bucket
 
+	// SetFeatures sets the list of support features for this client.
+	SetFeatures(features []memd.HelloFeature)
+
+	// HasFeature indicates whether or not this client supports a feature.
+	HasFeature(feature memd.HelloFeature) bool
+
 	// WritePacket tries to write data to the underlying connection.
 	WritePacket(pak *memd.Packet) error
 
