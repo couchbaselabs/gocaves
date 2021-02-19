@@ -55,6 +55,53 @@ func (e *Engine) Get(opts GetOptions) (*GetResult, error) {
 	}, nil
 }
 
+// GetMetaOptions specifies options for a GET_META operation.
+type GetMetaOptions struct {
+	Vbucket      uint
+	CollectionID uint
+	Key          []byte
+}
+
+// GetMetaResult contains the results of a GET_META operation.
+type GetMetaResult struct {
+	Cas       uint64
+	Datatype  uint8
+	Value     []byte
+	Flags     uint32
+	IsDeleted bool
+	ExpTime   time.Time
+	SeqNo     uint64
+}
+
+// GetMeta performs a GET_META operation.
+func (e *Engine) GetMeta(opts GetMetaOptions) (*GetMetaResult, error) {
+	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
+		return nil, err
+	}
+
+	doc, err := e.db.Get(0, opts.Vbucket, opts.CollectionID, opts.Key)
+	if err == mockdb.ErrDocNotFound {
+		return nil, ErrDocNotFound
+	} else if err != nil {
+		return nil, err
+	}
+
+	if e.docIsLocked(doc) {
+		// If the doc is locked, we return -1 as the CAS instead.
+		doc.Cas = 0xFFFFFFFFFFFFFFFF
+	}
+
+	return &GetMetaResult{
+		Cas:       doc.Cas,
+		Datatype:  doc.Datatype,
+		Value:     doc.Value,
+		Flags:     doc.Flags,
+		IsDeleted: doc.IsDeleted,
+		ExpTime:   doc.Expiry,
+		SeqNo:     doc.SeqNo,
+	}, nil
+}
+
 // GetRandomOptions specifies options for a GET_RANDOM operation.
 type GetRandomOptions struct {
 	CollectionID uint
