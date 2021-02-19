@@ -113,8 +113,8 @@ func (t *T) markConfigured() {
 
 	t.cluster = t.parent.defaultCluster
 	t.bucketName = "default"
-	t.scopeName = ""
-	t.collectionName = ""
+	t.scopeName = "_default"
+	t.collectionName = "_default"
 
 	t.startCh <- &TestStartedSpec{
 		Cluster:        t.cluster,
