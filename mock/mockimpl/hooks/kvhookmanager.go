@@ -27,10 +27,6 @@ func (m *KvHookManager) Destroy() {
 	m.hookManager.Destroy()
 }
 
-func (m *KvHookManager) pushDestroyer(fn func()) {
-	m.hookManager.PushDestroyer(fn)
-}
-
 // Invoke will invoke this hook chain.  It starts at the most recently
 // registered hook and works it's way to the oldest hook.  It returns whether
 // the end of the hook chain was reached or not.

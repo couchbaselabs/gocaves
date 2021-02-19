@@ -176,7 +176,7 @@ func (e KvExpect) Wait() (mock.KvClient, *memd.Packet) {
 		if e.expectFields&memdPakFieldCmd != 0 && pak.Command != e.expectCmd {
 			shouldReject = true
 		}
-		if e.expectFields&memdPakFieldKey != 0 && bytes.Compare(pak.Key, e.expectKey) != 0 {
+		if e.expectFields&memdPakFieldKey != 0 && !bytes.Equal(pak.Key, e.expectKey) {
 			shouldReject = true
 		}
 		if e.expectFields&memdPakFieldOpaque != 0 && pak.Opaque != e.expectOpaque {

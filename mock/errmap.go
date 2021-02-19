@@ -20,6 +20,7 @@ type ErrorMapError struct {
 	Attrs []string `json:"attrs"`
 }
 
+// NewErrorMap creates a new error map
 func NewErrorMap() (*ErrorMap, error) {
 	b, err := mockdata.Asset("err_map70.json")
 	if err != nil {
@@ -34,6 +35,7 @@ func NewErrorMap() (*ErrorMap, error) {
 	return emap, nil
 }
 
+// Marshal marshalls the error map to JSON.
 func (errMap *ErrorMap) Marshal() ([]byte, error) {
 	return json.Marshal(errMap)
 }

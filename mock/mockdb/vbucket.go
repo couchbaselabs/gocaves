@@ -133,7 +133,7 @@ func (s *Vbucket) findDocLocked(repIdx, collectionID uint, key []byte) *Document
 			continue
 		}
 
-		if doc.CollectionID == collectionID && bytes.Compare(doc.Key, key) == 0 {
+		if doc.CollectionID == collectionID && bytes.Equal(doc.Key, key) {
 			foundDoc = doc
 		}
 	}
@@ -359,15 +359,6 @@ func (s *Vbucket) update(collectionID uint, key []byte, fn UpdateFunc) (*Documen
 	}
 
 	return s.pushDocMutationLocked(newDoc), nil
-}
-
-func (s *Vbucket) remove(key []byte) (*Document, error) {
-	// Removing a document is explicitly not supported.  Instead a document should be
-	// modified such that its IsDeleted field is true.  This is part of the overall
-	// archicture of the storage system, and IsDeleted items will be compacted away
-	// at some future point in time if appropirate.
-
-	return nil, errors.New("not supported")
 }
 
 // Compact will compact all of the mutations within a vbucket such that no two

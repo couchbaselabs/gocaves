@@ -1,23 +1,23 @@
+name: Build and Upload Releases
 on:
   push:
     branches:
       - master
-name: Build and Upload Releases
 jobs:
   build:
-    name: Build and Upload
+    name: Publish
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-        with:
-          fetch-depth: 0
       - uses: actions/setup-go@v2
         with:
           go-version: ^1.13.1
-      - name: Build project
+      - name: Pre-build project
         run: |
           go run tools/prebuildstep.go
+      - name: Build project
+        run: |
           GOOS=darwin GOARCH=amd64 go build -o gocaves-macos
           GOOS=linux GOARCH=amd64 go build -o gocaves-linux
           GOOS=windows GOARCH=amd64 go build -o gocaves-windows.exe

@@ -1,7 +1,9 @@
 package mockauth
 
+// Permission represents a permission a user may need for an operation.
 type Permission uint8
 
+// Various permissions which can be required.
 const (
 	PermissionDataRead Permission = iota + 1
 	PermissionDataWrite

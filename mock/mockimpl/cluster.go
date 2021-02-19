@@ -95,7 +95,10 @@ func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 	// Since it doesn't make sense to have no nodes in a cluster, we force
 	// one to be added here at creation time.  Theoretically nothing will break
 	// if there are no nodes in the cluster, but this might change in the future.
-	cluster.AddNode(opts.InitialNode)
+	_, err := cluster.AddNode(opts.InitialNode)
+	if err != nil {
+		return nil, err
+	}
 
 	// I don't really like this, but the default implementations have to be in the
 	// same package as us or we end up with a circular dependancy.  Maybe fix it with
@@ -225,7 +228,7 @@ func (c *clusterInst) MgmtHooks() mock.MgmtHookManager {
 	return &c.mgmtHooks
 }
 
-func (c *clusterInst) Users() mock.UserService {
+func (c *clusterInst) Users() mock.UserManager {
 	return c.auth
 }
 
@@ -234,12 +237,15 @@ func (c *clusterInst) handleKvPacketIn(source *kvClient, pak *memd.Packet) {
 	if c.kvInHooks.Invoke(source, pak) {
 		// If we reached the end of the chain, it means nobody replied and we need
 		// to default to sending a generic unsupported status code back...
-		source.WritePacket(&memd.Packet{
+		err := source.WritePacket(&memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusUnknownCommand,
 		})
+		if err != nil {
+			log.Printf("failed to write unknown command packet: %s", err)
+		}
 		return
 	}
 }

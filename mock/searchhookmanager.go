@@ -4,7 +4,7 @@ package mock
 // NOTE: It is safe and expected that a hook may alter the packet.
 type SearchHookFunc func(source SearchService, req *HTTPRequest, next func() *HTTPResponse) *HTTPResponse
 
-// QueryHookManager implements a tree of hooks which can handle a search request.
+// SearchHookManager implements a tree of hooks which can handle a search request.
 type SearchHookManager interface {
 	// Child returns a child hook manager to this hook manager.
 	Child() SearchHookManager

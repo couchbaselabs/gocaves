@@ -3,13 +3,13 @@ package svcimpls
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/couchbaselabs/gocaves/contrib/pathparse"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"log"
 	"strings"
 	"time"
 
+	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 )
 
 func (x *mgmtImpl) handleUpsertUser(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
@@ -81,7 +81,7 @@ func (x *mgmtImpl) handleGetUser(source mock.MgmtService, req *mock.HTTPRequest)
 		}
 	}
 
-	b, err := json.Marshal(newJsonUser(user))
+	b, err := json.Marshal(newJSONUser(user))
 	if err != nil {
 		return &mock.HTTPResponse{
 			StatusCode: 500,
@@ -115,7 +115,7 @@ func (x *mgmtImpl) handleGetAllUsers(source mock.MgmtService, req *mock.HTTPRequ
 	users := source.Node().Cluster().Users().GetAllUsers()
 	jsonUsers := make([]jsonUser, len(users))
 	for i, u := range users {
-		jsonUsers[i] = newJsonUser(u)
+		jsonUsers[i] = newJSONUser(u)
 	}
 
 	b, err := json.Marshal(jsonUsers)
@@ -224,7 +224,7 @@ type jsonUser struct {
 	PasswordChanged time.Time      `json:"password_change_date,omitempty"`
 }
 
-func newJsonUser(user *mockauth.User) jsonUser {
+func newJSONUser(user *mockauth.User) jsonUser {
 	groups := []string{} // We have to initialize this way to get [] in the json if there are no groups.
 	for _, g := range user.Groups {
 		groups = append(groups, g.Name)

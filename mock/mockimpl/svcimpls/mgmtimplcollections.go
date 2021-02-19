@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
-	"strconv"
-	"strings"
 )
 
 func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
@@ -311,20 +312,20 @@ func (x *mgmtImpl) handleGetAllScopes(source mock.MgmtService, req *mock.HTTPReq
 
 func buildJSONManifest(uid uint64, scopes []mock.CollectionManifestScope) jsonManifest {
 	jsonMani := jsonManifest{
-		Uid:    strconv.Itoa(int(uid)),
+		UID:    strconv.Itoa(int(uid)),
 		Scopes: make([]jsonScope, len(scopes)),
 	}
 
 	for i, scop := range scopes {
 		jsonScop := jsonScope{
-			Uid:         strconv.Itoa(int(scop.Uid)),
+			UID:         strconv.Itoa(int(scop.UID)),
 			Name:        scop.Name,
 			Collections: make([]jsonCollection, len(scop.Collections)),
 		}
 
 		for j, col := range scop.Collections {
 			jsonScop.Collections[j] = jsonCollection{
-				Uid:    strconv.Itoa(int(col.Uid)),
+				UID:    strconv.Itoa(int(col.UID)),
 				Name:   col.Name,
 				MaxTTL: col.MaxTTL,
 			}
@@ -336,18 +337,18 @@ func buildJSONManifest(uid uint64, scopes []mock.CollectionManifestScope) jsonMa
 }
 
 type jsonManifest struct {
-	Uid    string      `json:"uid"`
+	UID    string      `json:"uid"`
 	Scopes []jsonScope `json:"scopes"`
 }
 
 type jsonScope struct {
-	Uid         string           `json:"uid"`
+	UID         string           `json:"uid"`
 	Name        string           `json:"name"`
 	Collections []jsonCollection `json:"collections"`
 }
 
 type jsonCollection struct {
-	Uid    string `json:"uid"`
+	UID    string `json:"uid"`
 	Name   string `json:"name"`
 	MaxTTL uint32 `json:"maxTTL,omitempty"`
 }

@@ -42,7 +42,7 @@ func Register(opts RegisterOptions) {
 }
 
 func replyWithError(source mock.KvClient, pak *memd.Packet, err error) {
-	source.WritePacket(&memd.Packet{
+	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: pak.Command,
 		Opaque:  pak.Opaque,

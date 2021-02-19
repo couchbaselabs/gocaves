@@ -17,7 +17,6 @@ import (
 type Client struct {
 	conn       net.Conn
 	reader     *bufio.Reader
-	decoder    *json.Decoder
 	shutdownCh chan struct{}
 }
 

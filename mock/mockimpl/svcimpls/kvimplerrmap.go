@@ -21,7 +21,7 @@ func (x *kvImplErrMap) handleErrorMapReq(source mock.KvClient, pak *memd.Packet)
 		return
 	}
 
-	source.WritePacket(&memd.Packet{
+	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdGetErrorMap,
 		Opaque:  pak.Opaque,

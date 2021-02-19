@@ -26,10 +26,6 @@ func (m *ViewHookManager) Destroy() {
 	m.hookManager.Destroy()
 }
 
-func (m *ViewHookManager) pushDestroyer(fn func()) {
-	m.hookManager.PushDestroyer(fn)
-}
-
 func (m *ViewHookManager) translateHookResult(val interface{}) *mock.HTTPResponse {
 	if val == nil {
 		return nil

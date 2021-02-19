@@ -153,5 +153,8 @@ func (s *HTTPServer) handleHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	_, err := io.Copy(w, resp.Body)
+	if err != nil {
+		log.Printf("failed to write http response: %s", err)
+	}
 }

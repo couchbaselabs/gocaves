@@ -1,4 +1,12 @@
 generated:
 	go run ./tools/prebuildstep.go
 
-.PHONY: generated
+test:
+	go test ./...
+
+lint:
+	golangci-lint run
+
+check: lint test
+
+.PHONY: generated test check lint

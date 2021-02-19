@@ -38,7 +38,7 @@ func (x *kvImplCrud) Register(h *hookHelper) {
 }
 
 func (x *kvImplCrud) writeStatusReply(source mock.KvClient, pak *memd.Packet, status memd.StatusCode) {
-	source.WritePacket(&memd.Packet{
+	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: pak.Command,
 		Opaque:  pak.Opaque,
@@ -148,7 +148,7 @@ func (x *kvImplCrud) handleGetRequest(source mock.KvClient, pak *memd.Packet) {
 		extrasBuf := make([]byte, 4)
 		binary.BigEndian.PutUint32(extrasBuf[0:], resp.Flags)
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:    memd.CmdMagicRes,
 			Command:  pak.Command,
 			Opaque:   pak.Opaque,
@@ -195,7 +195,7 @@ func (x *kvImplCrud) handleGetMetaRequest(source mock.KvClient, pak *memd.Packet
 		binary.BigEndian.PutUint64(extrasBuf[12:], resp.SeqNo)
 		extrasBuf[20] = resp.Datatype
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:    memd.CmdMagicRes,
 			Command:  pak.Command,
 			Opaque:   pak.Opaque,
@@ -226,7 +226,7 @@ func (x *kvImplCrud) handleGetRandomRequest(source mock.KvClient, pak *memd.Pack
 		extrasBuf := make([]byte, 4)
 		binary.BigEndian.PutUint32(extrasBuf[0:], resp.Flags)
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:    memd.CmdMagicRes,
 			Command:  pak.Command,
 			Opaque:   pak.Opaque,
@@ -260,7 +260,7 @@ func (x *kvImplCrud) handleGetReplicaRequest(source mock.KvClient, pak *memd.Pac
 		extrasBuf := make([]byte, 4)
 		binary.BigEndian.PutUint32(extrasBuf[0:], resp.Flags)
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:    memd.CmdMagicRes,
 			Command:  pak.Command,
 			Opaque:   pak.Opaque,
@@ -311,7 +311,7 @@ func (x *kvImplCrud) handleAddRequest(source mock.KvClient, pak *memd.Packet) {
 			extrasBuf = append(extrasBuf, mtBuf...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -356,7 +356,7 @@ func (x *kvImplCrud) handleSetRequest(source mock.KvClient, pak *memd.Packet) {
 			extrasBuf = append(extrasBuf, mtBuf...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -401,7 +401,7 @@ func (x *kvImplCrud) handleReplaceRequest(source mock.KvClient, pak *memd.Packet
 			extrasBuf = append(extrasBuf, mtBuf...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -439,7 +439,7 @@ func (x *kvImplCrud) handleDeleteRequest(source mock.KvClient, pak *memd.Packet)
 			extrasBuf = append(extrasBuf, mtBuf...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -487,7 +487,7 @@ func (x *kvImplCrud) handleIncrementRequest(source mock.KvClient, pak *memd.Pack
 			extrasBuf = append(extrasBuf, mtBuf...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -536,7 +536,7 @@ func (x *kvImplCrud) handleDecrementRequest(source mock.KvClient, pak *memd.Pack
 			extrasBuf = append(extrasBuf, mtBuf...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -577,7 +577,7 @@ func (x *kvImplCrud) handleAppendRequest(source mock.KvClient, pak *memd.Packet)
 			extrasBuf = append(extrasBuf, mtBuf...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -617,7 +617,7 @@ func (x *kvImplCrud) handlePrependRequest(source mock.KvClient, pak *memd.Packet
 			extrasBuf = append(extrasBuf, mtBuf...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -657,7 +657,7 @@ func (x *kvImplCrud) handleTouchRequest(source mock.KvClient, pak *memd.Packet) 
 			extrasBuf = append(extrasBuf, mtBuf...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -691,7 +691,7 @@ func (x *kvImplCrud) handleGATRequest(source mock.KvClient, pak *memd.Packet) {
 		extrasBuf := make([]byte, 4)
 		binary.BigEndian.PutUint32(extrasBuf[0:], resp.Flags)
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:    memd.CmdMagicRes,
 			Command:  pak.Command,
 			Opaque:   pak.Opaque,
@@ -727,7 +727,7 @@ func (x *kvImplCrud) handleGetLockedRequest(source mock.KvClient, pak *memd.Pack
 		extrasBuf := make([]byte, 4)
 		binary.BigEndian.PutUint32(extrasBuf[0:], resp.Flags)
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:    memd.CmdMagicRes,
 			Command:  pak.Command,
 			Opaque:   pak.Opaque,
@@ -767,7 +767,7 @@ func (x *kvImplCrud) handleUnlockRequest(source mock.KvClient, pak *memd.Packet)
 			extrasBuf = append(extrasBuf, mtBuf...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -854,7 +854,7 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 			valueBytes = append(valueBytes, opBytes...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -977,7 +977,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			binary.BigEndian.PutUint16(valueBytes[1:], uint16(resStatus))
 
 			// TODO(brett19): Confirm that sub-document errors return 0 CAS.
-			source.WritePacket(&memd.Packet{
+			writePacketToSource(source, &memd.Packet{
 				Magic:   memd.CmdMagicRes,
 				Command: pak.Command,
 				Opaque:  pak.Opaque,
@@ -1012,7 +1012,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			extrasBuf = append(extrasBuf, mtBuf...)
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -1050,7 +1050,7 @@ func (x *kvImplCrud) handleObserveSeqNo(source mock.KvClient, pak *memd.Packet) 
 		binary.BigEndian.PutUint64(valueBuf[11:], resp.PersistSeqNo)
 		binary.BigEndian.PutUint64(valueBuf[19:], resp.CurrentSeqNo)
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,

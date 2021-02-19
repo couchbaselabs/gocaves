@@ -109,6 +109,7 @@ var cmdsMap = map[string]reflect.Type{
 	"addedbucket":    reflect.TypeOf(CmdAddedBucket{}),
 }
 
+// EncodeCommandPacket encodes a packet from a structure to bytes bytes.
 func EncodeCommandPacket(command interface{}) ([]byte, error) {
 	typeofCmd := reflect.TypeOf(command)
 
@@ -143,6 +144,7 @@ func EncodeCommandPacket(command interface{}) ([]byte, error) {
 	return append(typePrefixBytes, cmdBytes[1:]...), nil
 }
 
+// DecodeCommandPacket decodes a packet from bytes to a structure.
 func DecodeCommandPacket(data []byte) (interface{}, error) {
 	var header cmdHeader
 	err := json.Unmarshal(data, &header)

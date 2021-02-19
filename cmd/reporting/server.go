@@ -94,8 +94,15 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		msgOut := make(map[string]interface{})
 		msgOut["type"] = "newreport"
 		msgOut["report"] = report
-		msgBytes, _ := json.Marshal(msgOut)
-		c.WriteMessage(websocket.TextMessage, msgBytes)
+		msgBytes, err := json.Marshal(msgOut)
+		if err != nil {
+			log.Printf("failed to marshal new report: %s", err)
+		}
+
+		err = c.WriteMessage(websocket.TextMessage, msgBytes)
+		if err != nil {
+			log.Printf("failed to write new report: %s", err)
+		}
 	}
 
 	for {
@@ -112,7 +119,10 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReportSubmission(w http.ResponseWriter, req *http.Request) {
 	reportBytes, err := ioutil.ReadAll(req.Body)
 	if err != nil {
-		w.Write([]byte(`{"error":"bad input"}`))
+		_, err := w.Write([]byte(`{"error":"bad input"}`))
+		if err != nil {
+			log.Printf("failed to write error: %s", err)
+		}
 		return
 	}
 
@@ -126,10 +136,16 @@ func (s *Server) handleReportSubmission(w http.ResponseWriter, req *http.Request
 	msgBytes, _ := json.Marshal(msgOut)
 
 	for _, client := range s.clients {
-		client.WriteMessage(websocket.TextMessage, msgBytes)
+		err := client.WriteMessage(websocket.TextMessage, msgBytes)
+		if err != nil {
+			log.Printf("failed to write new report to a client: %s", err)
+		}
 	}
 
-	w.Write([]byte(`{"success":true}`))
+	_, err = w.Write([]byte(`{"success":true}`))
+	if err != nil {
+		log.Printf("failed to write new report success: %s", err)
+	}
 }
 
 // Close will shut down the running reporting server.

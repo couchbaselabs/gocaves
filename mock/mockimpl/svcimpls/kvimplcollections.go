@@ -3,10 +3,11 @@ package svcimpls
 import (
 	"encoding/binary"
 	"encoding/json"
+	"strings"
+
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
-	"strings"
 )
 
 func (x *kvImplCrud) handleManifestRequest(source mock.KvClient, pak *memd.Packet) {
@@ -21,7 +22,7 @@ func (x *kvImplCrud) handleManifestRequest(source mock.KvClient, pak *memd.Packe
 			return
 		}
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:    memd.CmdMagicRes,
 			Command:  pak.Command,
 			Opaque:   pak.Opaque,
@@ -49,7 +50,7 @@ func (x *kvImplCrud) handleGetCollectionIDRequest(source mock.KvClient, pak *mem
 		binary.BigEndian.PutUint64(extrasBuf[0:], uid)
 		binary.BigEndian.PutUint32(extrasBuf[8:], cid)
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,

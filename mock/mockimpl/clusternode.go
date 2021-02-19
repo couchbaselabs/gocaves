@@ -123,13 +123,7 @@ func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNode
 
 // HasFeature will indicate whether this cluster node has a specific feature enabled.
 func (n *clusterNodeInst) HasFeature(feature mock.ClusterNodeFeature) bool {
-	for _, supportedFeature := range n.enabledFeatures {
-		if supportedFeature == feature {
-			return true
-		}
-	}
-
-	return false
+	return clusterFeatureListContains(n.enabledFeatures, feature)
 }
 
 // ID returns the uuid of this node.
