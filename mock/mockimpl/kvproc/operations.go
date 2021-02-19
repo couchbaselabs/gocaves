@@ -205,6 +205,8 @@ func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 
 	if err == mockdb.ErrDocExists {
 		return nil, ErrDocExists
+	} else if err == mockdb.ErrValueTooBig {
+		return nil, ErrValueTooBig
 	} else if err != nil {
 		// TODO(brett19): Correctly handle the various errors which can occur in an ADD.
 		return nil, ErrInternal
@@ -271,7 +273,9 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
-	if err != nil {
+	if err == mockdb.ErrValueTooBig {
+		return nil, ErrValueTooBig
+	} else if err != nil {
 		return nil, err
 	}
 
@@ -323,7 +327,9 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
-	if err != nil {
+	if err == mockdb.ErrValueTooBig {
+		return nil, ErrValueTooBig
+	} else if err != nil {
 		return nil, err
 	}
 
@@ -548,7 +554,10 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 			idoc.Cas = doc.Cas
 			return idoc, nil
 		})
-	if err != nil {
+
+	if err == mockdb.ErrValueTooBig {
+		return nil, ErrValueTooBig
+	} else if err != nil {
 		return nil, err
 	}
 
@@ -980,6 +989,8 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			})
 		if err == ErrCasMismatch {
 			continue
+		} else if err == mockdb.ErrValueTooBig {
+			return nil, ErrValueTooBig
 		} else if err != nil {
 			return nil, err
 		}
