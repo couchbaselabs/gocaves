@@ -208,11 +208,11 @@ func updateBindataFiles() {
 	}()
 	func() {
 		cfg := bindata.NewConfig()
-		cfg.Output = "reporting/webapp/gobindata.go"
+		cfg.Output = "cmd/reporting/webapp/gobindata.go"
 		cfg.Package = "webapp"
-		cfg.Prefix = "reporting/webapp"
+		cfg.Prefix = "cmd/reporting/webapp"
 		cfg.Input = []bindata.InputConfig{
-			{Path: "reporting/webapp"},
+			{Path: "cmd/reporting/webapp"},
 		}
 		cfg.Ignore = []*regexp.Regexp{
 			regexp.MustCompile("gobindata.go"),
