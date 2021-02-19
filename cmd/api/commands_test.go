@@ -9,8 +9,11 @@ import (
 func TestConnStrCommands(t *testing.T) {
 	testObj := &CmdCreatedCluster{
 		ConnStr: "hello-world",
+		MgmtAddrs: []string{
+			"http://some-host:1111",
+		},
 	}
-	testBytes := []byte(`{"type":"createdcluster","connstr":"hello-world"}`)
+	testBytes := []byte(`{"type":"createdcluster","mgmt_addrs":["http://some-host:1111"],"connstr":"hello-world"}`)
 
 	encodedBytes, err := EncodeCommandPacket(testObj)
 	if err != nil {
