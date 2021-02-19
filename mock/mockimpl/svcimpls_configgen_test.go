@@ -62,7 +62,7 @@ func testCompareSubLayout(t *testing.T, actual interface{}, expected interface{}
 		expectedTyped := expected.([]interface{})
 
 		if len(actualTyped) != len(expectedTyped) {
-			t.Errorf("Field %s had a different size (expected: %d, actual: %d)", path, len(actualTyped), len(expectedTyped))
+			t.Errorf("Field %s had a different size (expected: %v, actual: %v)", path, actualTyped, expectedTyped)
 			return false
 		}
 
@@ -155,6 +155,14 @@ func TestBucketTerseConfig70(t *testing.T) {
 		InitialNode: mock.NewNodeOptions{
 			Features: []mock.ClusterNodeFeature{
 				mock.ClusterNodeFeatureTLS,
+			},
+			Services: []mock.ServiceType{
+				mock.ServiceTypeMgmt,
+				mock.ServiceTypeKeyValue,
+				mock.ServiceTypeViews,
+				mock.ServiceTypeQuery,
+				// ServiceTypeSearch ,
+				mock.ServiceTypeAnalytics,
 			},
 		},
 	})
