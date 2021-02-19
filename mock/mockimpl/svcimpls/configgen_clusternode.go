@@ -228,7 +228,6 @@ func GenExtClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBu
 
 	config["services"] = servicePorts
 	config["thisNode"] = n == reqNode
-	config["hostname"] = n.Hostname()
 
 	configBytes, _ := json.Marshal(config)
 	return configBytes
