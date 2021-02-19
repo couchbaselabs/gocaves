@@ -1,12 +1,12 @@
 package hooks
 
 import (
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"testing"
 
 	tmock "github.com/stretchr/testify/mock"
 
 	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 )
 
 type fakeQueryService struct {
@@ -18,7 +18,7 @@ func (m *fakeQueryService) Hostname() string       { return "" }
 func (m *fakeQueryService) ListenPort() int        { return 0 }
 func (m *fakeQueryService) ListenPortTLS() int     { return 0 }
 func (m *fakeQueryService) Close() error           { return nil }
-func (c *fakeQueryService) CheckAuthenticated(permission mockauth.Permission, bucket, scope, collection string, request *mock.HTTPRequest) bool {
+func (m *fakeQueryService) CheckAuthenticated(permission mockauth.Permission, bucket, scope, collection string, request *mock.HTTPRequest) bool {
 	return true
 }
 

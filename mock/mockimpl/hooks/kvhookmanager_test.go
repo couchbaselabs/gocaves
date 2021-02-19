@@ -1,8 +1,9 @@
 package hooks
 
 import (
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"testing"
+
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/contrib/scramserver"
@@ -14,15 +15,17 @@ type fakeKvClient struct {
 	tmock.Mock
 }
 
-func (c *fakeKvClient) Source() mock.KvService                   { return nil }
-func (c *fakeKvClient) ScramServer() *scramserver.ScramServer    { return nil }
-func (c *fakeKvClient) SetAuthenticatedUserName(userName string) {}
-func (c *fakeKvClient) AuthenticatedUserName() string            { return "" }
-func (c *fakeKvClient) SetSelectedBucketName(bucketName string)  {}
-func (c *fakeKvClient) SelectedBucketName() string               { return "" }
-func (c *fakeKvClient) SelectedBucket() mock.Bucket              { return nil }
-func (c *fakeKvClient) WritePacket(pak *memd.Packet) error       { return nil }
-func (c *fakeKvClient) Close() error                             { return nil }
+func (c *fakeKvClient) Source() mock.KvService                    { return nil }
+func (c *fakeKvClient) ScramServer() *scramserver.ScramServer     { return nil }
+func (c *fakeKvClient) SetAuthenticatedUserName(userName string)  {}
+func (c *fakeKvClient) AuthenticatedUserName() string             { return "" }
+func (c *fakeKvClient) SetSelectedBucketName(bucketName string)   {}
+func (c *fakeKvClient) SelectedBucketName() string                { return "" }
+func (c *fakeKvClient) SelectedBucket() mock.Bucket               { return nil }
+func (c *fakeKvClient) SetFeatures(features []memd.HelloFeature)  {}
+func (c *fakeKvClient) HasFeature(feature memd.HelloFeature) bool { return false }
+func (c *fakeKvClient) WritePacket(pak *memd.Packet) error        { return nil }
+func (c *fakeKvClient) Close() error                              { return nil }
 func (c *fakeKvClient) CheckAuthenticated(permission mockauth.Permission, collectionID uint32) bool {
 	return true
 }
