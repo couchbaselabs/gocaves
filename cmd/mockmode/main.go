@@ -7,8 +7,24 @@ import (
 	"github.com/couchbaselabs/gocaves/mock/mockimpl"
 )
 
-type stdinData struct {
+type stdoutData struct {
 	ConnStr string `json:"connstr"`
+}
+
+func writeStdoutData(data *stdoutData) error {
+	logBytes, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	logBytes = append(logBytes, []byte("\n")...)
+
+	_, err = log.Writer().Write(logBytes)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Main wraps the linkmode cmd
@@ -25,12 +41,12 @@ func (m *Main) Go() {
 		return
 	}
 
-	logData := stdinData{
+	err = writeStdoutData(&stdoutData{
 		ConnStr: cluster.ConnectionString(),
+	})
+	if err != nil {
+		panic(err)
 	}
-	logBytes, _ := json.Marshal(logData)
-	log.Writer().Write(logBytes)
-	log.Writer().Write([]byte("\n"))
 
 	// Let's wait forever
 	<-make(chan struct{})

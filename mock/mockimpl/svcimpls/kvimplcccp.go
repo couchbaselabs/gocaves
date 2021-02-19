@@ -17,7 +17,7 @@ func (x *kvImplCccp) handleGetClusterConfigReq(source mock.KvClient, pak *memd.P
 	if !source.CheckAuthenticated(mockauth.PermissionSettings, pak.CollectionID) {
 		// TODO(chvck): CheckAuthenticated needs to change, this could be actually be auth or access error depending on the user
 		// access levels.
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: memd.CmdGetClusterConfig,
 			Opaque:  pak.Opaque,
@@ -35,7 +35,7 @@ func (x *kvImplCccp) handleGetClusterConfigReq(source mock.KvClient, pak *memd.P
 		configBytes = GenTerseBucketConfig(selectedBucket, source.Source().Node())
 	}
 
-	source.WritePacket(&memd.Packet{
+	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdGetClusterConfig,
 		Opaque:  pak.Opaque,

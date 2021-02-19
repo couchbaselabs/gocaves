@@ -20,12 +20,12 @@ func NewCollectionManifest() *CollectionManifest {
 		Scopes: map[uint32]*collectionManifestScopeEntry{
 			0: {
 				Name: "_default",
-				Uid:  0,
+				UID:  0,
 			},
 		},
 		Collections: map[uint32]*collectionManifestCollectionEntry{
 			0: {
-				Uid:  0,
+				UID:  0,
 				Name: "_default",
 			},
 		},
@@ -34,25 +34,27 @@ func NewCollectionManifest() *CollectionManifest {
 
 type collectionManifestScopeEntry struct {
 	Name string
-	Uid  uint32
+	UID  uint32
 }
 
 type collectionManifestCollectionEntry struct {
 	Name     string
-	Uid      uint32
-	ScopeUid uint32
+	UID      uint32
+	ScopeUID uint32
 	MaxTTL   uint32
 }
 
+// CollectionManifestScope represents a scope in a collection manifest.
 type CollectionManifestScope struct {
 	Name        string
-	Uid         uint32
+	UID         uint32
 	Collections []CollectionManifestCollection
 }
 
+// CollectionManifestCollection represents a collection in a collection manifest.
 type CollectionManifestCollection struct {
 	Name   string
-	Uid    uint32
+	UID    uint32
 	MaxTTL uint32
 }
 
@@ -65,7 +67,7 @@ func (m *CollectionManifest) GetByID(collectionID uint32) (string, string) {
 	if !ok || col == nil {
 		return "", ""
 	}
-	sid := col.ScopeUid
+	sid := col.ScopeUID
 	scope, ok := m.Scopes[sid]
 	if !ok || scope == nil {
 		return "", ""
@@ -85,8 +87,8 @@ func (m *CollectionManifest) GetByName(scope, collection string) (uint64, uint32
 	for _, scop := range scopes {
 		if scop != nil && scop.Name == scope {
 			for _, col := range collections {
-				if col != nil && col.ScopeUid == scop.Uid && col.Name == collection {
-					return rev, col.Uid, nil
+				if col != nil && col.ScopeUID == scop.UID && col.Name == collection {
+					return rev, col.UID, nil
 				}
 			}
 
@@ -112,8 +114,8 @@ func (m *CollectionManifest) AddCollection(scope, collection string, maxTTL uint
 			uid := uint32(len(m.Collections))
 			newEntry := &collectionManifestCollectionEntry{
 				Name:     collection,
-				Uid:      uid,
-				ScopeUid: scop.Uid,
+				UID:      uid,
+				ScopeUID: scop.UID,
 				MaxTTL:   maxTTL,
 			}
 
@@ -139,7 +141,7 @@ func (m *CollectionManifest) AddScope(scope string) (uint64, error) {
 	uid := uint32(len(m.Scopes))
 	newEntry := &collectionManifestScopeEntry{
 		Name: scope,
-		Uid:  uid,
+		UID:  uid,
 	}
 
 	m.Scopes[uid] = newEntry
@@ -153,9 +155,9 @@ func (m *CollectionManifest) DropCollection(scope, collection string) (uint64, e
 	for _, scop := range m.Scopes {
 		if scop != nil && scop.Name == scope {
 			for _, col := range m.Collections {
-				if col != nil && col.ScopeUid == scop.Uid && col.Name == collection {
+				if col != nil && col.ScopeUID == scop.UID && col.Name == collection {
 					m.Rev++
-					m.Collections[col.Uid] = nil
+					m.Collections[col.UID] = nil
 					return m.Rev, nil
 				}
 			}
@@ -173,11 +175,11 @@ func (m *CollectionManifest) DropScope(scope string) (uint64, error) {
 	for _, scop := range m.Scopes {
 		if scop != nil && scop.Name == scope {
 			m.Rev++
-			m.Scopes[scop.Uid] = nil
+			m.Scopes[scop.UID] = nil
 
 			for _, col := range m.Collections {
-				if col != nil && col.ScopeUid == scop.Uid {
-					m.Collections[col.Uid] = nil
+				if col != nil && col.ScopeUID == scop.UID {
+					m.Collections[col.UID] = nil
 				}
 			}
 
@@ -199,12 +201,12 @@ func (m *CollectionManifest) GetManifest() (uint64, []CollectionManifestScope) {
 	collectionsByScope := make(map[uint32][]CollectionManifestCollection)
 	for _, col := range collections {
 		if col != nil {
-			if _, ok := collectionsByScope[col.ScopeUid]; !ok {
-				collectionsByScope[col.ScopeUid] = []CollectionManifestCollection{}
+			if _, ok := collectionsByScope[col.ScopeUID]; !ok {
+				collectionsByScope[col.ScopeUID] = []CollectionManifestCollection{}
 			}
-			collectionsByScope[col.ScopeUid] = append(collectionsByScope[col.ScopeUid], CollectionManifestCollection{
+			collectionsByScope[col.ScopeUID] = append(collectionsByScope[col.ScopeUID], CollectionManifestCollection{
 				Name:   col.Name,
-				Uid:    col.Uid,
+				UID:    col.UID,
 				MaxTTL: col.MaxTTL,
 			})
 		}
@@ -214,14 +216,12 @@ func (m *CollectionManifest) GetManifest() (uint64, []CollectionManifestScope) {
 	for _, scop := range scopes {
 		if scop != nil {
 			scope := CollectionManifestScope{
-				Uid:  scop.Uid,
+				UID:  scop.UID,
 				Name: scop.Name,
 			}
 
-			cols := collectionsByScope[scope.Uid]
-			for _, col := range cols {
-				scope.Collections = append(scope.Collections, col)
-			}
+			cols := collectionsByScope[scope.UID]
+			scope.Collections = append(scope.Collections, cols...)
 			retScopes = append(retScopes, scope)
 		}
 	}
@@ -229,6 +229,7 @@ func (m *CollectionManifest) GetManifest() (uint64, []CollectionManifestScope) {
 	return uid, retScopes
 }
 
+// A few errors that can be produced by collection manifest utilities.
 var (
 	ErrScopeExists        = errors.New("scope already exists")
 	ErrCollectionExists   = errors.New("collection already exists")

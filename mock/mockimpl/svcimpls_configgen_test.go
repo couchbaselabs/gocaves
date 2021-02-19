@@ -18,7 +18,10 @@ func testReadJSONFile(t *testing.T, path string) interface{} {
 	}
 
 	var testData interface{}
-	json.Unmarshal(data, &testData)
+	if err := json.Unmarshal(data, &testData); err != nil {
+		t.Fatalf("failed to unmarshal test file: %s", err)
+	}
+
 	return testData
 }
 
@@ -116,7 +119,9 @@ func TestClusterConfig70(t *testing.T) {
 	configBytes := svcimpls.GenClusterConfig(cluster, nil)
 
 	var actualConfig interface{}
-	json.Unmarshal(configBytes, &actualConfig)
+	if err := json.Unmarshal(configBytes, &actualConfig); err != nil {
+		t.Fatalf("failed to marshal configuration: %s", err)
+	}
 
 	testCompareLayout(t, actualConfig, testConfig)
 }
@@ -142,7 +147,9 @@ func TestBucketConfig70(t *testing.T) {
 	configBytes := svcimpls.GenBucketConfig(bucket, nil)
 
 	var actualConfig interface{}
-	json.Unmarshal(configBytes, &actualConfig)
+	if err := json.Unmarshal(configBytes, &actualConfig); err != nil {
+		t.Fatalf("failed to marshal configuration: %s", err)
+	}
 
 	testCompareLayout(t, actualConfig, testConfig)
 }
@@ -176,7 +183,9 @@ func TestBucketTerseConfig70(t *testing.T) {
 	configBytes := svcimpls.GenTerseBucketConfig(bucket, nil)
 
 	var actualConfig interface{}
-	json.Unmarshal(configBytes, &actualConfig)
+	if err := json.Unmarshal(configBytes, &actualConfig); err != nil {
+		t.Fatalf("failed to marshal configuration: %s", err)
+	}
 
 	testCompareLayout(t, actualConfig, testConfig)
 }

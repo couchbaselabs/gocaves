@@ -1,9 +1,10 @@
 package svcimpls
 
 import (
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"log"
 	"strings"
+
+	"github.com/couchbaselabs/gocaves/mock/mockauth"
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
@@ -30,7 +31,7 @@ func (x *kvImplAuth) handleSASLListMechsRequest(source mock.KvClient, pak *memd.
 
 	supportedBytes := []byte(strings.Join(supportedMechs, " "))
 
-	source.WritePacket(&memd.Packet{
+	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdSASLListMechs,
 		Opaque:  pak.Opaque,
@@ -40,11 +41,9 @@ func (x *kvImplAuth) handleSASLListMechsRequest(source mock.KvClient, pak *memd.
 }
 
 func (x *kvImplAuth) handleAuthClient(source mock.KvClient, pak *memd.Packet, mech, username, password string) {
-	log.Printf("AUTH ATTEMPT: %s, %s, %s", mech, username, password)
-
 	user := source.Source().Node().Cluster().Users().GetUser(username)
 	if user == nil {
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -55,7 +54,7 @@ func (x *kvImplAuth) handleAuthClient(source mock.KvClient, pak *memd.Packet, me
 
 	source.SetAuthenticatedUserName(username)
 
-	source.WritePacket(&memd.Packet{
+	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: pak.Command,
 		Opaque:  pak.Opaque,
@@ -77,7 +76,7 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 		if err != nil {
 			// SASL failure
 			// TODO(brett19): Provide better diagnostics here?
-			source.WritePacket(&memd.Packet{
+			writePacketToSource(source, &memd.Packet{
 				Magic:   memd.CmdMagicRes,
 				Command: memd.CmdSASLAuth,
 				Opaque:  pak.Opaque,
@@ -94,8 +93,7 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 
 		user := source.Source().Node().Cluster().Users().GetUser(scram.Username())
 		if user == nil {
-			log.Printf("AUTHNONO %s\n", scram.Username())
-			source.WritePacket(&memd.Packet{
+			writePacketToSource(source, &memd.Packet{
 				Magic:   memd.CmdMagicRes,
 				Command: pak.Command,
 				Opaque:  pak.Opaque,
@@ -104,8 +102,12 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 			return
 		}
 
-		scram.SetPassword(user.Password)
-		source.WritePacket(&memd.Packet{
+		err = scram.SetPassword(user.Password)
+		if err != nil {
+			log.Printf("failed to set scram password: %s", err)
+		}
+
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: memd.CmdSASLAuth,
 			Opaque:  pak.Opaque,
@@ -120,7 +122,7 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 	}
 
 	// Unsupported mechanism!
-	source.WritePacket(&memd.Packet{
+	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdSASLAuth,
 		Opaque:  pak.Opaque,
@@ -142,7 +144,7 @@ func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packe
 		// These are all accepted
 	case "PLAIN":
 		// Unsupported mechanism!
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: memd.CmdSASLStep,
 			Opaque:  pak.Opaque,
@@ -156,7 +158,7 @@ func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packe
 	if err != nil {
 		// SASL failure
 		// TODO(brett19): Provide better diagnostics here?
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: memd.CmdSASLStep,
 			Opaque:  pak.Opaque,
@@ -166,7 +168,7 @@ func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packe
 	}
 
 	source.SetAuthenticatedUserName(scram.Username())
-	source.WritePacket(&memd.Packet{
+	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdSASLStep,
 		Opaque:  pak.Opaque,
@@ -179,7 +181,7 @@ func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.P
 	if !source.CheckAuthenticated(mockauth.PermissionSelect, pak.CollectionID) {
 		// TODO(chvck): CheckAuthenticated needs to change, this could be actually be auth or access error depending on the user
 		// access levels.
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: memd.CmdGetClusterConfig,
 			Opaque:  pak.Opaque,
@@ -192,7 +194,7 @@ func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.P
 	if source.SelectedBucket() == nil {
 		source.SetSelectedBucketName("")
 
-		source.WritePacket(&memd.Packet{
+		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: memd.CmdSelectBucket,
 			Opaque:  pak.Opaque,
@@ -201,7 +203,7 @@ func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.P
 		return
 	}
 
-	source.WritePacket(&memd.Packet{
+	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdSelectBucket,
 		Opaque:  pak.Opaque,

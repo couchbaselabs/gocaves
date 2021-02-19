@@ -31,17 +31,27 @@ func (m *Main) Go() {
 
 	pktBytes, _ := api.EncodeCommandPacket(&api.CmdHello{})
 	pktBytes = append(pktBytes, byte(0))
-	cliConn.Write(pktBytes)
+	_, err = cliConn.Write(pktBytes)
+	if err != nil {
+		log.Printf("failed to write hello packet to the client: %s", err)
+		return
+	}
 
 	go func() {
 		log.Printf("Starting server to client copying")
-		io.Copy(srvConn, cliConn)
+		_, err := io.Copy(srvConn, cliConn)
+		if err != nil {
+			log.Printf("server to client copying errored: %v", err)
+		}
 		cliConn.Close()
 		srvConn.Close()
 	}()
 
 	log.Printf("Starting client to server copying")
-	io.Copy(cliConn, srvConn)
+	_, err = io.Copy(cliConn, srvConn)
+	if err != nil {
+		log.Printf("client to server copying errored: %v", err)
+	}
 	cliConn.Close()
 	srvConn.Close()
 }

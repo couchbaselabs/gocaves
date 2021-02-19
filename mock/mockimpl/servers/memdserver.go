@@ -118,10 +118,7 @@ func (s *MemdServer) GetAllClients() []*MemdClient {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	var allClients []*MemdClient
-	for _, foundClient := range s.clients {
-		allClients = append(allClients, foundClient)
-	}
+	allClients := append([]*MemdClient{}, s.clients...)
 
 	return allClients
 }

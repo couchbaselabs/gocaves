@@ -17,12 +17,11 @@ type T struct {
 	ptest  *pendingTest
 	def    *Check
 
-	hasRun          bool
-	isCustomCluster bool
-	cluster         mock.Cluster
-	bucketName      string
-	scopeName       string
-	collectionName  string
+	hasRun         bool
+	cluster        mock.Cluster
+	bucketName     string
+	scopeName      string
+	collectionName string
 
 	kvInHooks mock.KvHookManager
 

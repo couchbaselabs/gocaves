@@ -126,7 +126,10 @@ func (g *TestRunner) End() {
 	}
 
 	if g.runningTest != nil {
-		g.EndRunningTest(nil)
+		err := g.EndRunningTest(nil)
+		if err != nil {
+			log.Printf("Failed to end running test: %v", err)
+		}
 	}
 
 	if g.defaultCluster != nil {

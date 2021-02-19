@@ -25,7 +25,7 @@ func getCheckSuiteFiles() map[string][]string {
 
 	checkPkgs := make(map[string][]string)
 
-	filepath.Walk(absPath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(absPath, func(path string, info os.FileInfo, err error) error {
 		// Ignore any directories
 		if info.IsDir() {
 			return nil
@@ -49,6 +49,9 @@ func getCheckSuiteFiles() map[string][]string {
 
 		return nil
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	return checkPkgs
 }
@@ -189,7 +192,10 @@ func updateCheckSuiteDotGo() {
 	indexOut += "}"
 	indexOut += "\n"
 
-	ioutil.WriteFile("./checksuite/checksuite.go", []byte(indexOut), 0644)
+	err = ioutil.WriteFile("./checksuite/checksuite.go", []byte(indexOut), 0644)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func updateBindataFiles() {
@@ -204,7 +210,10 @@ func updateBindataFiles() {
 		cfg.Ignore = []*regexp.Regexp{
 			regexp.MustCompile("gobindata.go"),
 		}
-		bindata.Translate(cfg)
+		err := bindata.Translate(cfg)
+		if err != nil {
+			log.Fatalf("failed to bindata translate mock/data: %s", err)
+		}
 	}()
 	func() {
 		cfg := bindata.NewConfig()
@@ -218,7 +227,10 @@ func updateBindataFiles() {
 			regexp.MustCompile("gobindata.go"),
 		}
 		cfg.HttpFileSystem = true
-		bindata.Translate(cfg)
+		err := bindata.Translate(cfg)
+		if err != nil {
+			log.Fatalf("failed to bindata translate reporting/webapp: %s", err)
+		}
 	}()
 }
 

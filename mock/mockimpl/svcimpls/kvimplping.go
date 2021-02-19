@@ -13,7 +13,7 @@ func (x *kvImplPing) Register(h *hookHelper) {
 }
 
 func (x *kvImplPing) handlePingRequest(source mock.KvClient, pak *memd.Packet) {
-	source.WritePacket(&memd.Packet{
+	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdNoop,
 		Opaque:  pak.Opaque,

@@ -28,11 +28,14 @@ func TestMemdBasic(t *testing.T) {
 			PacketHandler: func(cli *MemdClient, pak *memd.Packet) {
 				packetInvokes = append(packetInvokes, pak)
 
-				cli.WritePacket(&memd.Packet{
+				err := cli.WritePacket(&memd.Packet{
 					Magic:   memd.CmdMagicRes,
 					Command: memd.CmdGetClusterConfig,
 					Opaque:  pak.Opaque,
 				})
+				if err != nil {
+					t.Fatalf("failed to write packet: %v", err)
+				}
 			},
 		},
 	})

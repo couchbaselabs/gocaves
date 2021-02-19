@@ -2,9 +2,10 @@ package mockimpl
 
 import (
 	"encoding/base64"
+	"strings"
+
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
-	"strings"
 )
 
 func clusterFeatureListContains(list []mock.ClusterNodeFeature, feature mock.ClusterNodeFeature) bool {
@@ -38,7 +39,7 @@ func serviceTypeListContains(list []mock.ServiceType, service mock.ServiceType) 
 }
 
 func checkHTTPAuthenticated(permission mockauth.Permission, bucket, scope, collection string,
-	req *mock.HTTPRequest, users mock.UserService) bool {
+	req *mock.HTTPRequest, users mock.UserManager) bool {
 	authHeader := req.Header.Get("Authorization")
 	if authHeader == "" {
 		return false

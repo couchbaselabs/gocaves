@@ -127,15 +127,22 @@ func (m *Main) handleAPIRequest(pkt interface{}) interface{} {
 		err := m.testRuns.EndCurrentTest(pktTyped.RunID, pktTyped.Result)
 		if err != nil {
 			log.Printf("failed to end test: %s", err)
-			return &api.CmdStartedTest{}
+			return &api.CmdEndedTest{}
 		}
 
 		return &api.CmdEndedTest{}
 	case *api.CmdTimeTravel:
 		ttAmnt := time.Duration(pktTyped.Amount) * time.Millisecond
 
-		m.clusterMgr.TimeTravel(pktTyped.ClusterID, ttAmnt)
-		m.testRuns.TimeTravel(pktTyped.RunID, ttAmnt)
+		err := m.clusterMgr.TimeTravel(pktTyped.ClusterID, ttAmnt)
+		if err != nil {
+			log.Printf("failed to time travel cluster: %s", err)
+		}
+
+		err = m.testRuns.TimeTravel(pktTyped.RunID, ttAmnt)
+		if err != nil {
+			log.Printf("failed to time travel tests: %s", err)
+		}
 
 		return &api.CmdTimeTravelled{}
 	case *api.CmdAddBucket:

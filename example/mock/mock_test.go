@@ -11,7 +11,7 @@ import (
 	"github.com/couchbaselabs/gocaves/cmd"
 )
 
-func fakeFunc() {
+func fakeFunc() { //nolint:deadcode,unused
 	// We secretly have a fake function which depends on the CAVES
 	// command line such that build errors occur here rather than when
 	// we try to actually start up CAVES...
@@ -49,7 +49,10 @@ func TestBasic(t *testing.T) {
 	bucket := cluster.Bucket("default")
 	collection := bucket.DefaultCollection()
 
-	bucket.WaitUntilReady(10*time.Second, nil)
+	err = bucket.WaitUntilReady(10*time.Second, nil)
+	if err != nil {
+		t.Fatalf("Failed to WaitUntilRead: %s", err)
+	}
 
 	// Write a key to the bucket
 	testDoc := map[string]interface{}{

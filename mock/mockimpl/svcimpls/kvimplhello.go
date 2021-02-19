@@ -67,7 +67,7 @@ func (x *kvImplHello) handleHelloRequest(source mock.KvClient, pak *memd.Packet)
 		binary.BigEndian.PutUint16(enabledBytes[featureIdx*2:], uint16(featureCode))
 	}
 
-	source.WritePacket(&memd.Packet{
+	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: memd.CmdHello,
 		Opaque:  pak.Opaque,

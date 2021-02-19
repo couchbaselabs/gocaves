@@ -170,7 +170,10 @@ func (b *Bucket) Snapshot() *BucketSnapshot {
 func (b *Bucket) Rollback(snap *BucketSnapshot) error {
 	// Rollback all the vbuckets
 	for vbIdx, vbucket := range b.vbuckets {
-		vbucket.rollback(snap.vbuckets[vbIdx])
+		err := vbucket.rollback(snap.vbuckets[vbIdx])
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

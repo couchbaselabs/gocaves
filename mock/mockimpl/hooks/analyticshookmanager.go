@@ -26,10 +26,6 @@ func (m *AnalyticsHookManager) Destroy() {
 	m.hookManager.Destroy()
 }
 
-func (m *AnalyticsHookManager) pushDestroyer(fn func()) {
-	m.hookManager.PushDestroyer(fn)
-}
-
 func (m *AnalyticsHookManager) translateHookResult(val interface{}) *mock.HTTPResponse {
 	if val == nil {
 		return nil

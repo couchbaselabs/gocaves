@@ -8,9 +8,10 @@ import (
 	"strconv"
 	"strings"
 
+	"hash/crc32"
+
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock/mockdb"
-	"hash/crc32"
 )
 
 const subdocMultiMaxPaths = 16
@@ -429,6 +430,7 @@ type SubDocDictSetExecutor struct {
 	baseSubDocExecutor
 }
 
+// Execute runs this SubDocDictSetExecutor
 func (e SubDocDictSetExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	var err error
 	e.doc.Value, err = doBasicMutation(e.doc.Value, op, func(pathVal *subDocManip, valueObj interface{}) error {
@@ -645,7 +647,10 @@ func subDocArrayPush(docVal *subDocManip, op *SubDocOp, pushFront bool) error {
 	if err != nil {
 		if errors.Is(err, ErrSdPathNotFound) {
 			val = []interface{}{}
-			pathVal.Set(val)
+			err = pathVal.Set(val)
+			if err != nil {
+				return err
+			}
 		} else {
 			return err
 		}
@@ -887,11 +892,12 @@ func (e SubDocDeleteFullDocExecutor) Execute(op *SubDocOp) (*SubDocResult, error
 	}, nil
 }
 
-// SubDocExistsExecutor is an executor for subdocument operations.
+// SubDocDictSetFullExecutor is an executor for subdocument operations.
 type SubDocDictSetFullExecutor struct {
 	baseSubDocExecutor
 }
 
+// Execute runs this SubDocDicSetFullExecutor
 func (e SubDocDictSetFullExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	if op.Path != "" {
 		return e.itemErrorResult(ErrInvalidArgument)

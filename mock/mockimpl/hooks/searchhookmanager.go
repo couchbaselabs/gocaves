@@ -26,10 +26,6 @@ func (m *SearchHookManager) Destroy() {
 	m.hookManager.Destroy()
 }
 
-func (m *SearchHookManager) pushDestroyer(fn func()) {
-	m.hookManager.PushDestroyer(fn)
-}
-
 func (m *SearchHookManager) translateHookResult(val interface{}) *mock.HTTPResponse {
 	if val == nil {
 		return nil

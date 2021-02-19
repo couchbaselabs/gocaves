@@ -8,7 +8,6 @@ type testTypeX struct {
 
 type testTypeY struct {
 	bar string
-	baz float32
 }
 
 func TestCtxStore(t *testing.T) {

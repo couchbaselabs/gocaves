@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+// UserRole represents the roles of a user.
 type UserRole struct {
 	Name           string
 	BucketName     string
@@ -12,6 +13,7 @@ type UserRole struct {
 	CollectionName string
 }
 
+// ClusterRole represents the roles of a cluster.
 type ClusterRole struct {
 	Role        string
 	Name        string
@@ -30,11 +32,13 @@ func (r *UserRole) anyCollection() bool {
 	return r.CollectionName == "" || r.CollectionName == "*"
 }
 
+// Group represents a group that a user may be part of.
 type Group struct {
 	Name  string
 	Roles []*UserRole
 }
 
+// User represents a single user in the system.
 type User struct {
 	DisplayName string
 	Username    string
@@ -43,6 +47,7 @@ type User struct {
 	Roles       []*UserRole
 }
 
+// HasPermission checks whether this user has a specific permission, including all roles and groups.
 func (u *User) HasPermission(permission Permission, bucket, scope, collection string) bool {
 	for _, r := range u.Roles {
 		// Check that we have access to the resources first.
@@ -111,12 +116,14 @@ type UpsertUserOptions struct {
 	Password string
 }
 
+// Engine represents the high level user management engine.
 type Engine struct {
 	users  []*User
 	groups []*Group
 	roles  []*ClusterRole
 }
 
+// NewEngine creates a new user management engine.
 func NewEngine() *Engine {
 	return &Engine{
 		roles: []*ClusterRole{
@@ -163,6 +170,7 @@ func NewEngine() *Engine {
 	}
 }
 
+// UpsertUser creates or updates a user.
 func (e *Engine) UpsertUser(opts UpsertUserOptions) error {
 	if opts.Username == "" {
 		return errors.New("username must be set")
@@ -228,6 +236,7 @@ func (e *Engine) UpsertUser(opts UpsertUserOptions) error {
 	return nil
 }
 
+// GetUser retrieves a user by their username.
 func (e *Engine) GetUser(username string) *User {
 	for _, user := range e.users {
 		if user.Username == username {
@@ -238,14 +247,17 @@ func (e *Engine) GetUser(username string) *User {
 	return nil
 }
 
+// GetAllUsers returns a list of all registered users.
 func (e *Engine) GetAllUsers() []*User {
 	return e.users
 }
 
+// GetAllClusterRoles returns a list of all known cluster roles.
 func (e *Engine) GetAllClusterRoles() []*ClusterRole {
 	return e.roles
 }
 
+// DropUser deletes a user.
 func (e *Engine) DropUser(username string) error {
 	var users []*User
 	for _, user := range e.users {
