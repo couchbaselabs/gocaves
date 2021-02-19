@@ -349,6 +349,10 @@ func (s *Vbucket) update(collectionID uint, key []byte, fn UpdateFunc) (*Documen
 		return nil, err
 	}
 
+	if len(newDoc.Value) > 20*1024*1024 {
+		return nil, ErrValueTooBig
+	}
+
 	// If no error was returned and no document was returned, ignore the write.
 	if newDoc == nil {
 		return nil, errors.New("functor did not return a document")

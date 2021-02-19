@@ -83,6 +83,8 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 		return memd.StatusKeyExists
 	case kvproc.ErrDocNotFound:
 		return memd.StatusKeyNotFound
+	case kvproc.ErrValueTooBig:
+		return memd.StatusTooBig
 	case kvproc.ErrCasMismatch:
 		return memd.StatusKeyExists
 	case kvproc.ErrLocked:
