@@ -144,31 +144,49 @@ func (n *clusterNodeInst) Cluster() mock.Cluster {
 
 // KvService returns the kv service for this node.
 func (n *clusterNodeInst) KvService() mock.KvService {
+	if n.kvService == nil {
+		return nil
+	}
 	return n.kvService
 }
 
 // MgmtService returns the mgmt service for this node.
 func (n *clusterNodeInst) MgmtService() mock.MgmtService {
+	if n.mgmtService == nil {
+		return nil
+	}
 	return n.mgmtService
 }
 
 // ViewService returns the views service for this node.
 func (n *clusterNodeInst) ViewService() mock.ViewService {
+	if n.viewService == nil {
+		return nil
+	}
 	return n.viewService
 }
 
 // QueryService returns the query service for this node.
 func (n *clusterNodeInst) QueryService() mock.QueryService {
+	if n.queryService == nil {
+		return nil
+	}
 	return n.queryService
 }
 
 // SearchService returns the search service for this node.
 func (n *clusterNodeInst) SearchService() mock.SearchService {
+	if n.searchService == nil {
+		return nil
+	}
 	return n.searchService
 }
 
 // AnalyticsService returns the analytics service for this node.
 func (n *clusterNodeInst) AnalyticsService() mock.AnalyticsService {
+	if n.analyticsService == nil {
+		return nil
+	}
 	return n.analyticsService
 }
 
