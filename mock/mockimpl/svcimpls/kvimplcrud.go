@@ -993,7 +993,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 
 		valueBytes := make([]byte, 0)
 		for opIdx, opRes := range resp.Ops {
-			if opRes.Err == nil {
+			if opRes.Err == nil && len(opRes.Value) > 0 {
 				opBytes := make([]byte, 7)
 				resStatus := x.translateProcErr(opRes.Err)
 
