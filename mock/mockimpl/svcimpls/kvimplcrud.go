@@ -210,13 +210,16 @@ func (x *kvImplCrud) handleGetMetaRequest(source mock.KvClient, pak *memd.Packet
 
 func (x *kvImplCrud) handleGetRandomRequest(source mock.KvClient, pak *memd.Packet) {
 	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead); proc != nil {
-		if len(pak.Extras) != 0 {
+		var collectionID uint32
+		if len(pak.Extras) == 4 {
+			collectionID = binary.BigEndian.Uint32(pak.Extras)
+		} else if len(pak.Extras) != 0 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs)
 			return
 		}
 
 		resp, err := proc.GetRandom(kvproc.GetRandomOptions{
-			CollectionID: uint(pak.CollectionID),
+			CollectionID: uint(collectionID),
 		})
 		if err != nil {
 			x.writeProcErr(source, pak, err)
