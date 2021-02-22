@@ -135,10 +135,18 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 
 			key := pathComps[0].Path
 
-			// We created a fake document for the xattr so we need to strip it down to only the value.
-			v := opDoc.Value[len(fmt.Sprintf("{\"%s\":", key)):]
-			v = v[:len(v)-1] // }
-			doc.Xattrs[key] = v
+			if subdocOpIsDeletion(op) && len(pathComps) == 1 {
+				for i, path := range pathComps {
+					if i == len(pathComps) {
+						delete(doc.Xattrs, path.Path)
+					}
+				}
+			} else {
+				// We created a fake document for the xattr so we need to strip it down to only the value.
+				v := opDoc.Value[len(fmt.Sprintf("{\"%s\":", key)):]
+				v = v[:len(v)-1] // }
+				doc.Xattrs[key] = v
+			}
 		}
 
 		opReses[opIdx] = opRes
@@ -253,6 +261,17 @@ func subdocOpIsMutation(op *SubDocOp) bool {
 	case memd.SubDocOpCounter:
 		return true
 	case memd.SubDocOpSetDoc:
+		return true
+	case memd.SubDocOpDeleteDoc:
+		return true
+	default:
+		return false
+	}
+}
+
+func subdocOpIsDeletion(op *SubDocOp) bool {
+	switch op.Op {
+	case memd.SubDocOpDelete:
 		return true
 	case memd.SubDocOpDeleteDoc:
 		return true
