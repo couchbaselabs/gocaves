@@ -22,6 +22,8 @@ var (
 	ErrSdPathExists        = errors.New("subdocument path exists")
 	ErrSdCantInsert        = errors.New("subdocument cant insert")
 	ErrSdBadCombo          = errors.New("subdocument invalid combo")
+	ErrSdInvalidFlagCombo  = errors.New("invalid xattr flag combination")
+	ErrUnknownXattrMacro   = errors.New("unknown xattr macro")
 	ErrSdInvalidXattr      = errors.New("there is something wrong with the syntax of the provided XATTR")
 	ErrSdCannotModifyVattr = errors.New("xattr cannot modify virtual attribute")
 )

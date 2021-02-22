@@ -1,6 +1,7 @@
 package kvproc
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,38 @@ import (
 
 const subdocMultiMaxPaths = 16
 
+var (
+	crc32cMacro = []byte("\"${Mutation.value_crc32c}\"")
+	seqnoMacro  = []byte("\"${Mutation.seqno}\"")
+	casMacro    = []byte("\"${Mutation.CAS}\"")
+)
+
+type subdocOpList struct {
+	ops     []*SubDocOp
+	indexes []int
+}
+
+func subdocReorder(ops []*SubDocOp) *subdocOpList {
+	var xAttrOps []*SubDocOp
+	var xAttrIndexes []int
+	var sops []*SubDocOp
+	var opIndexes []int
+	for i, op := range ops {
+		if op.IsXattrPath {
+			xAttrOps = append(xAttrOps, op)
+			xAttrIndexes = append(xAttrIndexes, i)
+		} else {
+			sops = append(sops, op)
+			opIndexes = append(opIndexes, i)
+		}
+	}
+
+	return &subdocOpList{
+		ops:     append(sops, xAttrOps...),
+		indexes: append(opIndexes, xAttrIndexes...),
+	}
+}
+
 func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([]*SubDocResult, error) {
 	if len(ops) > subdocMultiMaxPaths {
 		return nil, ErrSdBadCombo
@@ -23,12 +56,14 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 
 	opReses := make([]*SubDocResult, len(ops))
 
-	for opIdx, op := range ops {
+	reorderedOps := subdocReorder(ops)
+
+	for opIdx, op := range reorderedOps.ops {
 		var opDoc *mockdb.Document
 		if op.IsXattrPath {
 			// TODO: This should maybe move up to the operations level at some point?
 			var err error
-			opDoc, err = e.createXattrDoc(doc, op)
+			opDoc, err = e.createXattrDoc(doc, newMeta, op)
 			if err != nil {
 				opReses[opIdx] = &SubDocResult{
 					Value: nil,
@@ -37,11 +72,13 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 				continue
 			}
 		} else {
+			if op.ExpandMacros {
+				return nil, ErrSdInvalidFlagCombo
+			}
 			opDoc = doc
 		}
 		base := baseSubDocExecutor{
-			doc:     opDoc,
-			newMeta: newMeta,
+			doc: opDoc,
 		}
 
 		var executor SubDocExecutor
@@ -55,6 +92,9 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 				baseSubDocExecutor: base,
 			}
 		case memd.SubDocOpGetCount:
+			if op.ExpandMacros {
+				return nil, ErrInvalidArgument
+			}
 			executor = SubDocGetCountExecutor{
 				baseSubDocExecutor: base,
 			}
@@ -107,6 +147,7 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 				baseSubDocExecutor: base,
 			}
 		case memd.SubDocOpAddDoc:
+			return nil, ErrInvalidArgument
 		}
 
 		if executor == nil {
@@ -135,21 +176,40 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 
 			key := pathComps[0].Path
 
-			// We created a fake document for the xattr so we need to strip it down to only the value.
-			v := opDoc.Value[len(fmt.Sprintf("{\"%s\":", key)):]
-			v = v[:len(v)-1] // }
-			doc.Xattrs[key] = v
+			if subdocOpIsDeletion(op) && len(pathComps) == 1 {
+				for i, path := range pathComps {
+					if i == len(pathComps) {
+						delete(doc.Xattrs, path.Path)
+					}
+				}
+			} else {
+				// We created a fake document for the xattr so we need to strip it down to only the value.
+				v := opDoc.Value[len(fmt.Sprintf("{\"%s\":", key)):]
+				v = v[:len(v)-1] // }
+				doc.Xattrs[key] = v
+			}
 		}
 
-		opReses[opIdx] = opRes
+		opReses[reorderedOps.indexes[opIdx]] = opRes
 	}
 
 	return opReses, nil
 }
 
-func (e *Engine) createXattrDoc(doc *mockdb.Document, op *SubDocOp) (*mockdb.Document, error) {
+func (e *Engine) createXattrDoc(doc, metaDoc *mockdb.Document, op *SubDocOp) (*mockdb.Document, error) {
 	if err := validateXattrPath(op); err != nil {
 		return nil, err
+	}
+
+	if op.ExpandMacros {
+		if !subdocOpIsMutation(op) || subdocOpIsDeletion(op) || op.Op == memd.SubDocOpCounter || op.Op == memd.SubDocOpSetDoc {
+			return nil, ErrInvalidArgument
+		}
+		var err error
+		op.Value, err = e.createMacroValue(op.Value, doc, metaDoc)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	pathComps, err := ParseSubDocPath(op.Path)
@@ -187,6 +247,46 @@ func (e *Engine) createXattrDoc(doc *mockdb.Document, op *SubDocOp) (*mockdb.Doc
 	return &mockdb.Document{
 		Value: v,
 	}, nil
+}
+
+func (e *Engine) createMacroValue(opValue []byte, doc, metaDoc *mockdb.Document) ([]byte, error) {
+	var val []byte
+	if bytes.Equal(opValue, casMacro) {
+		val = []byte(fmt.Sprintf("\"0x%016x\"", metaDoc.Cas))
+	} else if bytes.Equal(opValue, crc32cMacro) {
+		table := crc32.MakeTable(crc32.Castagnoli)
+		val = []byte(fmt.Sprintf("\"0x%x\"", crc32.Checksum(doc.Value, table)))
+	} else if bytes.Equal(opValue, seqnoMacro) {
+		return nil, ErrUnknownXattrMacro
+	} else if bytes.HasPrefix(opValue, []byte(`"${$document`)) && bytes.HasSuffix(opValue, []byte(`}"`)) {
+		vattr := e.createVattrDoc(doc)
+		if bytes.Equal(opValue, []byte(`"${$document}"`)) {
+			// All of the vattrs!
+			val = vattr.Value
+		} else {
+			key := bytes.TrimPrefix(opValue, []byte(`"${$document.`))
+			key = bytes.TrimSuffix(key, []byte(`}"`))
+			var vattrMap map[string]json.RawMessage
+			err := json.Unmarshal(vattr.Value, &vattrMap)
+			if err != nil {
+				return nil, err
+			}
+			err = json.Unmarshal(vattrMap["$document"], &vattrMap)
+			if err != nil {
+				return nil, err
+			}
+
+			var ok bool
+			val, ok = vattrMap[string(key)]
+			if !ok {
+				return nil, ErrUnknownXattrMacro
+			}
+		}
+	} else {
+		return nil, ErrUnknownXattrMacro
+	}
+
+	return val, nil
 }
 
 func (e *Engine) createVbucketDoc() *mockdb.Document {
@@ -275,6 +375,17 @@ func subdocOpIsMutation(op *SubDocOp) bool {
 	}
 }
 
+func subdocOpIsDeletion(op *SubDocOp) bool {
+	switch op.Op {
+	case memd.SubDocOpDelete:
+		return true
+	case memd.SubDocOpDeleteDoc:
+		return true
+	default:
+		return false
+	}
+}
+
 func validateXattrPath(op *SubDocOp) error {
 	trimmedPath := strings.TrimSpace(op.Path)
 	if trimmedPath == "" {
@@ -293,8 +404,7 @@ type SubDocExecutor interface {
 }
 
 type baseSubDocExecutor struct {
-	doc     *mockdb.Document
-	newMeta *mockdb.Document
+	doc *mockdb.Document
 }
 
 func (e baseSubDocExecutor) itemErrorResult(err error) (*SubDocResult, error) {

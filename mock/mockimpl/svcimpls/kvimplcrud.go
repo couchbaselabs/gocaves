@@ -114,6 +114,10 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 		return memd.StatusCode(0x87)
 	case kvproc.ErrSdCannotModifyVattr:
 		return memd.StatusSubDocXattrCannotModifyVAttr
+	case kvproc.ErrSdInvalidFlagCombo:
+		return memd.StatusSubDocXattrInvalidFlagCombo
+	case kvproc.ErrUnknownXattrMacro:
+		return memd.StatusSubDocXattrUnknownMacro
 	case mock.ErrScopeNotFound:
 		return memd.StatusScopeUnknown
 	case mock.ErrCollectionNotFound:
