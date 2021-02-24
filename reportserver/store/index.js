@@ -4,9 +4,16 @@ import { WsManager } from '~/plugins/wsmanager.client'
 
 export const state = () => ({
   reports: [],
+  debugMode: false,
 })
 
 export const mutations = {
+  enableDebugMode(state) {
+    state.debugMode = true
+  },
+  disableDebugMode(state) {
+    state.debugMode = false
+  },
   addReport(state, reportData) {
     // Check to make sure the report doesn't already exist.  Delete it if it does.
     const existingIdx = state.reports.findIndex(
