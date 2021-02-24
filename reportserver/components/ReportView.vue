@@ -91,7 +91,7 @@ export default {
   },
   computed: {
     debugMode() {
-      return this.$route.hash.substr(1).split(',').indexOf('debug') !== -1
+      return this.$store.state.debugMode
     },
   },
 }
