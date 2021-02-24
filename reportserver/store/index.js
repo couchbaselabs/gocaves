@@ -24,7 +24,7 @@ export const mutations = {
     }
 
     // Add the new report to the end of the reports listing.
-    state.reports.push(reportData)
+    state.reports.unshift(reportData)
   },
 }
 
