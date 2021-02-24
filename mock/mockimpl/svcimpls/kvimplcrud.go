@@ -861,11 +861,16 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 			valueBytes = append(valueBytes, opBytes...)
 		}
 
+		status := memd.StatusSuccess
+		if resp.IsDeleted {
+			status = memd.StatusSubDocSuccessDeleted
+		}
+
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
-			Status:  memd.StatusSuccess,
+			Status:  status,
 			Cas:     resp.Cas,
 			Value:   valueBytes,
 		})

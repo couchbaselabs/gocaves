@@ -816,8 +816,9 @@ type MultiLookupOptions struct {
 
 // MultiLookupResult contains the results of a SD_MULTILOOKUP operation.
 type MultiLookupResult struct {
-	Cas uint64
-	Ops []*SubDocResult
+	Cas       uint64
+	Ops       []*SubDocResult
+	IsDeleted bool
 }
 
 // MultiLookup performs an SD_MULTILOOKUP operation.
@@ -827,7 +828,7 @@ func (e *Engine) MultiLookup(opts MultiLookupOptions) (*MultiLookupResult, error
 	}
 
 	doc, err := e.db.Get(0, opts.Vbucket, opts.CollectionID, opts.Key)
-	if err == mockdb.ErrDocNotFound || doc.IsDeleted {
+	if err == mockdb.ErrDocNotFound || (doc.IsDeleted && !opts.AccessDeleted) {
 		return nil, ErrDocNotFound
 	} else if err != nil {
 		return nil, err
@@ -843,8 +844,9 @@ func (e *Engine) MultiLookup(opts MultiLookupOptions) (*MultiLookupResult, error
 	}
 
 	return &MultiLookupResult{
-		Cas: doc.Cas,
-		Ops: sdRes,
+		Cas:       doc.Cas,
+		Ops:       sdRes,
+		IsDeleted: doc.IsDeleted,
 	}, nil
 }
 
@@ -891,12 +893,16 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			Cas:          0,
 			Xattrs:       make(map[string][]byte),
 			Expiry:       e.parseExpiry(opts.Expiry),
+			IsDeleted:    opts.CreateAsDeleted,
 		}
 
 		// We need to dynamically decide what the root of the document
 		// needs to look like based on the operations that exist.
 		for _, op := range opts.Ops {
 			if !op.IsXattrPath {
+				if opts.CreateAsDeleted {
+					return nil, ErrInvalidArgument
+				}
 				trimmedPath := strings.TrimSpace(op.Path)
 				if trimmedPath == "" {
 					switch op.Op {
@@ -931,7 +937,7 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		if opts.CreateIfMissing || opts.CreateOnly {
 			if doc == nil {
 				doc = mdoc
-			} else if doc.IsDeleted {
+			} else if doc.IsDeleted && !opts.AccessDeleted {
 				doc.IsDeleted = false
 			}
 		}
