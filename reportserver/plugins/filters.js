@@ -15,3 +15,4 @@ function vfDate(val, fmt) {
   return dayjs(val).format(fmt)
 }
 Vue.filter('date', vfDate)
+Vue.filter('atob', window.atob)
