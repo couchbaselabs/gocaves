@@ -36,6 +36,16 @@ func newMemdClient(parent *MemdServer, conn net.Conn) (*MemdClient, error) {
 	return cli, nil
 }
 
+// LocalAddr returns the local address of this client.
+func (c *MemdClient) LocalAddr() net.Addr {
+	return c.conn.LocalAddr()
+}
+
+// RemoteAddr returns the remote address of this client.
+func (c *MemdClient) RemoteAddr() net.Addr {
+	return c.conn.RemoteAddr()
+}
+
 // WritePacket writes a packet to the connection.
 func (c *MemdClient) WritePacket(pak *memd.Packet) error {
 	// In order to support various hello features, we detect when there is a hello response

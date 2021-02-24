@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/couchbaselabs/gocaves/mock"
@@ -23,7 +24,8 @@ type T struct {
 	scopeName      string
 	collectionName string
 
-	kvInHooks mock.KvHookManager
+	kvInHooks  mock.KvHookManager
+	kvOutHooks mock.KvHookManager
 
 	hasFinishConfiguring bool
 	requiredFeatures     []TestFeature
@@ -33,14 +35,17 @@ type T struct {
 	startCh    chan *TestStartedSpec
 	cancelCh   chan struct{}
 	endedCh    chan struct{}
-	logMsgs    []string
+
+	lock    sync.Mutex
+	logMsgs []string
 }
 
 func (t *T) testKvInHooks() mock.KvHookManager {
-	if t.kvInHooks == nil {
-		t.kvInHooks = t.cluster.KvInHooks().Child()
-	}
 	return t.kvInHooks
+}
+
+func (t *T) testKvOutHooks() mock.KvHookManager {
+	return t.kvOutHooks
 }
 
 // RequireFeature marks a feature as required by this check.
@@ -115,6 +120,9 @@ func (t *T) markConfigured() {
 	t.scopeName = "_default"
 	t.collectionName = "_default"
 
+	t.kvInHooks = t.cluster.KvInHooks().Child()
+	t.kvOutHooks = t.cluster.KvOutHooks().Child()
+
 	t.startCh <- &TestStartedSpec{
 		Cluster:        t.cluster,
 		BucketName:     t.bucketName,
@@ -134,6 +142,9 @@ func (t *T) End(result interface{}) {
 	case <-time.After(1 * time.Second):
 		log.Printf("Test did not end within a second of cancelling")
 	}
+
+	t.kvInHooks.Destroy()
+	t.kvOutHooks.Destroy()
 }
 
 // Mock returns the mock associated with this check.
@@ -195,7 +206,7 @@ func (t *T) FailNow() {
 
 // Logf writes a log message as part of this check.
 func (t *T) Logf(format string, args ...interface{}) {
-	t.logMsgs = append(t.logMsgs, fmt.Sprintf(format, args...))
+	t.recordLog(fmt.Sprintf(format, args...))
 	log.Printf("TEST LOGGED: "+format, args...)
 }
 
@@ -209,4 +220,11 @@ func (t *T) Errorf(format string, args ...interface{}) {
 func (t *T) Fatalf(format string, args ...interface{}) {
 	t.Logf(format, args...)
 	t.FailNow()
+}
+
+func (t *T) recordLog(msg string) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	t.logMsgs = append(t.logMsgs, msg)
 }

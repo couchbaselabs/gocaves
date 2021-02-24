@@ -157,6 +157,66 @@ func (e KvExpect) Custom(chkFn func(mock.KvClient, *memd.Packet) bool) *KvExpect
 	return &e
 }
 
+// Match checks if this KvExpect matches a particular source and packet.
+func (e KvExpect) match(source mock.KvClient, pak *memd.Packet) bool {
+	shouldReject := false
+	if e.expectSource != nil && source != e.expectSource {
+		shouldReject = true
+	}
+	if e.expectFields&memdPakFieldMagic != 0 && pak.Magic != e.expectMagic {
+		shouldReject = true
+	}
+	if e.expectFields&memdPakFieldCmd != 0 && pak.Command != e.expectCmd {
+		shouldReject = true
+	}
+	if e.expectFields&memdPakFieldKey != 0 && !bytes.Equal(pak.Key, e.expectKey) {
+		shouldReject = true
+	}
+	if e.expectFields&memdPakFieldOpaque != 0 && pak.Opaque != e.expectOpaque {
+		shouldReject = true
+	}
+	if e.expectFields&memdPakFieldCollectionID != 0 && pak.CollectionID != e.expectCollectionID {
+		shouldReject = true
+	}
+
+	bucket := source.SelectedBucket()
+	if e.expectFields&(memdPakFieldBucketName) != 0 {
+		if bucket != nil {
+			if bucket.Name() != e.expectBucketName {
+				shouldReject = true
+			}
+		} else {
+			if e.expectBucketName != "" {
+				shouldReject = true
+			}
+		}
+	}
+
+	if e.expectFields&(memdPakFieldScopeName|memdPakFieldCollectionName) != 0 {
+		if bucket != nil {
+			scopeName, collName := bucket.CollectionManifest().GetByID(pak.CollectionID)
+			if e.expectFields&memdPakFieldScopeName != 0 && scopeName != e.expectScopeName {
+				shouldReject = true
+			}
+			if e.expectFields&memdPakFieldCollectionName != 0 && collName != e.expectCollectionName {
+				shouldReject = true
+			}
+		} else {
+			// If we were expecting a scope/collection, but there is no bucket, that's not possible.
+			shouldReject = true
+		}
+	}
+
+	for _, chkFn := range e.expectFns {
+		if !chkFn(source, pak) {
+			shouldReject = true
+			break
+		}
+	}
+
+	return !shouldReject
+}
+
 // Wait will wait until this expectation is satisfied.
 func (e KvExpect) Wait() (mock.KvClient, *memd.Packet) {
 	var sourceOut mock.KvClient
@@ -165,63 +225,8 @@ func (e KvExpect) Wait() (mock.KvClient, *memd.Packet) {
 	waitCh := make(chan struct{})
 	hasTripped := uint32(0)
 
-	e.parent.testKvInHooks().Add(func(source mock.KvClient, pak *memd.Packet, next func()) {
-		shouldReject := false
-		if e.expectSource != nil && source != e.expectSource {
-			shouldReject = true
-		}
-		if e.expectFields&memdPakFieldMagic != 0 && pak.Magic != e.expectMagic {
-			shouldReject = true
-		}
-		if e.expectFields&memdPakFieldCmd != 0 && pak.Command != e.expectCmd {
-			shouldReject = true
-		}
-		if e.expectFields&memdPakFieldKey != 0 && !bytes.Equal(pak.Key, e.expectKey) {
-			shouldReject = true
-		}
-		if e.expectFields&memdPakFieldOpaque != 0 && pak.Opaque != e.expectOpaque {
-			shouldReject = true
-		}
-		if e.expectFields&memdPakFieldCollectionID != 0 && pak.CollectionID != e.expectCollectionID {
-			shouldReject = true
-		}
-
-		bucket := source.SelectedBucket()
-		if e.expectFields&(memdPakFieldBucketName) != 0 {
-			if bucket != nil {
-				if bucket.Name() != e.expectBucketName {
-					shouldReject = true
-				}
-			} else {
-				if e.expectBucketName != "" {
-					shouldReject = true
-				}
-			}
-		}
-
-		if e.expectFields&(memdPakFieldScopeName|memdPakFieldCollectionName) != 0 {
-			if bucket != nil {
-				scopeName, collName := bucket.CollectionManifest().GetByID(pak.CollectionID)
-				if e.expectFields&memdPakFieldScopeName != 0 && scopeName != e.expectScopeName {
-					shouldReject = true
-				}
-				if e.expectFields&memdPakFieldCollectionName != 0 && collName != e.expectCollectionName {
-					shouldReject = true
-				}
-			} else {
-				// If we were expecting a scope/collection, but there is no bucket, that's not possible.
-				shouldReject = true
-			}
-		}
-
-		for _, chkFn := range e.expectFns {
-			if !chkFn(source, pak) {
-				shouldReject = true
-				break
-			}
-		}
-
-		if shouldReject {
+	handler := func(source mock.KvClient, pak *memd.Packet, next func()) {
+		if !e.match(source, pak) {
 			next()
 			return
 		}
@@ -233,7 +238,9 @@ func (e KvExpect) Wait() (mock.KvClient, *memd.Packet) {
 			pakOut = pak
 			waitCh <- struct{}{}
 		}
-	})
+	}
+	e.parent.testKvInHooks().Add(handler)
+	e.parent.testKvOutHooks().Add(handler)
 
 	select {
 	case <-waitCh:
