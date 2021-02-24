@@ -215,23 +215,6 @@ func updateBindataFiles() {
 			log.Fatalf("failed to bindata translate mock/data: %s", err)
 		}
 	}()
-	func() {
-		cfg := bindata.NewConfig()
-		cfg.Output = "cmd/reporting/webapp/gobindata.go"
-		cfg.Package = "webapp"
-		cfg.Prefix = "cmd/reporting/webapp"
-		cfg.Input = []bindata.InputConfig{
-			{Path: "cmd/reporting/webapp"},
-		}
-		cfg.Ignore = []*regexp.Regexp{
-			regexp.MustCompile("gobindata.go"),
-		}
-		cfg.HttpFileSystem = true
-		err := bindata.Translate(cfg)
-		if err != nil {
-			log.Fatalf("failed to bindata translate reporting/webapp: %s", err)
-		}
-	}()
 }
 
 func main() {

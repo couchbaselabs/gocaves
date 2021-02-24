@@ -8,7 +8,6 @@ import (
 	"github.com/couchbaselabs/gocaves/checksuite"
 	"github.com/couchbaselabs/gocaves/cmd/linkmode"
 	"github.com/couchbaselabs/gocaves/cmd/mockmode"
-	"github.com/couchbaselabs/gocaves/cmd/reporting"
 	"github.com/couchbaselabs/gocaves/cmd/testmode"
 )
 
@@ -62,7 +61,7 @@ func Start() {
 			ReportAddr: parseReportingAddr(),
 		}).Go()
 	} else {
-		// Development mode
-		(&reporting.Main{}).Go()
+		log.Printf(`You must specify an option to start CAVES.  If you intended to start the reporting server, please see the README for more details.`)
+		return
 	}
 }
