@@ -1,6 +1,7 @@
 package testmode
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/couchbaselabs/gocaves/checks"
@@ -16,8 +17,7 @@ type testRun struct {
 type jsonTest struct {
 	Name        string   `json:"name"`
 	Description string   `json:"desc"`
-	Skipped     bool     `json:"skipped"`
-	Success     bool     `json:"success"`
+	Status      string   `json:"status"`
 	Logs        []string `json:"logs"`
 }
 
@@ -25,9 +25,22 @@ type jsonRunReport struct {
 	MinVersion int        `json:"minversion"`
 	Version    int        `json:"version"`
 	ID         string     `json:"id"`
-	When       string     `json:"when"`
+	CreatedAt  string     `json:"createdAt"`
 	ClientName string     `json:"client"`
 	Tests      []jsonTest `json:"tests"`
+}
+
+func testStatusToString(status checks.TestStatus) string {
+	switch status {
+	case checks.TestStatusSkipped:
+		return "skipped"
+	case checks.TestStatusFailed:
+		return "failed"
+	case checks.TestStatusSuccess:
+		return "success"
+	default:
+		return fmt.Sprintf("unknown:%d", status)
+	}
 }
 
 func (m *testRun) GenerateReport() jsonRunReport {
@@ -35,7 +48,7 @@ func (m *testRun) GenerateReport() jsonRunReport {
 	jrun.MinVersion = 1
 	jrun.Version = 1
 	jrun.ID = m.RunID
-	jrun.When = m.StartTime.Format(time.RFC3339)
+	jrun.CreatedAt = m.StartTime.Format(time.RFC3339)
 	jrun.ClientName = m.ClientName
 
 	results := m.RunGroup.Results()
@@ -44,8 +57,7 @@ func (m *testRun) GenerateReport() jsonRunReport {
 		var jtest jsonTest
 		jtest.Name = result.Name
 		jtest.Description = result.Description
-		jtest.Skipped = result.Skipped
-		jtest.Success = result.Success
+		jtest.Status = testStatusToString(result.Status)
 		jtest.Logs = result.Logs
 
 		jrun.Tests = append(jrun.Tests, jtest)

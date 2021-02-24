@@ -60,10 +60,14 @@ func (m *Main) maybeSendReport(report *jsonRunReport) {
 		return
 	}
 
-	reportingURI := fmt.Sprintf("http://%s/submit", m.ReportAddr)
-	reportBytes, _ := json.Marshal(report)
+	reportingURI := fmt.Sprintf("http://%s/api/publish_report", m.ReportAddr)
+	reportBytes, err := json.Marshal(report)
+	if err != nil {
+		log.Printf("failed to marshal report: %s", err)
+		return
+	}
 
-	_, err := http.Post(reportingURI, "text/javascript", bytes.NewReader(reportBytes))
+	_, err = http.Post(reportingURI, "application/json", bytes.NewReader(reportBytes))
 	if err != nil {
 		log.Printf("failed to send report to `%s`: %s", reportingURI, err)
 		return

@@ -9,12 +9,20 @@ import (
 	"github.com/couchbaselabs/gocaves/mock/mockimpl"
 )
 
+type TestStatus int
+
+const (
+	TestStatusUnknown TestStatus = iota
+	TestStatusSkipped
+	TestStatusSuccess
+	TestStatusFailed
+)
+
 // TestResult represents the result of a test.
 type TestResult struct {
 	Name        string
 	Description string
-	Skipped     bool
-	Success     bool
+	Status      TestStatus
 	Logs        []string
 }
 
@@ -49,8 +57,7 @@ func NewTestRunner() (*TestRunner, error) {
 			Result: &TestResult{
 				Name:        fmt.Sprintf("%s/%s", check.Group, check.Name),
 				Description: check.Description,
-				Skipped:     true,
-				Success:     false,
+				Status:      TestStatusSkipped,
 			},
 		})
 	}
@@ -110,8 +117,11 @@ func (g *TestRunner) EndRunningTest(result interface{}) error {
 	test.End(result)
 
 	resultObj := test.ptest.Result
-	resultObj.Skipped = false
-	resultObj.Success = test.wasSuccess
+	if test.wasSuccess {
+		resultObj.Status = TestStatusSuccess
+	} else {
+		resultObj.Status = TestStatusFailed
+	}
 	resultObj.Logs = test.logMsgs
 
 	g.runningTest = nil
