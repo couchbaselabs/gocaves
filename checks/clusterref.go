@@ -1,5 +1,7 @@
 package checks
 
+import "github.com/couchbase/gocbcore/v9/memd"
+
 // ClusterRef represents a cluster within the checks system.
 type ClusterRef struct {
 	t *T
@@ -7,7 +9,14 @@ type ClusterRef struct {
 
 // KvExpectReq returns a new expectation of a kv request.
 func (c ClusterRef) KvExpectReq() *KvExpect {
-	return &KvExpect{
+	return (&KvExpect{
 		parent: c.t,
-	}
+	}).Magic(memd.CmdMagicReq)
+}
+
+// KvExpectReq returns a new expectation of a kv response.
+func (c ClusterRef) KvExpectRes() *KvExpect {
+	return (&KvExpect{
+		parent: c.t,
+	}).Magic(memd.CmdMagicRes)
 }

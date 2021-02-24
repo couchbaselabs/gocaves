@@ -1,6 +1,8 @@
 package mockimpl
 
 import (
+	"net"
+
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/contrib/scramserver"
 	"github.com/couchbaselabs/gocaves/mock"
@@ -17,6 +19,16 @@ type kvClient struct {
 	authenticatedUserName string
 	selectedBucketName    string
 	features              []memd.HelloFeature
+}
+
+// LocalAddr returns the local address of this client.
+func (c *kvClient) LocalAddr() net.Addr {
+	return c.client.LocalAddr()
+}
+
+// RemoteAddr returns the remote address of this client.
+func (c *kvClient) RemoteAddr() net.Addr {
+	return c.client.RemoteAddr()
 }
 
 // IsTLS returns whether this client is connected via TLS

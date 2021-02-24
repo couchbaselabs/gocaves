@@ -1,6 +1,8 @@
 package mock
 
 import (
+	"net"
+
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/contrib/scramserver"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
@@ -8,6 +10,15 @@ import (
 
 // KvClient represents all the state about a connected kv client.
 type KvClient interface {
+	// LocalAddr returns the local address of this client.
+	LocalAddr() net.Addr
+
+	// RemoteAddr returns the remote address of this client.
+	RemoteAddr() net.Addr
+
+	// IsTLS returns whether this client is connected via TLS
+	IsTLS() bool
+
 	// Source returns the KvService which owns this client.
 	Source() KvService
 

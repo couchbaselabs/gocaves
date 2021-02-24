@@ -11,4 +11,7 @@ type QueryHookManager interface {
 
 	// Add adds a new hook at the end of the processing chain.
 	Add(fn QueryHookFunc)
+
+	// Destroy removes all this managers hooks from the root manager.
+	Destroy()
 }

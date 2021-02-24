@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"net"
 	"testing"
 
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
@@ -15,6 +16,9 @@ type fakeKvClient struct {
 	tmock.Mock
 }
 
+func (c *fakeKvClient) LocalAddr() net.Addr                       { return &net.IPAddr{} }
+func (c *fakeKvClient) RemoteAddr() net.Addr                      { return &net.IPAddr{} }
+func (c *fakeKvClient) IsTLS() bool                               { return false }
 func (c *fakeKvClient) Source() mock.KvService                    { return nil }
 func (c *fakeKvClient) ScramServer() *scramserver.ScramServer     { return nil }
 func (c *fakeKvClient) SetAuthenticatedUserName(userName string)  {}

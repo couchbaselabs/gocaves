@@ -43,6 +43,15 @@ func testStatusToString(status checks.TestStatus) string {
 	}
 }
 
+func translateTest(result *checks.TestResult) jsonTest {
+	var jtest jsonTest
+	jtest.Name = result.Name
+	jtest.Description = result.Description
+	jtest.Status = testStatusToString(result.Status)
+	jtest.Logs = result.Logs
+	return jtest
+}
+
 func (m *testRun) GenerateReport() jsonRunReport {
 	var jrun jsonRunReport
 	jrun.MinVersion = 1
@@ -52,15 +61,8 @@ func (m *testRun) GenerateReport() jsonRunReport {
 	jrun.ClientName = m.ClientName
 
 	results := m.RunGroup.Results()
-
 	for _, result := range results {
-		var jtest jsonTest
-		jtest.Name = result.Name
-		jtest.Description = result.Description
-		jtest.Status = testStatusToString(result.Status)
-		jtest.Logs = result.Logs
-
-		jrun.Tests = append(jrun.Tests, jtest)
+		jrun.Tests = append(jrun.Tests, translateTest(result))
 	}
 
 	return jrun
