@@ -7,10 +7,25 @@ import (
 	"sync"
 	"time"
 
+	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
 var errFailNow = errors.New("fail now was called")
+
+type RecordedPacket struct {
+	ID                     uint64
+	WasSent                bool
+	SrcAddr                string
+	SrcName                string
+	DestAddr               string
+	DestName               string
+	IsTLS                  bool
+	SelectedBucketName     string
+	ResolvedScopeName      string
+	ResolvedCollectionName string
+	Data                   memd.Packet
+}
 
 // T represents a singular check test that is being run.
 type T struct {
@@ -38,6 +53,7 @@ type T struct {
 
 	lock    sync.Mutex
 	logMsgs []string
+	packets []*RecordedPacket
 }
 
 func (t *T) testKvInHooks() mock.KvHookManager {
@@ -122,6 +138,55 @@ func (t *T) markConfigured() {
 
 	t.kvInHooks = t.cluster.KvInHooks().Child()
 	t.kvOutHooks = t.cluster.KvOutHooks().Child()
+
+	resolveLocalNodeName := func(source mock.KvClient) string {
+		nodeID := source.Source().Node().ID()
+		return fmt.Sprintf("node[%s]", nodeID[0:8])
+	}
+
+	resolveBucketScopeColl := func(source mock.KvClient, pak *memd.Packet) (string, string, string) {
+		bkt := source.SelectedBucket()
+		if bkt == nil {
+			return "", "", ""
+		}
+
+		scp, coll := bkt.CollectionManifest().GetByID(pak.CollectionID)
+		return bkt.Name(), scp, coll
+	}
+
+	t.kvInHooks.Add(func(source mock.KvClient, pak *memd.Packet, next func()) {
+		bkt, scp, coll := resolveBucketScopeColl(source, pak)
+
+		t.recordPacket(&RecordedPacket{
+			WasSent:                false,
+			SrcAddr:                source.RemoteAddr().String(),
+			DestAddr:               source.LocalAddr().String(),
+			DestName:               resolveLocalNodeName(source),
+			IsTLS:                  source.IsTLS(),
+			SelectedBucketName:     bkt,
+			ResolvedScopeName:      scp,
+			ResolvedCollectionName: coll,
+			Data:                   *pak,
+		})
+		next()
+	})
+
+	t.kvOutHooks.Add(func(source mock.KvClient, pak *memd.Packet, next func()) {
+		bkt, scp, coll := resolveBucketScopeColl(source, pak)
+
+		t.recordPacket(&RecordedPacket{
+			WasSent:                true,
+			SrcAddr:                source.LocalAddr().String(),
+			SrcName:                resolveLocalNodeName(source),
+			DestAddr:               source.RemoteAddr().String(),
+			IsTLS:                  source.IsTLS(),
+			SelectedBucketName:     bkt,
+			ResolvedScopeName:      scp,
+			ResolvedCollectionName: coll,
+			Data:                   *pak,
+		})
+		next()
+	})
 
 	t.startCh <- &TestStartedSpec{
 		Cluster:        t.cluster,
@@ -227,4 +292,12 @@ func (t *T) recordLog(msg string) {
 	defer t.lock.Unlock()
 
 	t.logMsgs = append(t.logMsgs, msg)
+}
+
+func (t *T) recordPacket(pak *RecordedPacket) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	pak.ID = uint64(len(t.packets)) + 1
+	t.packets = append(t.packets, pak)
 }

@@ -24,6 +24,7 @@ type TestResult struct {
 	Description string
 	Status      TestStatus
 	Logs        []string
+	Packets     []*RecordedPacket
 }
 
 type pendingTest struct {
@@ -123,6 +124,7 @@ func (g *TestRunner) EndRunningTest(result interface{}) error {
 		resultObj.Status = TestStatusFailed
 	}
 	resultObj.Logs = test.logMsgs
+	resultObj.Packets = test.packets
 
 	g.runningTest = nil
 	return nil

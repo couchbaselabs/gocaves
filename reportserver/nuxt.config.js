@@ -36,6 +36,8 @@ export default {
         'faExclamationCircle',
         'faCaretDown',
         'faCaretRight',
+        'faChevronLeft',
+        'faChevronRight',
       ],
     },
   },
