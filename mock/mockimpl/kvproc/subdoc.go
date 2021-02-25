@@ -387,6 +387,9 @@ func subdocOpIsDeletion(op *SubDocOp) bool {
 }
 
 func validateXattrPath(op *SubDocOp) error {
+	if op.Op == memd.SubDocOpSetDoc {
+		return ErrInvalidArgument
+	}
 	trimmedPath := strings.TrimSpace(op.Path)
 	if trimmedPath == "" {
 		return ErrSdInvalidXattr
@@ -1027,31 +1030,7 @@ func (e SubDocDictSetFullExecutor) Execute(op *SubDocOp) (*SubDocResult, error) 
 		return e.itemErrorResult(ErrInvalidArgument)
 	}
 
-	docVal, err := newSubDocManip(e.doc.Value)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, true)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	var valueObj interface{}
-	err = json.Unmarshal(op.Value, &valueObj)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	err = pathVal.Set(valueObj)
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
-
-	e.doc.Value, err = docVal.GetJSON()
-	if err != nil {
-		return e.itemErrorResult(err)
-	}
+	e.doc.Value = op.Value
 
 	return &SubDocResult{
 		Value: nil,
