@@ -176,6 +176,15 @@ func (c *clusterInst) GetBucket(name string) mock.Bucket {
 	return nil
 }
 
+// GetAllBuckets will return all buckets from the cluster.
+func (c *clusterInst) GetAllBuckets() []mock.Bucket {
+	var buckets []mock.Bucket
+	for _, bucket := range c.buckets {
+		buckets = append(buckets, bucket)
+	}
+	return buckets
+}
+
 // ConfigRev returns the current configuration revision for this cluster.
 func (c *clusterInst) ConfigRev() uint {
 	return c.configRev

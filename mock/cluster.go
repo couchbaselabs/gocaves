@@ -35,6 +35,9 @@ type Cluster interface {
 	// GetBucket will return a specific bucket from the cluster.
 	GetBucket(name string) Bucket
 
+	// GetAllBuckets will return all buckets from the cluster.
+	GetAllBuckets() []Bucket
+
 	// ConnectionString returns the basic non-TLS connection string for this cluster.
 	ConnectionString() string
 
