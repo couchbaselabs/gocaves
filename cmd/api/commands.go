@@ -41,7 +41,8 @@ type CmdStartTesting struct {
 
 // CmdStartedTesting indicates a new report was started.
 type CmdStartedTesting struct {
-	ConnStr string `json:"connstr"`
+	MgmtAddrs []string `json:"mgmt_addrs"`
+	ConnStr   string   `json:"connstr"`
 }
 
 // CmdEndTesting indicates to stop a particular report.
