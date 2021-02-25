@@ -36,7 +36,7 @@ func (m *hookManager) PushDestroyer(fn func()) {
 
 // remove will remote a specific hook pointer from this manager.
 func (m *hookManager) remove(fn interface{}) {
-	newHooks := make([]interface{}, len(m.hooks))
+	newHooks := make([]interface{}, 0)
 	for _, hook := range m.hooks {
 		if hook != fn {
 			newHooks = append(newHooks, hook)
@@ -52,7 +52,7 @@ func (m *hookManager) remove(fn interface{}) {
 
 // removeDestroyer will remote a specified destroyer from this manager.
 func (m *hookManager) removeDestroyer(fn *func()) {
-	newDestroyHooks := make([]*func(), len(m.destroyHooks))
+	newDestroyHooks := make([]*func(), 0)
 	for _, hook := range m.destroyHooks {
 		if hook != fn {
 			newDestroyHooks = append(newDestroyHooks, hook)
