@@ -97,7 +97,8 @@ func (m *Main) handleAPIRequest(pkt interface{}) interface{} {
 		}
 
 		return &api.CmdStartedTesting{
-			ConnStr: run.RunGroup.DefaultCluster().ConnectionString(),
+			MgmtAddrs: run.RunGroup.DefaultCluster().MgmtAddrs(),
+			ConnStr:   run.RunGroup.DefaultCluster().ConnectionString(),
 		}
 
 	case *api.CmdEndTesting:
