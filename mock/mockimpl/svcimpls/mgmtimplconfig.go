@@ -47,3 +47,19 @@ func (x *mgmtImpl) handleGetBucketConfig(source mock.MgmtService, req *mock.HTTP
 		Body:       bytes.NewReader(bucketConfig),
 	}
 }
+
+func (x *mgmtImpl) handleGetAllPoolsConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+	if !source.CheckAuthenticated(mockauth.PermissionSettings, "", "", "", req) {
+		return &mock.HTTPResponse{
+			StatusCode: 401,
+			Body:       bytes.NewReader([]byte{}),
+		}
+	}
+	cluster := source.Node().Cluster()
+
+	clusterConfig := GenPoolsConfig(cluster)
+	return &mock.HTTPResponse{
+		StatusCode: 200,
+		Body:       bytes.NewReader(clusterConfig),
+	}
+}
