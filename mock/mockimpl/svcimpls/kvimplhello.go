@@ -40,11 +40,11 @@ func (x *kvImplHello) handleHelloRequest(source mock.KvClient, pak *memd.Packet)
 		//memd.FeatureClusterMapNotif,
 		memd.FeatureUnorderedExec,
 		//memd.FeatureDurations,
-		//memd.FeatureAltRequests,
-		//memd.FeatureSyncReplication,
+		memd.FeatureAltRequests,
+		// memd.FeatureSyncReplication,
 		memd.FeatureCollections,
 		//memd.FeatureOpenTracing,
-		//memd.FeatureCreateAsDeleted,
+		memd.FeatureCreateAsDeleted,
 	}
 	enabledFeatures := make([]memd.HelloFeature, 0)
 
