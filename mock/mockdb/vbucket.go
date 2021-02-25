@@ -29,6 +29,7 @@ type Document struct {
 	Cas          uint64
 	SeqNo        uint64
 	ModifiedTime time.Time
+	RevID        uint64
 }
 
 func copyDocument(src *Document) *Document {
@@ -47,6 +48,7 @@ func copyDocument(src *Document) *Document {
 	dst.Cas = src.Cas
 	dst.SeqNo = src.SeqNo
 	dst.ModifiedTime = src.ModifiedTime
+	dst.RevID = src.RevID
 
 	dst.Value = append([]byte{}, src.Value...)
 
@@ -163,6 +165,7 @@ func (s *Vbucket) pushDocMutationLocked(doc *Document) *Document {
 	newDoc.VbUUID = s.currentUUIDLocked()
 	newDoc.SeqNo = s.nextSeqNoLocked()
 	newDoc.ModifiedTime = s.chrono.Now()
+	newDoc.RevID++
 
 	s.documents = append(s.documents, newDoc)
 

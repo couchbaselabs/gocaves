@@ -318,7 +318,8 @@ func (e *Engine) createVattrDoc(doc *mockdb.Document) *mockdb.Document {
 	v = append(v, fmt.Sprintf("\"seqno\":\"0x%016x\",", doc.SeqNo)...)
 	v = append(v, fmt.Sprintf("\"value_bytes\":%d,", len(doc.Value))...)
 	v = append(v, fmt.Sprintf("\"vbucket_uuid\":\"0x%016x\",", doc.VbUUID)...)
-	v = append(v, fmt.Sprintf("\"value_crc32c\":\"0x%x\"", crc32.Checksum(doc.Value, table))...)
+	v = append(v, fmt.Sprintf("\"value_crc32c\":\"0x%x\",", crc32.Checksum(doc.Value, table))...)
+	v = append(v, fmt.Sprintf("\"revid\":\"%d\"", doc.RevID)...)
 	v = append(v, '}')
 	v = append(v, '}')
 
