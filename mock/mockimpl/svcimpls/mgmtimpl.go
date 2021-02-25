@@ -7,6 +7,7 @@ func (x *mgmtImpl) Register(h *hookHelper) {
 	h.RegisterMgmtHandler("GET", "/", x.handlePing)
 	h.RegisterMgmtHandler("GET", "/pools", x.handleGetAllPoolsConfig)
 	h.RegisterMgmtHandler("GET", "/pools/default", x.handleGetPoolConfig)
+	h.RegisterMgmtHandler("GET", "/pools/default/buckets", x.handleGetAllBucketConfigs)
 	h.RegisterMgmtHandler("GET", "/pools/default/buckets/*", x.handleGetBucketConfig)
 	h.RegisterMgmtHandler("POST", "/pools/default/buckets/*/scopes", x.handleCreateScope)
 	h.RegisterMgmtHandler("POST", "/pools/default/buckets/*/scopes/*/collections", x.handleCreateCollection)
