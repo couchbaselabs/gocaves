@@ -47,6 +47,30 @@ func (x *mgmtImpl) handleGetBucketConfig(source mock.MgmtService, req *mock.HTTP
 	}
 }
 
+func (x *mgmtImpl) handleGetTerseBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/b/*")
+	bucketName := pathParts[0]
+	if !source.CheckAuthenticated(mockauth.PermissionSettings, bucketName, "", "", req) {
+		return &mock.HTTPResponse{
+			StatusCode: 401,
+			Body:       bytes.NewReader([]byte{}),
+		}
+	}
+
+	bucket := source.Node().Cluster().GetBucket(bucketName)
+	if bucket == nil {
+		return &mock.HTTPResponse{
+			StatusCode: 401,
+		}
+	}
+
+	bucketConfig := GenTerseBucketConfig(bucket, source.Node())
+	return &mock.HTTPResponse{
+		StatusCode: 200,
+		Body:       bytes.NewReader(bucketConfig),
+	}
+}
+
 func (x *mgmtImpl) handleGetAllBucketConfigs(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	if !source.CheckAuthenticated(mockauth.PermissionSettings, "", "", "", req) {
 		return &mock.HTTPResponse{
