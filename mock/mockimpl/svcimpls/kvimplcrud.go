@@ -1,8 +1,13 @@
 package svcimpls
 
 import (
+	"bytes"
 	"encoding/binary"
 	"log"
+	"os"
+	"runtime"
+	"strconv"
+	"time"
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
@@ -35,6 +40,7 @@ func (x *kvImplCrud) Register(h *hookHelper) {
 	h.RegisterKvHandler(memd.CmdObserveSeqNo, x.handleObserveSeqNo)
 	h.RegisterKvHandler(memd.CmdCollectionsGetManifest, x.handleManifestRequest)
 	h.RegisterKvHandler(memd.CmdCollectionsGetID, x.handleGetCollectionIDRequest)
+	h.RegisterKvHandler(memd.CmdStat, x.handleStatsRequest)
 }
 
 func (x *kvImplCrud) writeStatusReply(source mock.KvClient, pak *memd.Packet, status memd.StatusCode) {
@@ -1069,5 +1075,91 @@ func (x *kvImplCrud) handleObserveSeqNo(source mock.KvClient, pak *memd.Packet) 
 			Status:  memd.StatusSuccess,
 			Value:   valueBuf,
 		})
+	}
+}
+
+func (x *kvImplCrud) handleStatsRequest(source mock.KvClient, pak *memd.Packet) {
+	if proc := x.makeProc(source, pak, mockauth.PermissionStatsRead); proc != nil {
+		if bytes.HasPrefix(pak.Key, []byte("key ")) {
+			// TODO: handle key stats
+		} else if bytes.Equal(pak.Key, []byte("uuid")) {
+			writePacketToSource(source, &memd.Packet{
+				Magic:   memd.CmdMagicRes,
+				Command: pak.Command,
+				Opaque:  pak.Opaque,
+				Status:  memd.StatusSuccess,
+				Key:     pak.Key,
+				Value:   []byte(source.SelectedBucket().ID()),
+			})
+		} else {
+			stats, err := x.getStats(string(pak.Key))
+			if err != nil {
+				x.writeProcErr(source, pak, err)
+				return
+			}
+
+			for k, v := range stats {
+				writePacketToSource(source, &memd.Packet{
+					Magic:   memd.CmdMagicRes,
+					Command: memd.CmdStat,
+					Opaque:  pak.Opaque,
+					Status:  memd.StatusSuccess,
+					Key:     []byte(k),
+					Value:   []byte(v),
+				})
+			}
+		}
+
+		// We have to write an empty key and empty value to signal end of stream.
+		writePacketToSource(source, &memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: pak.Command,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusSuccess,
+		})
+	}
+}
+
+func (x *kvImplCrud) getStats(key string) (map[string]string, error) {
+	if key == "" {
+		return x.defaultStats(), nil
+	} else if key == "memory" {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		return map[string]string{
+			"mem_used": strconv.Itoa(int(m.Alloc)),
+			"mem_max":  strconv.Itoa(int(m.Sys)),
+		}, nil
+	} else if key == "tap" {
+		return map[string]string{
+			"ep_tap_count": "0",
+		}, nil
+	} else if key == "config" {
+		return map[string]string{
+			"ep_dcp_conn_buffer_size": "10485760",
+		}, nil
+	}
+
+	return nil, kvproc.ErrDocNotFound
+}
+
+func (x *kvImplCrud) defaultStats() map[string]string {
+	return map[string]string{
+		"pid":                 strconv.Itoa(os.Getpid()),
+		"time":                time.Now().String(),
+		"version":             "9.9.9",
+		"uptime":              "15554",
+		"accepting_conns":     "1",
+		"auth_cmds":           "0",
+		"auth_errors":         "0",
+		"bucket_active_conns": "1",
+		"bucket_conns":        "3",
+		"bytes_read":          "1108621",
+		"bytes_written":       "205374436",
+		"cas_badval":          "0",
+		"cas_hits":            "0",
+		"cas_misses":          "0",
+		"mem_used":            "100000000000000000000",
+		"curr_connections":    "-1",
 	}
 }
