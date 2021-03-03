@@ -38,6 +38,7 @@ func Register(opts RegisterOptions) {
 	(&queryImplPing{}).Register(h)
 	(&searchImplPing{}).Register(h)
 	(&viewImplPing{}).Register(h)
+	(&viewImplMgmt{}).Register(h)
 	(&mgmtImpl{}).Register(h)
 }
 
