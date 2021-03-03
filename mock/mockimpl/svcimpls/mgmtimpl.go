@@ -15,6 +15,7 @@ func (x *mgmtImpl) Register(h *hookHelper) {
 	h.RegisterMgmtHandler("DELETE", "/pools/default/buckets/*/scopes/*", x.handleDropScope)
 	h.RegisterMgmtHandler("DELETE", "/pools/default/buckets/*/scopes/*/collections/*", x.handleDropCollection)
 	h.RegisterMgmtHandler("GET", "/pools/default/buckets/*/scopes", x.handleGetAllScopes)
+	h.RegisterMgmtHandler("GET", "/pools/default/buckets/*/ddocs", x.handleGetAllDesignDocuments)
 	h.RegisterMgmtHandler("PUT", "/settings/rbac/users/*/*", x.handleUpsertUser)
 	h.RegisterMgmtHandler("GET", "/settings/rbac/users/*", x.handleGetAllUsers)
 	h.RegisterMgmtHandler("GET", "/settings/rbac/users/*/*", x.handleGetUser)

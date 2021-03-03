@@ -1,6 +1,7 @@
 package mockimpl
 
 import (
+	"github.com/couchbaselabs/gocaves/mock/mockmr"
 	"log"
 
 	"github.com/couchbaselabs/gocaves/mock"
@@ -27,6 +28,8 @@ type bucketInst struct {
 	vbMap [][]string
 
 	collManifest *mock.CollectionManifest
+
+	viewEngine *mockmr.Engine
 }
 
 func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, error) {
@@ -53,6 +56,7 @@ func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, er
 		numVbuckets:  parent.numVbuckets,
 		store:        bucketStore,
 		collManifest: mock.NewCollectionManifest(),
+		viewEngine:   mockmr.NewEngine(),
 	}
 
 	// Initially set up the vbucket map with nothing in it.
@@ -174,4 +178,8 @@ func (b *bucketInst) VbucketOwnership(node mock.ClusterNode) []int {
 		vbOwnership[vbIdx] = getRepIdx(vb)
 	}
 	return vbOwnership
+}
+
+func (b *bucketInst) ViewIndexManager() mock.ViewIndexManager {
+	return b.viewEngine
 }

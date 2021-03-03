@@ -52,4 +52,7 @@ type Bucket interface {
 	// VbucketOwnership returns the replica index associated with the provided node.
 	// A response of -1 means it does not own any replicas for that vbucket.
 	VbucketOwnership(node ClusterNode) []int
+
+	// ViewIndexManager returns the view index manager for this bucket.
+	ViewIndexManager() ViewIndexManager
 }
