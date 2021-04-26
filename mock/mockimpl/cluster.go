@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/couchbase/gocbcore/v9/memd"
@@ -25,6 +26,9 @@ type clusterInst struct {
 	persistLatency time.Duration
 	tlsConfig      *tls.Config
 	configRev      uint
+
+	configWatcherLock sync.Mutex
+	configWatchers    []mock.ConfigWatcher
 
 	buckets []*bucketInst
 	nodes   []*clusterNodeInst
@@ -192,6 +196,13 @@ func (c *clusterInst) ConfigRev() uint {
 
 func (c *clusterInst) updateConfig() {
 	c.configRev++
+	c.configWatcherLock.Lock()
+	watchers := c.configWatchers
+	c.configWatcherLock.Unlock()
+
+	for _, w := range watchers {
+		w.OnNewConfig(c.configRev)
+	}
 }
 
 // ConnectionString returns the basic non-TLS connection string for this cluster.
@@ -239,6 +250,29 @@ func (c *clusterInst) MgmtHooks() mock.MgmtHookManager {
 
 func (c *clusterInst) Users() mock.UserManager {
 	return c.auth
+}
+
+func (c *clusterInst) AddConfigWatcher(watcher mock.ConfigWatcher) {
+	c.configWatcherLock.Lock()
+	c.configWatchers = append(c.configWatchers, watcher)
+	c.configWatcherLock.Unlock()
+}
+
+func (c *clusterInst) RemoveConfigWatcher(watcher mock.ConfigWatcher) {
+	c.configWatcherLock.Lock()
+	var idx int
+	for i, w := range c.configWatchers {
+		if w == watcher {
+			idx = i
+		}
+	}
+
+	if idx == len(c.configWatchers) {
+		c.configWatchers = c.configWatchers[:idx]
+	} else {
+		c.configWatchers = append(c.configWatchers[:idx], c.configWatchers[idx+1:]...)
+	}
+	c.configWatcherLock.Unlock()
 }
 
 func (c *clusterInst) handleKvPacketIn(source *kvClient, pak *memd.Packet) {

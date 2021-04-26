@@ -29,14 +29,14 @@ func TestBasic(t *testing.T) {
 	}
 
 	clusterID := uuid.New().String()
-	connStr, err := caves.CreateCluster(clusterID)
+	connDetails, err := caves.CreateCluster(clusterID)
 	if err != nil {
 		t.Fatalf("failed to get connection string: %s", err)
 	}
 
-	t.Logf("got connection string: %s", connStr)
+	t.Logf("got connection string: %s", connDetails.ConnStr)
 
-	cluster, err := gocb.Connect(connStr, gocb.ClusterOptions{
+	cluster, err := gocb.Connect(connDetails.ConnStr, gocb.ClusterOptions{
 		Authenticator: gocb.PasswordAuthenticator{
 			Username: "Administrator",
 			Password: "password",

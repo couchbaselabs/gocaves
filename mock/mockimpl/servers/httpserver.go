@@ -132,13 +132,21 @@ func (s *HTTPServer) handleHTTP(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(400)
 		return
 	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		w.WriteHeader(500)
+		return
+	}
+
 	resp := s.handlers.NewRequestHandler(&mock.HTTPRequest{
-		IsTLS:  s.tlsConfig != nil,
-		Method: req.Method,
-		URL:    req.URL,
-		Header: req.Header,
-		Body:   req.Body,
-		Form:   req.Form,
+		IsTLS:   s.tlsConfig != nil,
+		Method:  req.Method,
+		URL:     req.URL,
+		Header:  req.Header,
+		Body:    req.Body,
+		Form:    req.Form,
+		Context: req.Context(),
+		Flusher: flusher,
 	})
 	if resp == nil {
 		// If nobody decides to answer the request, we write 501 Unsupported.

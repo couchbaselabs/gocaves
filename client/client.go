@@ -169,18 +169,30 @@ func (c *Client) roundTripCommand(req map[string]interface{}) (map[string]interf
 	return resp, nil
 }
 
+type CreateClusterResult struct {
+	ConnStr         string
+	ManagementAddrs []string
+}
+
 // CreateCluster instantiates a new CAVES test cluster.
-func (c *Client) CreateCluster(clusterID string) (string, error) {
+func (c *Client) CreateCluster(clusterID string) (*CreateClusterResult, error) {
 	resp, err := c.roundTripCommand(map[string]interface{}{
 		"type": "createcluster",
 		"id":   clusterID,
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	connStr := resp["connstr"].(string)
-	return connStr, nil
+	mgmtInterfaces := resp["mgmt_addrs"].([]interface{})
+	var mgmtAddrs []string
+	for _, m := range mgmtInterfaces {
+		mgmtAddrs = append(mgmtAddrs, m.(string))
+	}
+	return &CreateClusterResult{
+		ConnStr:         resp["connstr"].(string),
+		ManagementAddrs: mgmtAddrs,
+	}, nil
 }
 
 // StartTesting begins a test suite run within CAVES.

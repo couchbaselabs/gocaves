@@ -15,11 +15,18 @@ func GenBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	config["name"] = b.Name()
 	config["uuid"] = b.ID()
 
-	config["bucketType"] = "membase"
-	config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().Rev)
+	config["bucketType"] = b.BucketType().Name()
+
+	if b.BucketType() != mock.BucketTypeMemcached {
+		config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().Rev)
+		config["durabilityMinLevel"] = "none"
+
+		config["ddocs"] = map[string]interface{}{
+			"uri": fmt.Sprintf("/pools/default/%s/default/ddocs", b.Name()),
+		}
+	}
 	config["evictionPolicy"] = "valueOnly"
 	config["storageBackend"] = "couchstore"
-	config["durabilityMinLevel"] = "none"
 	config["saslPassword"] = "f5461fdf070ba44b7f1ca2f18bd7bb28"
 	config["compressionMode"] = "passive"
 	config["replicaIndex"] = false
@@ -44,10 +51,6 @@ func GenBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 		"dataUsed":               4249600,
 		"memUsed":                38148176,
 		"vbActiveNumNonResident": 0,
-	}
-
-	config["ddocs"] = map[string]interface{}{
-		"uri": fmt.Sprintf("/pools/default/%s/default/ddocs", b.Name()),
 	}
 
 	config["quota"] = map[string]interface{}{
@@ -89,20 +92,24 @@ func GenBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	}
 	config["nodes"] = nodesConfig
 
-	config["nodeLocator"] = "vbucket"
-	vbConfig := make(map[string]interface{})
-	vbConfig["hashAlgorithm"] = "CRC"
-	vbConfig["numReplicas"] = b.NumReplicas()
-	vbConfig["vBucketMap"] = vbMap
+	if b.BucketType() == mock.BucketTypeMemcached {
+		config["nodeLocator"] = "ketama"
+	} else {
+		config["nodeLocator"] = "vbucket"
+		vbConfig := make(map[string]interface{})
+		vbConfig["hashAlgorithm"] = "CRC"
+		vbConfig["numReplicas"] = b.NumReplicas()
+		vbConfig["vBucketMap"] = vbMap
 
-	var vbServerList []interface{}
-	for _, node := range kvNodes {
-		address := fmt.Sprintf("%s:%d", node.KvService().Hostname(), node.KvService().ListenPort())
-		vbServerList = append(vbServerList, address)
+		var vbServerList []interface{}
+		for _, node := range kvNodes {
+			address := fmt.Sprintf("%s:%d", node.KvService().Hostname(), node.KvService().ListenPort())
+			vbServerList = append(vbServerList, address)
+		}
+		vbConfig["serverList"] = vbServerList
+
+		config["vBucketServerMap"] = vbConfig
 	}
-	vbConfig["serverList"] = vbServerList
-
-	config["vBucketServerMap"] = vbConfig
 
 	configBytes, _ := json.Marshal(config)
 	return configBytes
@@ -117,13 +124,17 @@ func GenTerseBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	config["name"] = b.Name()
 	config["uuid"] = b.ID()
 
-	config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().Rev)
+	if b.BucketType() != mock.BucketTypeMemcached {
+		config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().Rev)
+	}
 
 	config["uri"] = fmt.Sprintf("/pools/default/buckets/%s?bucket_uuid=%s", b.Name(), b.ID())
 	config["streamingUri"] = fmt.Sprintf("/pools/default/bucketsStreaming/%s?bucket_uuid=%s", b.Name(), b.ID())
 
-	config["ddocs"] = map[string]interface{}{
-		"uri": fmt.Sprintf("/pools/default/%s/default/ddocs", b.Name()),
+	if b.BucketType() != mock.BucketTypeMemcached {
+		config["ddocs"] = map[string]interface{}{
+			"uri": fmt.Sprintf("/pools/default/%s/default/ddocs", b.Name()),
+		}
 	}
 
 	config["clusterCapabilitiesVer"] = []int{1, 0}
@@ -165,20 +176,25 @@ func GenTerseBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	config["nodes"] = nodesConfig
 	config["nodesExt"] = nodesExtConfig
 
-	config["nodeLocator"] = "vbucket"
-	vbConfig := make(map[string]interface{})
-	vbConfig["hashAlgorithm"] = "CRC"
-	vbConfig["numReplicas"] = b.NumReplicas()
-	vbConfig["vBucketMap"] = vbMap
+	if b.BucketType() == mock.BucketTypeMemcached {
+		config["nodeLocator"] = "ketama"
+	} else {
+		config["nodeLocator"] = "vbucket"
 
-	var vbServerList []interface{}
-	for _, node := range kvNodes {
-		address := fmt.Sprintf("%s:%d", node.KvService().Hostname(), node.KvService().ListenPort())
-		vbServerList = append(vbServerList, address)
+		vbConfig := make(map[string]interface{})
+		vbConfig["hashAlgorithm"] = "CRC"
+		vbConfig["numReplicas"] = b.NumReplicas()
+		vbConfig["vBucketMap"] = vbMap
+
+		var vbServerList []interface{}
+		for _, node := range kvNodes {
+			address := fmt.Sprintf("%s:%d", node.KvService().Hostname(), node.KvService().ListenPort())
+			vbServerList = append(vbServerList, address)
+		}
+		vbConfig["serverList"] = vbServerList
+
+		config["vBucketServerMap"] = vbConfig
 	}
-	vbConfig["serverList"] = vbServerList
-
-	config["vBucketServerMap"] = vbConfig
 
 	configBytes, _ := json.Marshal(config)
 	return configBytes

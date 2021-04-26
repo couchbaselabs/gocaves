@@ -11,6 +11,17 @@ const (
 	BucketTypeCouchbase = BucketType(2)
 )
 
+func (b BucketType) Name() string {
+	switch b {
+	case BucketTypeMemcached:
+		return "memcached"
+	case BucketTypeCouchbase:
+		return "membase"
+	}
+
+	return ""
+}
+
 // NewBucketOptions allows you to specify initial options for a new bucket
 type NewBucketOptions struct {
 	Name        string

@@ -58,4 +58,10 @@ type Cluster interface {
 
 	// Users returns the user service for the cluster.
 	Users() UserManager
+
+	// AddConfigWatcher adds a watcher for any configs that come in.
+	AddConfigWatcher(ConfigWatcher)
+
+	// RemoveConfigWatcher remover a config watcher.
+	RemoveConfigWatcher(ConfigWatcher)
 }

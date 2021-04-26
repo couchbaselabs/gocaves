@@ -32,6 +32,15 @@ func (x *kvImplCccp) handleGetClusterConfigReq(source mock.KvClient, pak *memd.P
 		// Send a global terse configuration
 		configBytes = GenTerseClusterConfig(source.Source().Node().Cluster(), source.Source().Node())
 	} else {
+		if selectedBucket.BucketType() == mock.BucketTypeMemcached {
+			writePacketToSource(source, &memd.Packet{
+				Magic:   memd.CmdMagicRes,
+				Command: memd.CmdGetClusterConfig,
+				Opaque:  pak.Opaque,
+				Status:  memd.StatusKeyNotFound,
+			})
+			return
+		}
 		configBytes = GenTerseBucketConfig(selectedBucket, source.Source().Node())
 	}
 

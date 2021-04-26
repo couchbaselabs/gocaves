@@ -10,6 +10,7 @@ func (x *mgmtImpl) Register(h *hookHelper) {
 	h.RegisterMgmtHandler("GET", "/pools/default/buckets", x.handleGetAllBucketConfigs)
 	h.RegisterMgmtHandler("GET", "/pools/default/buckets/*", x.handleGetBucketConfig)
 	h.RegisterMgmtHandler("GET", "/pools/default/b/*", x.handleGetTerseBucketConfig)
+	h.RegisterMgmtHandler("GET", "/pools/default/bs/*", x.handleGetTerseBucketStreamingConfig)
 	h.RegisterMgmtHandler("POST", "/pools/default/buckets/*/scopes", x.handleCreateScope)
 	h.RegisterMgmtHandler("POST", "/pools/default/buckets/*/scopes/*/collections", x.handleCreateCollection)
 	h.RegisterMgmtHandler("DELETE", "/pools/default/buckets/*/scopes/*", x.handleDropScope)
