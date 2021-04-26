@@ -2,6 +2,7 @@ package mock
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -10,12 +11,14 @@ import (
 
 // HTTPRequest encapsulates an HTTP request.
 type HTTPRequest struct {
-	IsTLS  bool
-	Method string
-	URL    *url.URL
-	Header http.Header
-	Body   io.Reader
-	Form   url.Values
+	IsTLS   bool
+	Method  string
+	URL     *url.URL
+	Header  http.Header
+	Body    io.Reader
+	Form    url.Values
+	Context context.Context
+	Flusher http.Flusher
 }
 
 // PeekBody will return the full body and swap the reader with a
@@ -31,6 +34,7 @@ type HTTPResponse struct {
 	StatusCode int
 	Header     http.Header
 	Body       io.Reader
+	Streaming  bool
 }
 
 // PeekBody will return the full body and swap the reader with a
