@@ -39,4 +39,7 @@ type ViewIndexManager interface {
 
 	// GetAllDesignDocuments retrieves all design documents.
 	GetAllDesignDocuments() []*mockmr.DesignDocument
+
+	// Execute executes a query.
+	Execute(opts mockmr.ExecuteOptions) (int, *mockmr.ExecuteResults, error)
 }
