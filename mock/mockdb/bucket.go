@@ -56,6 +56,21 @@ func (b *Bucket) Chrono() *mocktime.Chrono {
 	return b.chrono
 }
 
+// GetAll fetches all documents from a particular replica.
+func (b *Bucket) GetAll(repIdx, collectionID uint) ([]*Document, error) {
+	var alldocs []*Document
+	for _, vb := range b.vbuckets {
+		docs, err := vb.GetAll(repIdx, collectionID)
+		if err != nil {
+			return nil, err
+		}
+
+		alldocs = append(alldocs, docs...)
+	}
+
+	return alldocs, nil
+}
+
 // Get fetches a document from a particular replica and vbucket index.
 func (b *Bucket) Get(repIdx, vbIdx uint, collectionID uint, key []byte) (*Document, error) {
 	vbucket := b.GetVbucket(vbIdx)

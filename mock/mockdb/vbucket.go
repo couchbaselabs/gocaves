@@ -217,6 +217,40 @@ func (s *Vbucket) CurrentMetaState(repIdx uint) VbMetaState {
 	}
 }
 
+// GetAll returns all documents in the vbucket.
+func (s *Vbucket) GetAll(repIdx, collectionID uint) ([]*Document, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	// Calculate when replica becomes visible
+	repLatency := time.Duration(repIdx) * s.replicaLatency
+	repVisibleTime := s.chrono.Now().Add(-repLatency)
+
+	var docs []*Document
+	for _, doc := range s.documents {
+		if repIdx > 0 && !doc.ModifiedTime.Before(repVisibleTime) {
+			continue
+		}
+
+		if doc.CollectionID != collectionID {
+			continue
+		}
+		// We cheat and convert an expired document directly to being deleted.
+		if s.hasDocExpired(doc) {
+			doc.IsDeleted = true
+		}
+
+		// We also cheat and clean this up here...
+		if !s.chrono.Now().Before(doc.LockExpiry) {
+			doc.LockExpiry = time.Time{}
+		}
+
+		docs = append(docs, doc)
+	}
+
+	return docs, nil
+}
+
 // Get returns a document in the vbucket by key
 func (s *Vbucket) Get(repIdx, collectionID uint, key []byte) (*Document, error) {
 	s.lock.Lock()
