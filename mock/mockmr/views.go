@@ -116,6 +116,12 @@ func (e *Engine) Execute(opts ExecuteOptions) (int, *ExecuteResults, error) {
 		return 0, nil, ErrNotFound
 	}
 
+	if opts.Reduce && view.ReduceFunc == "" {
+		return 0, nil, &InvalidParametersError{
+			Message: "{\"error\":\"query_parse_error\",\"reason\":\"Invalid URL parameter `reduce` for map view.\"}",
+		}
+	}
+
 	indexed, err := e.index(view, opts.Data)
 	if err != nil {
 		return 0, nil, err
