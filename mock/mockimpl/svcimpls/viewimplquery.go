@@ -3,6 +3,7 @@ package svcimpls
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
@@ -99,6 +100,18 @@ func (x *viewImplQuery) handleQuery(source mock.ViewService, req *mock.HTTPReque
 	})
 	if err != nil {
 		log.Printf("Failed to execute view query: %v", err)
+		if errors.Is(err, mockmr.ErrNotFound) {
+			return &mock.HTTPResponse{
+				StatusCode: 404,
+				Body:       bytes.NewReader([]byte(err.Error())),
+			}
+		} else if errors.Is(err, mockmr.ErrInvalidParameters) {
+			return &mock.HTTPResponse{
+				StatusCode: 400,
+				Body:       bytes.NewReader([]byte(err.Error())),
+			}
+		}
+
 		return &mock.HTTPResponse{
 			StatusCode: 500,
 			Body:       bytes.NewReader([]byte("internal server error")),
