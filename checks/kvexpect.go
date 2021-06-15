@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
@@ -158,7 +159,7 @@ func (e KvExpect) Custom(chkFn func(mock.KvClient, *memd.Packet) bool) *KvExpect
 }
 
 // Match checks if this KvExpect matches a particular source and packet.
-func (e KvExpect) match(source mock.KvClient, pak *memd.Packet) bool {
+func (e KvExpect) match(source mock.KvClient, pak *memd.Packet, start time.Time) bool {
 	shouldReject := false
 	if e.expectSource != nil && source != e.expectSource {
 		shouldReject = true
@@ -225,8 +226,8 @@ func (e KvExpect) Wait() (mock.KvClient, *memd.Packet) {
 	waitCh := make(chan struct{})
 	hasTripped := uint32(0)
 
-	handler := func(source mock.KvClient, pak *memd.Packet, next func()) {
-		if !e.match(source, pak) {
+	handler := func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
+		if !e.match(source, pak, start) {
 			next()
 			return
 		}

@@ -3,6 +3,7 @@ package hooks
 import (
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
+	"time"
 )
 
 // KvHookManager implements a tree of hooks which can handle a kv packet.
@@ -36,7 +37,7 @@ func (m *KvHookManager) Invoke(source mock.KvClient, pak *memd.Packet) bool {
 
 	res := m.hookManager.Invoke(func(hook interface{}, next func() interface{}) interface{} {
 		hookFn := *(hook.(*mock.KvHookFunc))
-		hookFn(source, pak, func() {
+		hookFn(source, pak, time.Now(), func() {
 			res := next()
 			if res == nil {
 				// This indicates we reached the end of the chain.
