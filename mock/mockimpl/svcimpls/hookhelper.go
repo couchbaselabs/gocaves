@@ -4,6 +4,7 @@ import (
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
+	"time"
 )
 
 // hookHelper is simply a wrapper to simplify the setup of hooks.
@@ -18,10 +19,10 @@ type hookHelper struct {
 }
 
 // RegisterKvReq registers a hook for a kv command request.
-func (h *hookHelper) RegisterKvHandler(cmd memd.CmdCode, handler func(source mock.KvClient, pak *memd.Packet)) {
-	h.KvInHooks.Add(func(source mock.KvClient, pak *memd.Packet, next func()) {
+func (h *hookHelper) RegisterKvHandler(cmd memd.CmdCode, handler func(source mock.KvClient, pak *memd.Packet, start time.Time)) {
+	h.KvInHooks.Add(func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
 		if pak.Magic == memd.CmdMagicReq && pak.Command == cmd {
-			handler(source, pak)
+			handler(source, pak, start)
 		} else {
 			next()
 		}
