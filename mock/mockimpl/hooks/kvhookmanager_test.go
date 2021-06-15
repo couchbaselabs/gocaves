@@ -3,6 +3,7 @@ package hooks
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
 
@@ -41,7 +42,7 @@ func TestKvHooksBasic(t *testing.T) {
 	fakePacket := &memd.Packet{}
 
 	var hooks KvHookManager
-	hooks.Add(func(source mock.KvClient, pak *memd.Packet, next func()) {
+	hooks.Add(func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
 		hookInvokes = append(hookInvokes, 1)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")
@@ -51,7 +52,7 @@ func TestKvHooksBasic(t *testing.T) {
 		}
 		next()
 	})
-	hooks.Add(func(source mock.KvClient, pak *memd.Packet, next func()) {
+	hooks.Add(func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
 		hookInvokes = append(hookInvokes, 2)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")
@@ -61,7 +62,7 @@ func TestKvHooksBasic(t *testing.T) {
 		}
 		next()
 	})
-	hooks.Add(func(source mock.KvClient, pak *memd.Packet, next func()) {
+	hooks.Add(func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
 		hookInvokes = append(hookInvokes, 3)
 		if source != fakeSource {
 			t.Fatalf("failed to pass the source")

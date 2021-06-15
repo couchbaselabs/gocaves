@@ -2,6 +2,7 @@ package svcimpls
 
 import (
 	"encoding/binary"
+	"time"
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
@@ -14,7 +15,7 @@ func (x *kvImplHello) Register(h *hookHelper) {
 	h.RegisterKvHandler(memd.CmdHello, x.handleHelloRequest)
 }
 
-func (x *kvImplHello) handleHelloRequest(source mock.KvClient, pak *memd.Packet) {
+func (x *kvImplHello) handleHelloRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
 	isInFeatureList := func(features []memd.HelloFeature, feature memd.HelloFeature) bool {
 		for _, foundFeature := range features {
 			if foundFeature == feature {
@@ -39,7 +40,7 @@ func (x *kvImplHello) handleHelloRequest(source mock.KvClient, pak *memd.Packet)
 		memd.FeatureDuplex,
 		//memd.FeatureClusterMapNotif,
 		memd.FeatureUnorderedExec,
-		//memd.FeatureDurations,
+		memd.FeatureDurations,
 		memd.FeatureAltRequests,
 		// memd.FeatureSyncReplication,
 		memd.FeatureCollections,
@@ -73,5 +74,5 @@ func (x *kvImplHello) handleHelloRequest(source mock.KvClient, pak *memd.Packet)
 		Opaque:  pak.Opaque,
 		Value:   enabledBytes,
 		Status:  memd.StatusSuccess,
-	})
+	}, start)
 }

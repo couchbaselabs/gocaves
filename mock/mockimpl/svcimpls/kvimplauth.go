@@ -3,6 +3,7 @@ package svcimpls
 import (
 	"log"
 	"strings"
+	"time"
 
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
 
@@ -20,7 +21,7 @@ func (x *kvImplAuth) Register(h *hookHelper) {
 	h.RegisterKvHandler(memd.CmdSelectBucket, x.handleSelectBucketRequest)
 }
 
-func (x *kvImplAuth) handleSASLListMechsRequest(source mock.KvClient, pak *memd.Packet) {
+func (x *kvImplAuth) handleSASLListMechsRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
 	// TODO(brett19): Implement actual auth mechanism configuration support.
 	supportedMechs := []string{
 		"PLAIN",
@@ -37,10 +38,10 @@ func (x *kvImplAuth) handleSASLListMechsRequest(source mock.KvClient, pak *memd.
 		Opaque:  pak.Opaque,
 		Status:  memd.StatusSuccess,
 		Value:   supportedBytes,
-	})
+	}, start)
 }
 
-func (x *kvImplAuth) handleAuthClient(source mock.KvClient, pak *memd.Packet, mech, username, password string) {
+func (x *kvImplAuth) handleAuthClient(source mock.KvClient, pak *memd.Packet, mech, username, password string, start time.Time) {
 	user := source.Source().Node().Cluster().Users().GetUser(username)
 	if user == nil {
 		writePacketToSource(source, &memd.Packet{
@@ -48,7 +49,7 @@ func (x *kvImplAuth) handleAuthClient(source mock.KvClient, pak *memd.Packet, me
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusAuthError,
-		})
+		}, start)
 		return
 	}
 
@@ -59,10 +60,10 @@ func (x *kvImplAuth) handleAuthClient(source mock.KvClient, pak *memd.Packet, me
 		Command: pak.Command,
 		Opaque:  pak.Opaque,
 		Status:  memd.StatusSuccess,
-	})
+	}, start)
 }
 
-func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packet) {
+func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
 	authMech := string(pak.Key)
 
 	switch authMech {
@@ -81,13 +82,13 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 				Command: memd.CmdSASLAuth,
 				Opaque:  pak.Opaque,
 				Status:  memd.StatusAuthError,
-			})
+			}, start)
 			return
 		}
 
 		if outBytes == nil {
 			// SASL already completed
-			x.handleAuthClient(source, pak, authMech, scram.Username(), scram.Password())
+			x.handleAuthClient(source, pak, authMech, scram.Username(), scram.Password(), start)
 			return
 		}
 
@@ -98,7 +99,7 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 				Command: pak.Command,
 				Opaque:  pak.Opaque,
 				Status:  memd.StatusAuthError,
-			})
+			}, start)
 			return
 		}
 
@@ -113,11 +114,11 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusAuthContinue,
 			Value:   outBytes,
-		})
+		}, start)
 		return
 	case "PLAIN":
 		authPieces := strings.Split(string(pak.Value), string([]byte{0}))
-		x.handleAuthClient(source, pak, authMech, authPieces[1], authPieces[2])
+		x.handleAuthClient(source, pak, authMech, authPieces[1], authPieces[2], start)
 		return
 	}
 
@@ -127,10 +128,10 @@ func (x *kvImplAuth) handleSASLAuthRequest(source mock.KvClient, pak *memd.Packe
 		Command: memd.CmdSASLAuth,
 		Opaque:  pak.Opaque,
 		Status:  memd.StatusAuthError,
-	})
+	}, start)
 }
 
-func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packet) {
+func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
 	authMech := string(pak.Key)
 
 	log.Printf("AUTH STEP: %+v, %s", authMech, pak.Value)
@@ -149,7 +150,7 @@ func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packe
 			Command: memd.CmdSASLStep,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusAuthError,
-		})
+		}, start)
 		return
 	}
 
@@ -163,7 +164,7 @@ func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packe
 			Command: memd.CmdSASLStep,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusAuthError,
-		})
+		}, start)
 		return
 	}
 
@@ -174,10 +175,10 @@ func (x *kvImplAuth) handleSASLStepRequest(source mock.KvClient, pak *memd.Packe
 		Opaque:  pak.Opaque,
 		Status:  memd.StatusSuccess,
 		Value:   outBytes,
-	})
+	}, start)
 }
 
-func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.Packet) {
+func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
 	if !source.CheckAuthenticated(mockauth.PermissionSelect, pak.CollectionID) {
 		// TODO(chvck): CheckAuthenticated needs to change, this could be actually be auth or access error depending on the user
 		// access levels.
@@ -186,7 +187,7 @@ func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.P
 			Command: memd.CmdGetClusterConfig,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusAuthError,
-		})
+		}, start)
 		return
 	}
 
@@ -199,7 +200,7 @@ func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.P
 			Command: memd.CmdSelectBucket,
 			Opaque:  pak.Opaque,
 			Status:  memd.StatusKeyNotFound,
-		})
+		}, start)
 		return
 	}
 
@@ -208,5 +209,5 @@ func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.P
 		Command: memd.CmdSelectBucket,
 		Opaque:  pak.Opaque,
 		Status:  memd.StatusSuccess,
-	})
+	}, start)
 }

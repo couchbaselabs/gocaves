@@ -178,7 +178,7 @@ func (t *T) markConfigured() {
 		return bkt.Name(), scp, coll
 	}
 
-	t.kvInHooks.Add(func(source mock.KvClient, pak *memd.Packet, next func()) {
+	t.kvInHooks.Add(func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
 		bkt, scp, coll := resolveBucketScopeColl(source, pak)
 
 		t.recordPacket(&RecordedPacket{
@@ -195,7 +195,7 @@ func (t *T) markConfigured() {
 		next()
 	})
 
-	t.kvOutHooks.Add(func(source mock.KvClient, pak *memd.Packet, next func()) {
+	t.kvOutHooks.Add(func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
 		bkt, scp, coll := resolveBucketScopeColl(source, pak)
 
 		t.recordPacket(&RecordedPacket{

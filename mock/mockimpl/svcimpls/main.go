@@ -3,6 +3,7 @@ package svcimpls
 import (
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
+	"time"
 )
 
 // RegisterOptions specifies options used for impl registration
@@ -43,12 +44,12 @@ func Register(opts RegisterOptions) {
 	(&mgmtImpl{}).Register(h)
 }
 
-func replyWithError(source mock.KvClient, pak *memd.Packet, err error) {
+func replyWithError(source mock.KvClient, pak *memd.Packet, start time.Time, err error) {
 	writePacketToSource(source, &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: pak.Command,
 		Opaque:  pak.Opaque,
 		Status:  memd.StatusInternalError,
 		Value:   []byte(err.Error()),
-	})
+	}, start)
 }
