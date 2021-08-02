@@ -5,6 +5,7 @@ type mgmtImpl struct {
 
 func (x *mgmtImpl) Register(h *hookHelper) {
 	h.RegisterMgmtHandler("GET", "/", x.handlePing)
+	h.RegisterMgmtHandler("GET", "/ui/index.html", x.handleIndex)
 	h.RegisterMgmtHandler("GET", "/pools", x.handleGetAllPoolsConfig)
 	h.RegisterMgmtHandler("GET", "/pools/default", x.handleGetPoolConfig)
 	h.RegisterMgmtHandler("GET", "/pools/default/buckets", x.handleGetAllBucketConfigs)
