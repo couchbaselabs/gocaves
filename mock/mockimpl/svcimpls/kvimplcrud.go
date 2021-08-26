@@ -974,6 +974,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			CreateOnly:      docFlags&memd.SubdocDocFlagAddDoc != 0,
 			Ops:             ops,
 			Expiry:          expiry,
+			Cas:             pak.Cas,
 		})
 		if err != nil {
 			x.writeProcErr(source, pak, err)

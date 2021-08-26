@@ -861,6 +861,7 @@ type MultiMutateOptions struct {
 	CreateIfMissing bool
 	CreateOnly      bool
 	Expiry          uint32
+	Cas             uint64
 }
 
 // MultiMutateResult contains the results of a SD_MULTIMUTATE operation.
@@ -928,6 +929,12 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			}
 		} else if err != nil {
 			return nil, err
+		}
+
+		// Check for cas mismatch before we do any work. We'll effectively be doing this check again during the update
+		// too so if anyone performs a mutation during that time then we'll catch it there too.
+		if opts.Cas != 0 && doc.Cas != opts.Cas {
+			return nil, ErrCasMismatch
 		}
 
 		if opts.CreateOnly && doc != nil && !doc.IsDeleted {
