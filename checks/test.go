@@ -3,6 +3,7 @@ package checks
 import (
 	"errors"
 	"fmt"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl"
 	"log"
 	"sync"
 	"time"
@@ -44,6 +45,7 @@ type T struct {
 
 	hasFinishConfiguring bool
 	requiredFeatures     []TestFeature
+	requireMock          bool
 
 	wasFailure bool
 	wasSuccess bool
@@ -73,6 +75,15 @@ func (t *T) RequireFeature(feature TestFeature) {
 	t.requiredFeatures = append(t.requiredFeatures, feature)
 }
 
+// RequireMock marks this check as requiring a non default cluster instance.
+func (t *T) RequireMock() {
+	if t.hasFinishConfiguring {
+		t.Fatalf("Cannot require mock after accessing the mock")
+	}
+
+	t.requireMock = true
+}
+
 // Start will start a test and wait till it is configured.
 func (t *T) Start() (*TestStartedSpec, error) {
 	if t.hasRun {
@@ -87,7 +98,7 @@ func (t *T) Start() (*TestStartedSpec, error) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("TEST FUNCTION PANICED!: %+v", r)
+				log.Printf("TEST FUNCTION PANICKED!: %+v", r)
 
 				if r == errFailNow {
 					close(t.endedCh)
@@ -131,7 +142,20 @@ func (t *T) markConfigured() {
 	// require caves should be the marker, and I believe that access to t.Mock()
 	// should be guarded by that feature.
 
-	t.cluster = t.parent.defaultCluster
+	var cluster mock.Cluster
+	if t.requireMock {
+		var err error
+		cluster, err = mockimpl.NewDefaultCluster()
+		if err != nil {
+			log.Printf("Test cancelled, had error: %v", err)
+			close(t.cancelCh)
+			return
+		}
+	} else {
+		cluster = t.parent.defaultCluster
+	}
+
+	t.cluster = cluster
 	t.bucketName = "default"
 	t.scopeName = "_default"
 	t.collectionName = "_default"
@@ -214,9 +238,12 @@ func (t *T) End(result interface{}) {
 
 // Mock returns the mock associated with this check.
 func (t *T) Mock() mock.Cluster {
+	if t.cluster == t.parent.defaultCluster {
+		panic("You cannot modify behaviour of the default cluster. Use RequireMock to trigger the check to use a new cluster instance.")
+	}
 	t.markConfigured()
 
-	return nil
+	return t.cluster
 }
 
 // Cluster returns a reference to the cluster associated with this check.

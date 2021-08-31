@@ -137,7 +137,7 @@ func (c *Client) writeCommand(req map[string]interface{}) error {
 }
 
 func (c *Client) readCommand() (map[string]interface{}, error) {
-	respBytes, err := c.reader.ReadSlice(0)
+	respBytes, err := c.reader.ReadBytes(0)
 	if err != nil {
 		log.Printf("fail to read response bytes: %s", err)
 		return nil, err

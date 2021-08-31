@@ -7,4 +7,5 @@ type TestFeature string
 const (
 	TestFeatureEnhancedPreparedStatements = "enhancedprepared"
 	TestFeature3Replicas                  = "3replicas"
+	TestFeatureErrMap                     = "errmap"
 )
