@@ -1,6 +1,9 @@
 package checks
 
-import "github.com/couchbase/gocbcore/v9/memd"
+import (
+	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbaselabs/gocaves/mock"
+)
 
 // ClusterRef represents a cluster within the checks system.
 type ClusterRef struct {
@@ -19,4 +22,8 @@ func (c ClusterRef) KvExpectRes() *KvExpect {
 	return (&KvExpect{
 		parent: c.t,
 	}).Magic(memd.CmdMagicRes)
+}
+
+func (c ClusterRef) HookHelper(handler mock.KvHookFunc) KVHook {
+	return NewKvHook(c.KvExpectReq(), handler)
 }

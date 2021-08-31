@@ -13,11 +13,21 @@ type ErrorMap struct {
 	Errors   map[string]ErrorMapError `json:"errors"`
 }
 
+// ErrorMapRetry specifies a specific error retry strategy.
+type ErrorMapRetry struct {
+	Strategy    string `json:"strategy"`
+	Interval    int    `json:"interval"`
+	After       int    `json:"after"`
+	MaxDuration int    `json:"max-duration"`
+	Ceil        int    `json:"ceil,omitempty"`
+}
+
 // ErrorMapError specifies a specific error.
 type ErrorMapError struct {
-	Name  string   `json:"name"`
-	Desc  string   `json:"desc"`
-	Attrs []string `json:"attrs"`
+	Name  string         `json:"name"`
+	Desc  string         `json:"desc"`
+	Attrs []string       `json:"attrs"`
+	Retry *ErrorMapRetry `json:"retry,omitempty"`
 }
 
 // NewErrorMap creates a new error map
@@ -33,6 +43,12 @@ func NewErrorMap() (*ErrorMap, error) {
 	}
 
 	return emap, nil
+}
+
+// Extend adds a new error entry for this error map.
+func (errMap *ErrorMap) Extend(key string, err ErrorMapError) *ErrorMap {
+	errMap.Errors[key] = err
+	return errMap
 }
 
 // Marshal marshalls the error map to JSON.
