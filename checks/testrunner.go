@@ -83,7 +83,7 @@ func (g *TestRunner) findTest(name string) *pendingTest {
 
 // TestStartedSpec represents all the information needed to run a test.
 type TestStartedSpec struct {
-	Cluster        mock.Cluster
+	Connstr        string
 	BucketName     string
 	ScopeName      string
 	CollectionName string
@@ -134,7 +134,7 @@ func (g *TestRunner) EndRunningTest(result interface{}) error {
 func (g *TestRunner) End() {
 	log.Printf("TEST RUN GROUP ENDING:")
 	for _, test := range g.allTests {
-		log.Printf("  TEST: %+v", test)
+		log.Printf("  TEST: %s", test.Def.Name)
 	}
 
 	if g.runningTest != nil {

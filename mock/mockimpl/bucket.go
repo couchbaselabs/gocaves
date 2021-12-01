@@ -33,13 +33,20 @@ type bucketInst struct {
 }
 
 func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, error) {
+	vbuckets := parent.numVbuckets
+	replicas := opts.NumReplicas
+	if opts.Type == mock.BucketTypeMemcached {
+		vbuckets = 1
+		replicas = 0 // This should already be set to 0 by the caller but let's force it.
+	}
+
 	// We currently always use a single replica here.  We use this 1 replica for all
 	// replicas that are needed, and it is potentially unused if the buckets replica
 	// count is 0.
 	bucketStore, err := mockdb.NewBucket(mockdb.NewBucketOptions{
 		Chrono:         parent.chrono,
 		NumReplicas:    1,
-		NumVbuckets:    parent.numVbuckets,
+		NumVbuckets:    vbuckets,
 		ReplicaLatency: parent.replicaLatency,
 		PersistLatency: parent.persistLatency,
 	})
@@ -52,8 +59,8 @@ func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, er
 		cluster:      parent,
 		name:         opts.Name,
 		bucketType:   opts.Type,
-		numReplicas:  opts.NumReplicas,
-		numVbuckets:  parent.numVbuckets,
+		numReplicas:  replicas,
+		numVbuckets:  vbuckets,
 		store:        bucketStore,
 		collManifest: mock.NewCollectionManifest(),
 		viewEngine:   mockmr.NewEngine(),
@@ -164,6 +171,10 @@ func (b *bucketInst) GetVbServerInfo(reqNode mock.ClusterNode) ([]mock.ClusterNo
 }
 
 func (b *bucketInst) VbucketOwnership(node mock.ClusterNode) []int {
+	if b.bucketType == mock.BucketTypeMemcached {
+		return []int{0}
+	}
+
 	getRepIdx := func(vb []string) int {
 		for repIdx, nodeID := range vb {
 			if nodeID == node.ID() {

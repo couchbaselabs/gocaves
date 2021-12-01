@@ -28,6 +28,15 @@ func NewDefaultCluster() (mock.Cluster, error) {
 		return nil, err
 	}
 
+	_, err = cluster.AddBucket(mock.NewBucketOptions{
+		Name:        "memd",
+		Type:        mock.BucketTypeMemcached,
+		NumReplicas: 0,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	err = cluster.Users().UpsertUser(mockauth.UpsertUserOptions{
 		Username: "Administrator",
 		Password: "password",
