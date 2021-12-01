@@ -3,6 +3,7 @@ package servers
 import (
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,17 +17,24 @@ func TestMemdBasic(t *testing.T) {
 	var newClientInvokes []*MemdClient
 	var lostClientInvokes []*MemdClient
 	var packetInvokes []*memd.Packet
+	var lock sync.Mutex
 
 	svc, err := NewMemdService(NewMemdServerOptions{
 		Handlers: MemdServerHandlers{
 			NewClientHandler: func(cli *MemdClient) {
+				lock.Lock()
 				newClientInvokes = append(newClientInvokes, cli)
+				lock.Unlock()
 			},
 			LostClientHandler: func(cli *MemdClient) {
+				lock.Lock()
 				lostClientInvokes = append(lostClientInvokes, cli)
+				lock.Unlock()
 			},
 			PacketHandler: func(cli *MemdClient, pak *memd.Packet) {
+				lock.Lock()
 				packetInvokes = append(packetInvokes, pak)
+				lock.Unlock()
 
 				err := cli.WritePacket(&memd.Packet{
 					Magic:   memd.CmdMagicRes,
@@ -51,9 +59,11 @@ func TestMemdBasic(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
+	lock.Lock()
 	assert.Len(newClientInvokes, 1)
 	assert.Len(lostClientInvokes, 0)
 	assert.Len(packetInvokes, 0)
+	lock.Unlock()
 
 	err = mconn.WritePacket(&memd.Packet{
 		Magic:   memd.CmdMagicReq,
@@ -66,9 +76,11 @@ func TestMemdBasic(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
+	lock.Lock()
 	assert.Len(newClientInvokes, 1)
 	assert.Len(lostClientInvokes, 0)
 	assert.Len(packetInvokes, 1)
+	lock.Unlock()
 
 	pak, _, err := mconn.ReadPacket()
 	if err != nil {
@@ -83,7 +95,9 @@ func TestMemdBasic(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
+	lock.Lock()
 	assert.Len(newClientInvokes, 1)
 	assert.Len(lostClientInvokes, 1)
 	assert.Len(packetInvokes, 1)
+	lock.Unlock()
 }
