@@ -45,8 +45,13 @@ func NewClient(opts NewClientOptions) (*Client, error) {
 
 	var cavesProc *exec.Cmd
 	if opts.Path == "" {
-		// We should download the latest caves version.
-		return nil, errors.New("not supported")
+		p, err := downloadMock(opts.Version)
+		if err != nil {
+			log.Printf("failed to download caves binary: %s", err)
+			return nil, err
+		}
+
+		cavesProc = exec.Command(p)
 	} else if path.Ext(opts.Path) == ".go" {
 		// If the path ends in .go, it means to use a local caves.
 		cavesProc = exec.Command("go", "run", path.Base(opts.Path))
