@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/couchbaselabs/gocaves/mock/mockimpl"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,11 +35,12 @@ type T struct {
 	ptest  *pendingTest
 	def    *Check
 
-	hasRun         bool
-	cluster        mock.Cluster
-	bucketName     string
-	scopeName      string
-	collectionName string
+	hasRun               bool
+	cluster              mock.Cluster
+	bucketName           string
+	scopeName            string
+	collectionName       string
+	useManagementConnStr bool
 
 	kvInHooks  mock.KvHookManager
 	kvOutHooks mock.KvHookManager
@@ -82,6 +84,22 @@ func (t *T) RequireMock() {
 	}
 
 	t.requireMock = true
+}
+
+func (t *T) SetBucket(name string) {
+	if t.hasFinishConfiguring {
+		t.Fatalf("Cannot set bucket after accessing the mock")
+	}
+
+	t.bucketName = name
+}
+
+func (t *T) UseManagementConnString() {
+	if t.hasFinishConfiguring {
+		t.Fatalf("Cannot set management conn string after accessing the mock")
+	}
+
+	t.useManagementConnStr = true
 }
 
 // Start will start a test and wait till it is configured.
@@ -156,7 +174,14 @@ func (t *T) markConfigured() {
 	}
 
 	t.cluster = cluster
-	t.bucketName = "default"
+	if t.bucketName == "" {
+		t.bucketName = "default"
+	}
+	if t.cluster.GetBucket(t.bucketName) == nil {
+		t.Fatalf("Bucket does not exist on cluster")
+		close(t.cancelCh)
+		return
+	}
 	t.scopeName = "_default"
 	t.collectionName = "_default"
 
@@ -212,8 +237,19 @@ func (t *T) markConfigured() {
 		next()
 	})
 
+	var connstr string
+	if t.useManagementConnStr {
+		var addrs []string
+		for _, addr := range t.cluster.MgmtAddrs() {
+			addrs = append(addrs, strings.TrimPrefix(addr, "http://"))
+		}
+		connstr = "http://" + strings.Join(addrs, ",")
+	} else {
+		connstr = t.cluster.ConnectionString()
+	}
+
 	t.startCh <- &TestStartedSpec{
-		Cluster:        t.cluster,
+		Connstr:        connstr,
 		BucketName:     t.bucketName,
 		ScopeName:      t.scopeName,
 		CollectionName: t.collectionName,

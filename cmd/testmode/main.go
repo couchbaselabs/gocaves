@@ -123,7 +123,7 @@ func (m *Main) handleAPIRequest(pkt interface{}) interface{} {
 		}
 
 		return &api.CmdStartedTest{
-			ConnStr:        spec.Cluster.ConnectionString(),
+			ConnStr:        spec.Connstr,
 			BucketName:     spec.BucketName,
 			ScopeName:      spec.ScopeName,
 			CollectionName: spec.CollectionName,
