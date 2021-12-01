@@ -4,6 +4,7 @@ import (
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
 	"sync/atomic"
+	"time"
 )
 
 type KVHook struct {
@@ -40,7 +41,7 @@ func (hook KVHook) Build() mock.KvHookFunc {
 	if times == 0 {
 		times = 1
 	}
-	return func(source mock.KvClient, pak *memd.Packet, next func()) {
+	return func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
 		if !hook.expect.match(source, pak) {
 			next()
 			return
@@ -50,6 +51,6 @@ func (hook KVHook) Build() mock.KvHookFunc {
 			return
 		}
 
-		hook.handler(source, pak, next)
+		hook.handler(source, pak, start, next)
 	}
 }

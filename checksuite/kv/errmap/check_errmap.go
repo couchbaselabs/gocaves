@@ -6,6 +6,7 @@ import (
 	"github.com/couchbaselabs/gocaves/checksuite/kv/helpers"
 	"github.com/couchbaselabs/gocaves/mock"
 	"log"
+	"time"
 )
 
 // CheckErrMapLinearRetry confirms that the SDK can successfully use an unknown status code to perform a lookup in
@@ -61,16 +62,13 @@ func CheckErrMapExponentialRetry(t *checks.T) {
 func checkErrorMapRetry(t *checks.T, status memd.StatusCode, errMapStatus string, errMapErr mock.ErrorMapError) {
 	t.RequireMock()
 
-	handler := func(source mock.KvClient, pak *memd.Packet, next func()) {
-		err := source.WritePacket(&memd.Packet{
+	handler := func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
+		helpers.WritePacketToSource(source, &memd.Packet{
 			Command: pak.Command,
 			Magic:   memd.CmdMagicRes,
 			Opaque:  pak.Opaque,
 			Status:  status,
-		})
-		if err != nil {
-			log.Printf("failed to write packet %+v to %+v", pak, source)
-		}
+		}, start)
 	}
 
 	errMap, err := mock.NewErrorMap()

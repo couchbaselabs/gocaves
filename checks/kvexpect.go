@@ -159,7 +159,7 @@ func (e KvExpect) Custom(chkFn func(mock.KvClient, *memd.Packet) bool) *KvExpect
 }
 
 // Match checks if this KvExpect matches a particular source and packet.
-func (e KvExpect) match(source mock.KvClient, pak *memd.Packet, start time.Time) bool {
+func (e KvExpect) match(source mock.KvClient, pak *memd.Packet) bool {
 	shouldReject := false
 	if e.expectSource != nil && source != e.expectSource {
 		shouldReject = true
@@ -227,7 +227,7 @@ func (e KvExpect) Wait() (mock.KvClient, *memd.Packet) {
 	hasTripped := uint32(0)
 
 	handler := func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
-		if !e.match(source, pak, start) {
+		if !e.match(source, pak) {
 			next()
 			return
 		}
