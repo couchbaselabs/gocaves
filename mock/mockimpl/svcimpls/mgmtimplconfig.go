@@ -142,20 +142,23 @@ func (x *mgmtImpl) handleGetAllBucketConfigs(source mock.MgmtService, req *mock.
 		}
 	}
 
-	configs := []byte{'['}
 	buckets := source.Node().Cluster().GetAllBuckets()
-	for _, bucket := range buckets {
+	configs := make([][]byte, len(buckets))
+	for i, bucket := range buckets {
 		if !source.CheckAuthenticated(mockauth.PermissionSettings, bucket.Name(), "", "", req) {
 			continue
 		}
 
-		configs = append(configs, GenBucketConfig(bucket, source.Node())...)
+		configs[i] = GenBucketConfig(bucket, source.Node())
 	}
-	configs = append(configs, ']')
+
+	configArr := []byte("[")
+	configArr = append(configArr, bytes.Join(configs, []byte(","))...)
+	configArr = append(configArr, ']')
 
 	return &mock.HTTPResponse{
 		StatusCode: 200,
-		Body:       bytes.NewReader(configs),
+		Body:       bytes.NewReader(configArr),
 	}
 }
 
