@@ -27,7 +27,12 @@ func downloadMock(version string) (path string, err error) {
 	case "darwin":
 		binary = defaultMockFilePrefix + "macos"
 	case "linux":
-		binary = defaultMockFilePrefix + "linux"
+		switch runtime.GOARCH {
+		case "amd64":
+			binary = defaultMockFilePrefix + "linux-amd64"
+		case "arm64":
+			binary = defaultMockFilePrefix + "linux-arm64"
+		}
 	case "windows":
 		binary = defaultMockFilePrefix + "windows.exe"
 	}

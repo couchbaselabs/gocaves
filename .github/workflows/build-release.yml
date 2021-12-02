@@ -21,7 +21,8 @@ jobs:
       - name: Build project
         run: |
           GOOS=darwin GOARCH=amd64 go build -o gocaves-macos
-          GOOS=linux GOARCH=amd64 go build -o gocaves-linux
+          GOOS=linux GOARCH=amd64 go build -o gocaves-linux-amd64
+          GOOS=linux GOARCH=arm64 go build -o gocaves-linux-arm64
           GOOS=windows GOARCH=amd64 go build -o gocaves-windows.exe
       - name: Generate name
         id: relname
@@ -37,14 +38,23 @@ jobs:
           release_name: "Release ${{ steps.relname.outputs.version }} "
           draft: false
           prerelease: true
-      - name: Upload Linux Release
+      - name: Upload Linux AMD64 Release
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
         with:
           upload_url: "${{ steps.create_release.outputs.upload_url }}"
-          asset_path: ./gocaves-linux
-          asset_name: gocaves-linux
+          asset_path: ./gocaves-linux-amd64
+          asset_name: gocaves-linux-amd64
+          asset_content_type: application/octet-stream
+      - name: Upload Linux ARM64 Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        with:
+          upload_url: "${{ steps.create_release.outputs.upload_url }}"
+          asset_path: ./gocaves-linux-arm64
+          asset_name: gocaves-linux-arm64
           asset_content_type: application/octet-stream
       - name: Upload OSX Release
         uses: actions/upload-release-asset@v1
