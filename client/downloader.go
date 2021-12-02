@@ -39,6 +39,8 @@ func downloadMock(version string) (path string, err error) {
 	var url string
 	if path = os.Getenv("GOCB_MOCK_PATH"); path == "" {
 		path = strings.Join([]string{os.TempDir(), binary}, string(os.PathSeparator))
+	} else {
+		path = strings.Join([]string{path, binary}, string(os.PathSeparator))
 	}
 	path, err = filepath.Abs(path)
 	if err != nil {
