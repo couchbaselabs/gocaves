@@ -25,18 +25,17 @@ func downloadMock(version string) (path string, err error) {
 	var binary string
 	switch runtime.GOOS {
 	case "darwin":
-		binary = defaultMockFilePrefix + "macos"
+		binary = defaultMockFilePrefix + "macos-" + version
 	case "linux":
 		switch runtime.GOARCH {
 		case "amd64":
-			binary = defaultMockFilePrefix + "linux-amd64"
+			binary = defaultMockFilePrefix + "linux-amd64-" + version
 		case "arm64":
-			binary = defaultMockFilePrefix + "linux-arm64"
+			binary = defaultMockFilePrefix + "linux-arm64-" + version
 		}
 	case "windows":
-		binary = defaultMockFilePrefix + "windows.exe"
+		binary = defaultMockFilePrefix + "windows.exe-" + version
 	}
-	var url string
 	if path = os.Getenv("GOCB_MOCK_PATH"); path == "" {
 		path = strings.Join([]string{os.TempDir(), binary}, string(os.PathSeparator))
 	} else {
@@ -55,10 +54,11 @@ func downloadMock(version string) (path string, err error) {
 	if err := os.Remove(path); err != nil {
 		log.Printf("Couldn't remove existing mock: %v", err)
 	}
-	log.Printf("Downloading %s to %s", url, path)
+	var url string
 	if url = os.Getenv("GOCB_MOCK_URL"); url == "" {
 		url = mockUrlPrefix + binary
 	}
+	log.Printf("Downloading %s to %s", url, path)
 	// #nosec:G107
 	resp, err := http.Get(url)
 	if err != nil {
