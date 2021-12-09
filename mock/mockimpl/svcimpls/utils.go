@@ -15,7 +15,7 @@ func writePacketToSource(source mock.KvClient, pak *memd.Packet, start time.Time
 		// Golang time accuracy in Windows is good enough that this shouldn't be the case and it seems pretty unlikely
 		// that we've actually done the operation in no time.
 		duration := time.Since(start)
-		if duration == 0 {
+		if duration < 1*time.Microsecond {
 			duration = time.Duration(rand.Intn(200)+1) * time.Microsecond
 		}
 		pak.ServerDurationFrame = &memd.ServerDurationFrame{
