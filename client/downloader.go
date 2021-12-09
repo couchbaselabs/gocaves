@@ -25,21 +25,21 @@ func downloadMock(version string) (path string, err error) {
 	var binary string
 	switch runtime.GOOS {
 	case "darwin":
-		binary = defaultMockFilePrefix + "macos-" + version
+		binary = defaultMockFilePrefix + "macos"
 	case "linux":
 		switch runtime.GOARCH {
 		case "amd64":
-			binary = defaultMockFilePrefix + "linux-amd64-" + version
+			binary = defaultMockFilePrefix + "linux-amd64"
 		case "arm64":
-			binary = defaultMockFilePrefix + "linux-arm64-" + version
+			binary = defaultMockFilePrefix + "linux-arm64"
 		}
 	case "windows":
-		binary = defaultMockFilePrefix + "windows.exe-" + version
+		binary = defaultMockFilePrefix + "windows.exe"
 	}
 	if path = os.Getenv("GOCB_MOCK_PATH"); path == "" {
-		path = strings.Join([]string{os.TempDir(), binary}, string(os.PathSeparator))
+		path = strings.Join([]string{os.TempDir(), binary + "-" + version}, string(os.PathSeparator))
 	} else {
-		path = strings.Join([]string{path, binary}, string(os.PathSeparator))
+		path = strings.Join([]string{path, binary + "-" + version}, string(os.PathSeparator))
 	}
 	path, err = filepath.Abs(path)
 	if err != nil {
