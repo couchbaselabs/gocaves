@@ -909,42 +909,10 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 		for byteIdx := 0; byteIdx < len(opData); byteIdx++ {
 			opCode := memd.SubDocOpType(opData[byteIdx])
 
-			switch opCode {
-			case memd.SubDocOpDictAdd:
-				fallthrough
-			case memd.SubDocOpDictSet:
-				fallthrough
-			case memd.SubDocOpDelete:
-				fallthrough
-			case memd.SubDocOpReplace:
-				if mkDoc {
-					x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
-					return
-				}
-				fallthrough
-			case memd.SubDocOpArrayPushLast:
-				fallthrough
-			case memd.SubDocOpArrayPushFirst:
-				fallthrough
-			case memd.SubDocOpArrayInsert:
-				if mkDoc {
-					x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
-					return
-				}
-				fallthrough
-			case memd.SubDocOpArrayAddUnique:
-				fallthrough
-			case memd.SubDocOpCounter:
-				fallthrough
-			case memd.SubDocOpSetDoc:
-				fallthrough
-			case memd.SubDocOpAddDoc:
-				fallthrough
-			case memd.SubDocOpDeleteDoc:
+			var makeSubDocOp = func() error {
 				if byteIdx+8 > len(opData) {
 					log.Printf("not enough bytes 11")
-					x.writeProcErr(source, pak, kvproc.ErrInternal, start)
-					return
+					return kvproc.ErrInternal
 				}
 
 				opFlags := memd.SubdocFlag(opData[byteIdx+1])
@@ -952,8 +920,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 				valueLen := int(binary.BigEndian.Uint32(opData[byteIdx+4:]))
 				if byteIdx+8+pathLen+valueLen > len(opData) {
 					log.Printf("not enough bytes 12 - %d - %d", byteIdx, pathLen)
-					x.writeProcErr(source, pak, kvproc.ErrInternal, start)
-					return
+					return kvproc.ErrInternal
 				}
 
 				path := string(opData[byteIdx+8 : byteIdx+8+pathLen])
@@ -970,6 +937,90 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 
 				byteIdx += 8 + pathLen + valueLen - 1
 
+				return nil
+			}
+
+			switch opCode {
+			case memd.SubDocOpDictAdd:
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
+			case memd.SubDocOpDictSet:
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
+			case memd.SubDocOpDelete:
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
+			case memd.SubDocOpReplace:
+				if mkDoc {
+					x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
+					return
+				}
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
+			case memd.SubDocOpArrayPushLast:
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
+			case memd.SubDocOpArrayPushFirst:
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
+			case memd.SubDocOpArrayInsert:
+				if mkDoc {
+					x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
+					return
+				}
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
+			case memd.SubDocOpArrayAddUnique:
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
+			case memd.SubDocOpCounter:
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
+			case memd.SubDocOpSetDoc:
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
+			case memd.SubDocOpAddDoc:
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
+			case memd.SubDocOpDeleteDoc:
+				err := makeSubDocOp()
+				if err != nil {
+					x.writeProcErr(source, pak, err, start)
+					return
+				}
 			default:
 				log.Printf("unsupported op type")
 				x.writeProcErr(source, pak, kvproc.ErrInternal, start)
