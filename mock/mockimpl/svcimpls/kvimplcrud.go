@@ -128,6 +128,8 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 		return memd.StatusScopeUnknown
 	case mock.ErrCollectionNotFound:
 		return memd.StatusCollectionUnknown
+	case kvproc.ErrSdXattrInvalidKeyCombo:
+		return memd.StatusSubDocXattrInvalidKeyCombo
 	}
 
 	log.Printf("Recieved unexpected crud proc error: %s", err)
@@ -893,11 +895,14 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			} else {
 				if len(pak.Extras) != 5 {
 					x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
+					return
 				}
 				expiry = binary.BigEndian.Uint32(pak.Extras[0:])
 				docFlags = memd.SubdocDocFlag(pak.Extras[4])
 			}
 		}
+
+		mkDoc := docFlags&memd.SubdocDocFlagMkDoc != 0
 
 		ops := make([]*kvproc.SubDocOp, 0)
 		opData := pak.Value
@@ -912,12 +917,20 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			case memd.SubDocOpDelete:
 				fallthrough
 			case memd.SubDocOpReplace:
+				if mkDoc {
+					x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
+					return
+				}
 				fallthrough
 			case memd.SubDocOpArrayPushLast:
 				fallthrough
 			case memd.SubDocOpArrayPushFirst:
 				fallthrough
 			case memd.SubDocOpArrayInsert:
+				if mkDoc {
+					x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
+					return
+				}
 				fallthrough
 			case memd.SubDocOpArrayAddUnique:
 				fallthrough

@@ -58,11 +58,23 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 
 	reorderedOps := subdocReorder(ops)
 
+	seenXattrRoots := make(map[string]struct{})
 	for opIdx, op := range reorderedOps.ops {
 		var opDoc *mockdb.Document
 		if op.IsXattrPath {
 			// TODO: This should maybe move up to the operations level at some point?
-			var err error
+			pathComps, err := ParseSubDocPath(op.Path)
+			if err != nil {
+				return nil, err
+			}
+
+			if _, ok := seenXattrRoots[pathComps[0].Path]; !ok {
+				seenXattrRoots[pathComps[0].Path] = struct{}{}
+			}
+			if len(seenXattrRoots) > 1 {
+				return nil, ErrSdXattrInvalidKeyCombo
+			}
+
 			opDoc, err = e.createXattrDoc(doc, newMeta, op)
 			if err != nil {
 				opReses[opIdx] = &SubDocResult{
