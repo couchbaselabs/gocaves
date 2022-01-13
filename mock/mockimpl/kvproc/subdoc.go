@@ -68,11 +68,14 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 				return nil, err
 			}
 
-			if _, ok := seenXattrRoots[pathComps[0].Path]; !ok {
-				seenXattrRoots[pathComps[0].Path] = struct{}{}
-			}
-			if len(seenXattrRoots) > 1 {
-				return nil, ErrSdXattrInvalidKeyCombo
+			path := pathComps[0].Path
+			if path != "$document" && path != "$vbucket" {
+				if _, ok := seenXattrRoots[path]; !ok {
+					seenXattrRoots[path] = struct{}{}
+				}
+				if len(seenXattrRoots) > 1 {
+					return nil, ErrSdXattrInvalidKeyCombo
+				}
 			}
 
 			opDoc, err = e.createXattrDoc(doc, newMeta, op)
