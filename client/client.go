@@ -26,6 +26,7 @@ type NewClientOptions struct {
 	Version       string
 	CavesAddr     string
 	ReportingAddr string
+	Quiet         bool
 }
 
 // NewClient instantiates a new CAVES instance and returns an interface to control it.
@@ -75,8 +76,10 @@ func NewClient(opts NewClientOptions) (*Client, error) {
 
 	shutdownCh := make(chan struct{}, 1)
 
-	cavesProc.Stdout = os.Stdin
-	cavesProc.Stderr = os.Stderr
+	if !opts.Quiet {
+		cavesProc.Stdout = os.Stdin
+		cavesProc.Stderr = os.Stderr
+	}
 	go func() {
 		err := cavesProc.Run()
 		if err != nil {
