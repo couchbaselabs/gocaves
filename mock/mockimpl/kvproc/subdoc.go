@@ -724,7 +724,7 @@ func (e SubDocDeleteExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 		if lastPathComp.ArrayIndex < 0 {
 			lastPathComp.ArrayIndex = len(arrVal) + lastPathComp.ArrayIndex
 		}
-		if lastPathComp.ArrayIndex >= len(arrVal) {
+		if lastPathComp.ArrayIndex < 0 || lastPathComp.ArrayIndex >= len(arrVal) {
 			return e.itemErrorResult(ErrSdPathNotFound)
 		}
 
