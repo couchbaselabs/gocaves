@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"log"
+	"strconv"
+	"strings"
+
 	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockmr"
-	"log"
-	"strconv"
-	"strings"
 )
 
 type viewImplQuery struct {
@@ -93,7 +94,7 @@ func (x *viewImplQuery) handleQuery(source mock.ViewService, req *mock.HTTPReque
 		Key:           options.Get("key"),
 		Keys:          keys,
 		Descending:    x.stringToBool(options.Get("descending"), false),
-		Reduce:        x.stringToBool(options.Get("reduce"), true),
+		Reduce:        x.stringToBool(options.Get("reduce"), false),
 		Group:         x.stringToBool(options.Get("group"), false),
 		GroupLevel:    x.stringToInt(options.Get("group_level")),
 		Limit:         x.stringToInt(options.Get("limit")),
