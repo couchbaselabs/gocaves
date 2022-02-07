@@ -3,6 +3,8 @@ package svcimpls
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+
 	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
@@ -120,8 +122,12 @@ func (x *viewImplMgmt) handleGetDesignDocument(source mock.ViewService, req *moc
 
 	ddoc, err := bucket.ViewIndexManager().GetDesignDocument(ddocName)
 	if err != nil {
+		statusCode := 400
+		if errors.Is(err, mockmr.ErrNotFound) {
+			statusCode = 404
+		}
 		return &mock.HTTPResponse{
-			StatusCode: 400,
+			StatusCode: statusCode,
 			Body:       bytes.NewReader([]byte(err.Error())),
 		}
 	}
@@ -162,8 +168,12 @@ func (x *viewImplMgmt) handleDropDesignDocument(source mock.ViewService, req *mo
 
 	err := bucket.ViewIndexManager().DropDesignDocument(ddocName)
 	if err != nil {
+		statusCode := 400
+		if errors.Is(err, mockmr.ErrNotFound) {
+			statusCode = 404
+		}
 		return &mock.HTTPResponse{
-			StatusCode: 400,
+			StatusCode: statusCode,
 			Body:       bytes.NewReader([]byte(err.Error())),
 		}
 	}
