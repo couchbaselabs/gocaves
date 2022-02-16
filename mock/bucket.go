@@ -7,19 +7,33 @@ type BucketType uint
 
 // The following lists the possible bucket types
 const (
-	BucketTypeMemcached = BucketType(1)
-	BucketTypeCouchbase = BucketType(2)
+	BucketTypeMemcached       = BucketType(1)
+	BucketTypeCouchbase       = BucketType(2)
+	BucketTypeMemcachedString = "memcached"
+	BucketTypeCouchbaseString = "membase"
 )
 
 func (b BucketType) Name() string {
 	switch b {
 	case BucketTypeMemcached:
-		return "memcached"
+		return BucketTypeMemcachedString
 	case BucketTypeCouchbase:
-		return "membase"
+		return BucketTypeCouchbaseString
 	}
 
 	return ""
+}
+
+func BucketTypeFromString(bucketTypeString string) BucketType {
+	switch bucketTypeString {
+	case BucketTypeMemcachedString:
+		return BucketTypeMemcached
+	case BucketTypeCouchbaseString:
+		return BucketTypeCouchbase
+	}
+
+	// Default to Couchbase?
+	return BucketTypeCouchbase
 }
 
 // NewBucketOptions allows you to specify initial options for a new bucket
