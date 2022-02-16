@@ -3,10 +3,12 @@ package mockmr
 import (
 	"encoding/json"
 	"errors"
+	"sort"
+	"strings"
+	"sync"
+
 	"github.com/couchbaselabs/gocaves/mock/mockdb"
 	"github.com/dop251/goja"
-	"sort"
-	"sync"
 )
 
 // Index represents a single map reduce query.
@@ -131,6 +133,13 @@ func (e *Engine) Execute(opts ExecuteOptions) (int, *ExecuteResults, error) {
 	indexSize := len(indexed)
 	var results resultContainer
 
+	// Strip out the \n characters from key filters. These end up in the query filters and cause them to fail.
+	opts.StartKey = strings.ReplaceAll(opts.StartKey, "\n", "")
+	opts.EndKey = strings.ReplaceAll(opts.EndKey, "\n", "")
+	opts.StartKeyDocID = strings.ReplaceAll(opts.StartKeyDocID, "\n", "")
+	opts.EndKeyDocID = strings.ReplaceAll(opts.EndKeyDocID, "\n", "")
+	opts.Key = strings.ReplaceAll(opts.Key, "\n", "")
+
 	if opts.Descending {
 		startKey := opts.StartKey
 		opts.StartKey = opts.EndKey
@@ -180,10 +189,10 @@ func (e *Engine) Execute(opts ExecuteOptions) (int, *ExecuteResults, error) {
 		}
 
 		if opts.InclusiveEnd {
-			if opts.EndKey != "" && doc.Key < opts.EndKey {
+			if opts.EndKey != "" && doc.Key > opts.EndKey {
 				continue
 			}
-			if opts.EndKeyDocID != "" && doc.ID < opts.EndKeyDocID {
+			if opts.EndKeyDocID != "" && doc.ID > opts.EndKeyDocID {
 				continue
 			}
 		} else {
@@ -236,7 +245,7 @@ func (e *Engine) Execute(opts ExecuteOptions) (int, *ExecuteResults, error) {
 	}
 
 	output = output[opts.Skip:]
-	if opts.Limit > 0 {
+	if opts.Limit > 0 && output != nil {
 		output = output[:opts.Limit]
 	}
 
