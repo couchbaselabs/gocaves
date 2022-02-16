@@ -28,3 +28,11 @@ var (
 	ErrSdCannotModifyVattr    = errors.New("xattr cannot modify virtual attribute")
 	ErrSdXattrInvalidKeyCombo = errors.New("invalid xattr key combination")
 )
+
+type SubdocMutateError struct {
+	Err error
+}
+
+func (e SubdocMutateError) Error() string {
+	return e.Err.Error()
+}

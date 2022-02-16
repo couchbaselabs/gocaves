@@ -2,6 +2,8 @@ package kvproc
 
 import (
 	"bytes"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,7 +51,7 @@ func subdocReorder(ops []*SubDocOp) *subdocOpList {
 	}
 }
 
-func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([]*SubDocResult, error) {
+func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp, continueOnOpError bool) ([]*SubDocResult, error) {
 	if len(ops) > subdocMultiMaxPaths {
 		return nil, ErrSdBadCombo
 	}
@@ -78,9 +80,19 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 				}
 			}
 
+			// If doc is deleted we can only access system xattrs. System xattrs are those with begin with an
+			// underscore.
+			if !strings.HasPrefix(path, "_") && doc.IsDeleted {
+				opReses[reorderedOps.indexes[opIdx]] = &SubDocResult{
+					Value: nil,
+					Err:   ErrSdPathNotFound,
+				}
+				continue
+			}
+
 			opDoc, err = e.createXattrDoc(doc, newMeta, op)
 			if err != nil {
-				opReses[opIdx] = &SubDocResult{
+				opReses[reorderedOps.indexes[opIdx]] = &SubDocResult{
 					Value: nil,
 					Err:   err,
 				}
@@ -170,10 +182,14 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp) ([
 		}
 
 		opRes, err := executor.Execute(op)
-
 		if err != nil {
 			return nil, err
 		}
+
+		if !continueOnOpError && opRes.Err != nil {
+			return nil, SubdocMutateError{opRes.Err}
+		}
+
 		if opRes == nil {
 			return nil, ErrInternal
 		}
@@ -260,13 +276,24 @@ func (e *Engine) createXattrDoc(doc, metaDoc *mockdb.Document, op *SubDocOp) (*m
 	}, nil
 }
 
+const (
+	// DeleteCrc32c CRC-32 checksum represents the body hash of "Deleted" document.
+	DeleteCrc32c = "0x00000000"
+)
+
 func (e *Engine) createMacroValue(opValue []byte, doc, metaDoc *mockdb.Document) ([]byte, error) {
 	var val []byte
 	if bytes.Equal(opValue, casMacro) {
-		val = []byte(fmt.Sprintf("\"0x%016x\"", metaDoc.Cas))
+		binaryEncodedCas := make([]byte, 8)
+		binary.LittleEndian.PutUint64(binaryEncodedCas, metaDoc.Cas)
+		val = []byte(fmt.Sprintf("\"0x%v\"", hex.EncodeToString(binaryEncodedCas)))
 	} else if bytes.Equal(opValue, crc32cMacro) {
-		table := crc32.MakeTable(crc32.Castagnoli)
-		val = []byte(fmt.Sprintf("\"0x%x\"", crc32.Checksum(doc.Value, table)))
+		if doc.IsDeleted {
+			val = []byte(fmt.Sprintf("\"%s\"", DeleteCrc32c))
+		} else {
+			table := crc32.MakeTable(crc32.Castagnoli)
+			val = []byte(fmt.Sprintf("\"0x%x\"", crc32.Checksum(doc.Value, table)))
+		}
 	} else if bytes.Equal(opValue, seqnoMacro) {
 		return nil, ErrUnknownXattrMacro
 	} else if bytes.HasPrefix(opValue, []byte(`"${$document`)) && bytes.HasSuffix(opValue, []byte(`}"`)) {
@@ -533,6 +560,12 @@ type SubDocGetDocExecutor struct {
 // Execute performs the subdocument operation.
 func (e SubDocGetDocExecutor) Execute(_ *SubDocOp) (*SubDocResult, error) {
 	// TODO: check what happens with a full doc against an xattr
+	if e.doc.IsDeleted {
+		return &SubDocResult{
+			Value: nil,
+			Err:   ErrSdPathNotFound,
+		}, nil
+	}
 	return &SubDocResult{
 		Value: e.doc.Value,
 		Err:   nil,
