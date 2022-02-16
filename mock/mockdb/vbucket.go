@@ -492,3 +492,14 @@ func (s *Vbucket) rollback(snap *vbucketSnapshot) error {
 
 	return nil
 }
+
+// Flush is a basic implementation of this process and simply resets the documents in the vbucket and resets the
+// max seq no
+func (s *Vbucket) Flush() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.documents = make([]*Document, 0)
+	s.revData = make([]VbRevData, 0)
+	s.maxSeqNo = 0
+}

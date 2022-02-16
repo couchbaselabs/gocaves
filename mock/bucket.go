@@ -80,4 +80,7 @@ type Bucket interface {
 
 	// ViewIndexManager returns the view index manager for this bucket.
 	ViewIndexManager() ViewIndexManager
+
+	// Flush will remove all items from containing vbuckets and reset the high seq no
+	Flush()
 }

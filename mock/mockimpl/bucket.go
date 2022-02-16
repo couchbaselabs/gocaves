@@ -195,3 +195,7 @@ func (b *bucketInst) VbucketOwnership(node mock.ClusterNode) []int {
 func (b *bucketInst) ViewIndexManager() mock.ViewIndexManager {
 	return b.viewEngine
 }
+
+func (b *bucketInst) Flush() {
+	b.Store().Flush()
+}

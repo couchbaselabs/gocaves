@@ -193,3 +193,9 @@ func (b *Bucket) Rollback(snap *BucketSnapshot) error {
 
 	return nil
 }
+
+func (b *Bucket) Flush() {
+	for _, vbucket := range b.vbuckets {
+		vbucket.Flush()
+	}
+}
