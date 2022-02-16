@@ -164,6 +164,19 @@ func (x *mgmtImpl) handleGetAllBucketConfigs(source mock.MgmtService, req *mock.
 	}
 }
 
+func (x *mgmtImpl) handleBucketFlush(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*/controller/doFlush")
+	bucketName := pathParts[0]
+
+	bucket := source.Node().Cluster().GetBucket(bucketName)
+	bucket.Flush()
+
+	return &mock.HTTPResponse{
+		StatusCode: 200,
+		Body:       bytes.NewReader([]byte(``)),
+	}
+}
+
 func (x *mgmtImpl) handleAddBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	bucketType := req.Form.Get("bucketType")
 	flushEnabled := req.Form.Get("flushEnabled")
