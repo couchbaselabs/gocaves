@@ -2,10 +2,12 @@ package svcimpls
 
 import (
 	"bytes"
+	"io"
+	"strconv"
+
 	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
-	"io"
 )
 
 func (x *mgmtImpl) handleGetPoolConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
@@ -159,6 +161,57 @@ func (x *mgmtImpl) handleGetAllBucketConfigs(source mock.MgmtService, req *mock.
 	return &mock.HTTPResponse{
 		StatusCode: 200,
 		Body:       bytes.NewReader(configArr),
+	}
+}
+
+func (x *mgmtImpl) handleAddBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+	bucketType := req.Form.Get("bucketType")
+	flushEnabled := req.Form.Get("flushEnabled")
+	name := req.Form.Get("name")
+	ramQuotaMB := req.Form.Get("ramQuotaMB")
+	replicaIndex := req.Form.Get("replicaIndex")
+	replicaNumberStr := req.Form.Get("replicaNumber")
+
+	var replicaNumber int
+	if replicaNumberStr != "" {
+		var err error
+		replicaNumber, err = strconv.Atoi(replicaNumberStr)
+		if err != nil {
+			return &mock.HTTPResponse{
+				StatusCode: 400,
+				Body:       bytes.NewReader([]byte(`{"errors":{"replicaNumber":"The value must be an integer"}`)),
+			}
+		}
+	}
+
+	// TODO: Use the below at some point
+	_ = flushEnabled
+	_ = ramQuotaMB
+	_ = replicaIndex
+
+	_, err := source.Node().Cluster().AddBucket(mock.NewBucketOptions{
+		Name:        name,
+		Type:        mock.BucketTypeFromString(bucketType),
+		NumReplicas: uint(replicaNumber),
+	})
+	if err != nil {
+		return &mock.HTTPResponse{
+			StatusCode: 400,
+			Body:       bytes.NewReader([]byte(`{"errors":{"": ""}`)),
+		}
+	}
+
+	return &mock.HTTPResponse{
+		StatusCode: 202,
+		Body:       bytes.NewReader([]byte(`{"":""}`)),
+	}
+}
+
+func (x *mgmtImpl) handleGetNodeServices(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+	clusterConfig := GenTerseClusterConfig(source.Node().Cluster(), source.Node())
+	return &mock.HTTPResponse{
+		StatusCode: 200,
+		Body:       bytes.NewReader(clusterConfig),
 	}
 }
 
