@@ -75,6 +75,11 @@ func (x *viewImplQuery) handleQuery(source mock.ViewService, req *mock.HTTPReque
 	}
 
 	keysOpt := options.Get("keys")
+	// Strip out the "[]" notation for keys filters
+	if len(keysOpt) >= 2 && keysOpt[0:1] == "[" && keysOpt[len(keysOpt)-2:len(keysOpt)-1] == "]" {
+		keysOpt = keysOpt[1:len(keysOpt)-2] + keysOpt[len(keysOpt):]
+	}
+
 	var keys []string
 	if keysOpt != "" {
 		keys = strings.Split(keysOpt, ",")
