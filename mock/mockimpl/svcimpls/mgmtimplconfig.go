@@ -175,6 +175,14 @@ func (x *mgmtImpl) handleBucketFlush(source mock.MgmtService, req *mock.HTTPRequ
 			Body:       bytes.NewReader([]byte("Requested resource not found")),
 		}
 	}
+
+	if !source.CheckAuthenticated(mockauth.PermissionBucketManage, bucket.Name(), "", "", req) {
+		return &mock.HTTPResponse{
+			StatusCode: 401,
+			Body:       bytes.NewReader([]byte{}),
+		}
+	}
+
 	bucket.Flush()
 
 	return &mock.HTTPResponse{
@@ -184,6 +192,13 @@ func (x *mgmtImpl) handleBucketFlush(source mock.MgmtService, req *mock.HTTPRequ
 }
 
 func (x *mgmtImpl) handleAddBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
+	if !source.CheckAuthenticated(mockauth.PermissionClusterManage, "", "", "", req) {
+		return &mock.HTTPResponse{
+			StatusCode: 401,
+			Body:       bytes.NewReader([]byte{}),
+		}
+	}
+
 	bucketType := req.Form.Get("bucketType")
 	flushEnabled := req.Form.Get("flushEnabled")
 	name := req.Form.Get("name")
