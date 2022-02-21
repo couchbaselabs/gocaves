@@ -168,18 +168,18 @@ func (x *mgmtImpl) handleBucketFlush(source mock.MgmtService, req *mock.HTTPRequ
 	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*/controller/doFlush")
 	bucketName := pathParts[0]
 
+	if !source.CheckAuthenticated(mockauth.PermissionBucketManage, bucketName, "", "", req) {
+		return &mock.HTTPResponse{
+			StatusCode: 401,
+			Body:       bytes.NewReader([]byte{}),
+		}
+	}
+
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
 		return &mock.HTTPResponse{
 			StatusCode: 404,
 			Body:       bytes.NewReader([]byte("Requested resource not found")),
-		}
-	}
-
-	if !source.CheckAuthenticated(mockauth.PermissionBucketManage, bucket.Name(), "", "", req) {
-		return &mock.HTTPResponse{
-			StatusCode: 401,
-			Body:       bytes.NewReader([]byte{}),
 		}
 	}
 
