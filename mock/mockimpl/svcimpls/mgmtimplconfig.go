@@ -169,6 +169,12 @@ func (x *mgmtImpl) handleBucketFlush(source mock.MgmtService, req *mock.HTTPRequ
 	bucketName := pathParts[0]
 
 	bucket := source.Node().Cluster().GetBucket(bucketName)
+	if bucket == nil {
+		return &mock.HTTPResponse{
+			StatusCode: 404,
+			Body:       bytes.NewReader([]byte("Requested resource not found")),
+		}
+	}
 	bucket.Flush()
 
 	return &mock.HTTPResponse{
