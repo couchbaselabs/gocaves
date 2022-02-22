@@ -36,7 +36,7 @@ func (x *kvImplCrud) handleManifestRequest(source mock.KvClient, pak *memd.Packe
 
 func (x *kvImplCrud) handleGetCollectionIDRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
 	if proc := x.makeProc(source, pak, mockauth.PermissionBucketManage, start); proc != nil {
-		keyParts := strings.Split(string(pak.Key), ".")
+		keyParts := strings.Split(string(pak.Value), ".")
 		if len(keyParts) != 2 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
 			return
