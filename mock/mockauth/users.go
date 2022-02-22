@@ -185,11 +185,13 @@ func (e *Engine) UpsertUser(opts UpsertUserOptions) error {
 		if split := strings.Split(role, "["); len(split) == 2 {
 			r.Name = split[0]
 			scopeSplit := strings.Split(split[1], ":")
+
 			r.BucketName = scopeSplit[0]
 			if len(scopeSplit) == 2 {
 				r.ScopeName = scopeSplit[1]
 			}
 			if len(scopeSplit) == 3 {
+				r.ScopeName = scopeSplit[1]
 				r.CollectionName = scopeSplit[2]
 			}
 		} else if len(split) > 2 {
