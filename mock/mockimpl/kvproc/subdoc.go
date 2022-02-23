@@ -60,7 +60,6 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp, co
 
 	reorderedOps := subdocReorder(ops)
 
-	var wasDeleted bool
 	seenXattrRoots := make(map[string]struct{})
 	for opIdx, op := range reorderedOps.ops {
 		var opDoc *mockdb.Document
@@ -79,16 +78,6 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp, co
 				if len(seenXattrRoots) > 1 {
 					return nil, ErrSdXattrInvalidKeyCombo
 				}
-			}
-
-			// If doc is deleted we can only access system xattrs. System xattrs are those with begin with an
-			// underscore.
-			if !strings.HasPrefix(path, "_") && doc.IsDeleted && !wasDeleted {
-				opReses[reorderedOps.indexes[opIdx]] = &SubDocResult{
-					Value: nil,
-					Err:   ErrSdPathNotFound,
-				}
-				continue
 			}
 
 			opDoc, err = e.createXattrDoc(doc, newMeta, op)
@@ -171,7 +160,6 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp, co
 				baseSubDocExecutor: base,
 			}
 		case memd.SubDocOpDeleteDoc:
-			wasDeleted = true
 			executor = SubDocDeleteFullDocExecutor{
 				baseSubDocExecutor: base,
 			}
