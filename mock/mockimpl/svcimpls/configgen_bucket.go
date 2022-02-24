@@ -28,8 +28,8 @@ func GenBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	config["evictionPolicy"] = "valueOnly"
 	config["storageBackend"] = "couchstore"
 	config["saslPassword"] = "f5461fdf070ba44b7f1ca2f18bd7bb28"
-	config["compressionMode"] = "passive"
-	config["replicaIndex"] = false
+	config["compressionMode"] = string(b.CompressionMode())
+	config["replicaIndex"] = b.ReplicaIndexEnabled()
 	config["replicaNumber"] = b.NumReplicas()
 	config["threadsNumber"] = 1
 	config["authType"] = "sasl"
@@ -54,8 +54,8 @@ func GenBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	}
 
 	config["quota"] = map[string]interface{}{
-		"ram":    104857600,
-		"rawRAM": 104857600,
+		"ram":    b.RamQuota(),
+		"rawRAM": b.RamQuota(),
 	}
 
 	config["bucketCapabilitiesVer"] = ""
@@ -73,12 +73,17 @@ func GenBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 		"xattr",
 	}
 
-	config["controllers"] = map[string]interface{}{
+	controllers := map[string]interface{}{
 		"compactAll":    fmt.Sprintf("/pools/default/buckets/%s/controller/compactBucket", b.Name()),
 		"compactDB":     fmt.Sprintf("/pools/default/buckets/%s/controller/compactDatabases", b.Name()),
 		"purgeDeletes":  fmt.Sprintf("/pools/default/buckets/%s/controller/unsafePurgeBucket", b.Name()),
 		"startRecovery": fmt.Sprintf("/pools/default/buckets/%s/controller/startRecovery", b.Name()),
 	}
+	if b.FlushEnabled() {
+		controllers["flush"] = fmt.Sprintf("/pools/default/buckets/%s/controller/doFlush", b.Name())
+	}
+
+	config["controllers"] = controllers
 	config["stats"] = map[string]interface{}{
 		"uri":              fmt.Sprintf("/pools/default/buckets/%s/stats", b.Name()),
 		"directoryURI":     fmt.Sprintf("/pools/default/buckets/%s/stats/Directory", b.Name()),
