@@ -29,6 +29,9 @@ type Cluster interface {
 	// AddBucket will add a new bucket to a cluster.
 	AddBucket(opts NewBucketOptions) (Bucket, error)
 
+	// DeleteBucket will remove a bucket from a cluster.
+	DeleteBucket(name string) error
+
 	// Nodes returns a list of all the nodes in this cluster.
 	Nodes() []ClusterNode
 
