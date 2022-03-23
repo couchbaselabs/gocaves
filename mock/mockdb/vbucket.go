@@ -500,6 +500,11 @@ func (s *Vbucket) Flush() {
 	defer s.lock.Unlock()
 
 	s.documents = make([]*Document, 0)
-	s.revData = make([]VbRevData, 0)
+	s.revData = []VbRevData{
+		{
+			VbUUID: generateNewVbUUID(),
+			SeqNo: 0,
+		},
+	}
 	s.maxSeqNo = 0
 }
