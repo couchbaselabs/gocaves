@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
-	"strings"
 
 	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
@@ -65,7 +65,7 @@ func (x *viewImplQuery) handleQuery(source mock.ViewService, req *mock.HTTPReque
 		}
 	}
 
-	docs, err := bucket.Store().GetAll(0, 0)
+	docs, err := bucket.Store().GetAllLatest(0, 0)
 	if err != nil {
 		log.Printf("Failed to get view query docs: %v", err)
 		return &mock.HTTPResponse{
@@ -75,15 +75,7 @@ func (x *viewImplQuery) handleQuery(source mock.ViewService, req *mock.HTTPReque
 	}
 
 	keysOpt := options.Get("keys")
-	// Strip out the "[]" notation for keys filters
-	if len(keysOpt) >= 2 && keysOpt[0:1] == "[" && keysOpt[len(keysOpt)-2:len(keysOpt)-1] == "]" {
-		keysOpt = keysOpt[1:len(keysOpt)-2] + keysOpt[len(keysOpt):]
-	}
-
-	var keys []string
-	if keysOpt != "" {
-		keys = strings.Split(keysOpt, ",")
-	}
+	keys, err := newKeysFilterSlice([]byte(keysOpt))
 
 	totalResults, results, err := bucket.ViewIndexManager().Execute(mockmr.ExecuteOptions{
 		Data:      docs,
@@ -178,4 +170,35 @@ func (x *viewImplQuery) stringToBool(val string, def bool) bool {
 	}
 
 	return i
+}
+
+type keysFilterSlice []string
+
+func newKeysFilterSlice(data []byte) (keysFilterSlice, error) {
+	var output keysFilterSlice
+
+	if len(data) == 0 {
+		return output, nil
+	}
+
+	var keys interface{}
+	err := json.Unmarshal(data, &keys)
+	if err != nil {
+		return nil, err
+	}
+
+	switch v := keys.(type) {
+	case []interface{}:
+		for _, item := range v {
+			itemByte, err := json.Marshal(item)
+			if err != nil {
+				return nil, err
+			}
+			output = append(output, string(itemByte))
+		}
+	default:
+		return nil, fmt.Errorf("error")
+	}
+
+	return output, nil
 }

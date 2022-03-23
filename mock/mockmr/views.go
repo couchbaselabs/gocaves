@@ -3,6 +3,7 @@ package mockmr
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -56,11 +57,12 @@ type ExecuteResults struct {
 }
 
 type indexInputMeta struct {
-	ID         string `json:"id"`
-	Rev        uint64 `json:"rev"`
-	Type       uint8  `json:"type"`
-	Flags      uint32 `json:"flags"`
-	Expiration int    `json:"expiration"`
+	ID         string                 `json:"id"`
+	Rev        uint64                 `json:"rev"`
+	Type       uint8                  `json:"type"`
+	Flags      uint32                 `json:"flags"`
+	Expiration int                    `json:"expiration"`
+	Xattrs     map[string]interface{} `json:"xattrs"`
 }
 
 type outputItem struct {
@@ -84,7 +86,10 @@ func (rc resultContainer) Len() int {
 }
 
 func (rc resultContainer) Less(i, j int) bool {
-	return rc.results[i].Key < rc.results[j].Key
+	keyI, _ := NewKeysFilter([]byte(rc.results[i].Key))
+	keyJ, _ := NewKeysFilter([]byte(rc.results[j].Key))
+	less, _ := keyI.lessThan(keyJ)
+	return less
 }
 
 func (rc resultContainer) Swap(i, j int) {
@@ -172,32 +177,44 @@ func (e *Engine) Execute(opts ExecuteOptions) (int, *ExecuteResults, error) {
 			}
 		}
 
+		docKeyConverted, _ := NewKeysFilter([]byte(doc.Key))
+		startKeyFilter, _ := NewKeysFilter([]byte(opts.StartKey))
+		endKeyFilter, _ := NewKeysFilter([]byte(opts.EndKey))
+
 		if inclusiveStart {
-			if opts.StartKey != "" && doc.Key < opts.StartKey {
-				continue
+			if opts.StartKey != "" {
+				if comparison, _ := docKeyConverted.lessThan(startKeyFilter); comparison {
+					continue
+				}
 			}
 			if opts.StartKeyDocID != "" && doc.ID < opts.StartKeyDocID {
 				continue
 			}
 		} else {
-			if opts.StartKey != "" && doc.Key >= opts.StartKey {
-				continue
+			if opts.StartKey != "" {
+				if comparison, _ := docKeyConverted.lessThanEqualTo(startKeyFilter); comparison {
+					continue
+				}
 			}
-			if opts.StartKeyDocID != "" && doc.ID >= opts.StartKeyDocID {
+			if opts.StartKeyDocID != "" && doc.ID <= opts.StartKeyDocID {
 				continue
 			}
 		}
 
 		if opts.InclusiveEnd {
-			if opts.EndKey != "" && doc.Key > opts.EndKey {
-				continue
+			if opts.EndKey != "" {
+				if comparison, _ := docKeyConverted.greaterThan(endKeyFilter); comparison {
+					continue
+				}
 			}
 			if opts.EndKeyDocID != "" && doc.ID > opts.EndKeyDocID {
 				continue
 			}
 		} else {
-			if opts.EndKey != "" && doc.Key >= opts.EndKey {
-				continue
+			if opts.EndKey != "" {
+				if comparison, _ := docKeyConverted.greaterThanEqualTo(endKeyFilter); comparison {
+					continue
+				}
 			}
 			if opts.EndKeyDocID != "" && doc.ID >= opts.EndKeyDocID {
 				continue
@@ -246,7 +263,12 @@ func (e *Engine) Execute(opts ExecuteOptions) (int, *ExecuteResults, error) {
 
 	output = output[opts.Skip:]
 	if opts.Limit > 0 && output != nil {
-		output = output[:opts.Limit]
+		limit := opts.Limit
+		if limit > len(output) {
+			limit = len(output)
+		}
+
+		output = output[:limit]
 	}
 
 	return indexSize, &ExecuteResults{Rows: output}, nil
@@ -261,6 +283,10 @@ func (e *Engine) normalizeKey(key interface{}, groupLevel int) interface{} {
 			return nil
 		}
 		return k[:groupLevel]
+	}
+
+	if groupLevel == 0 {
+		return nil
 	}
 
 	return key
@@ -362,12 +388,25 @@ func (e *Engine) index(index *Index, docs []*mockdb.Document) ([]indexedItem, er
 			continue
 		}
 
+		docXattrs := make(map[string]interface{})
+		for xattrKey, xattrVal := range doc.Xattrs {
+			var xattrValMarshal map[string]interface{}
+			err := json.Unmarshal(xattrVal, &xattrValMarshal)
+			if err != nil {
+				// TODO: should probably have some error handling
+				continue
+			}
+
+			docXattrs[xattrKey] = xattrValMarshal
+		}
+
 		meta := indexInputMeta{
 			ID:         string(doc.Key),
 			Rev:        0,
 			Type:       doc.Datatype,
 			Flags:      doc.Flags,
 			Expiration: doc.Expiry.Second(),
+			Xattrs:     docXattrs,
 		}
 
 		_, err = fn(goja.Undefined(), vm.ToValue(docValue), vm.ToValue(meta))
@@ -429,4 +468,112 @@ func (e *Engine) GetAllDesignDocuments() []*DesignDocument {
 	}
 
 	return ddocs
+}
+
+type KeysFilter []interface{}
+
+func NewKeysFilter(data []byte) (KeysFilter, error) {
+	var keys interface{}
+	err := json.Unmarshal(data, &keys)
+	if err != nil {
+		return nil, err
+	}
+
+	var keysFilter KeysFilter
+	switch v := keys.(type) {
+	case []interface{}:
+		keysFilter = v
+	default:
+		keysFilter = []interface{}{v}
+	}
+
+	return keysFilter, nil
+}
+
+type FloatComparator func(float64, float64) bool
+type StringComparator func(string, string) bool
+
+func (keys KeysFilter) Comparison(keysIn KeysFilter, floatComparator FloatComparator, stringComparator StringComparator, equalityCheck bool) (bool, error) {
+	if len(keys) != len(keysIn) {
+		return false, fmt.Errorf("not equal slice length")
+	}
+	for i := 0; i < len(keys); i++ {
+		switch v := keys[i].(type) {
+		case float64:
+			keysInAssert, ok := keysIn[i].(float64)
+			if !ok {
+				return false, fmt.Errorf("didn't match type")
+			}
+
+			if i != len(keys)-1 && v == keysInAssert {
+				continue
+			}
+
+			if i == len(keys)-1 && v == keysInAssert && equalityCheck {
+				return true, nil
+			}
+
+			if floatComparator(v, keysInAssert) {
+				return true, nil
+			}
+			return false, nil
+
+		case string:
+			keysInAssert, ok := keysIn[i].(string)
+			if !ok {
+				return false, fmt.Errorf("didn't match type")
+			}
+
+			if i != len(keys)-1 && v == keysInAssert {
+				continue
+			}
+
+			if i == len(keys)-1 && v == keysInAssert && equalityCheck {
+				return true, nil
+			}
+
+			if stringComparator(v, keysInAssert) {
+				return true, nil
+			}
+			return false, nil
+		default:
+			fmt.Printf("Unknown type? %T\n", keys[i])
+		}
+	}
+	return false, nil
+}
+
+func (keys KeysFilter) lessThan(keysIn KeysFilter) (bool, error) {
+	return keys.Comparison(keysIn,
+		func(i float64, i2 float64) bool {
+			return i < i2
+		}, func(s string, s2 string) bool {
+			return s < s2
+		}, false)
+}
+func (keys KeysFilter) lessThanEqualTo(keysIn KeysFilter) (bool, error) {
+	return keys.Comparison(keysIn,
+		func(i float64, i2 float64) bool {
+			return i < i2
+		}, func(s string, s2 string) bool {
+			return s < s2
+		}, true)
+}
+
+func (keys KeysFilter) greaterThan(keysIn KeysFilter) (bool, error) {
+	return keys.Comparison(keysIn,
+		func(i float64, i2 float64) bool {
+			return i > i2
+		}, func(s string, s2 string) bool {
+			return s > s2
+		}, false)
+}
+
+func (keys KeysFilter) greaterThanEqualTo(keysIn KeysFilter) (bool, error) {
+	return keys.Comparison(keysIn,
+		func(i float64, i2 float64) bool {
+			return i > i2
+		}, func(s string, s2 string) bool {
+			return s > s2
+		}, true)
 }

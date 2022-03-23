@@ -56,6 +56,30 @@ func (b *Bucket) Chrono() *mocktime.Chrono {
 	return b.chrono
 }
 
+func (b *Bucket) GetAllLatest(repIdx, collectionID uint) ([]*Document, error) {
+	vbDocs, err := b.GetAll(repIdx, collectionID)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]struct{})
+	docs := make([]*Document, 0)
+	for i := len(vbDocs) - 1; i >= 0; i-- {
+		_, ok := seen[string(vbDocs[i].Key)]
+		if !ok {
+			docs = append(docs, vbDocs[i])
+			seen[string(vbDocs[i].Key)] = struct{}{}
+		}
+	}
+
+	flipped := make([]*Document, len(docs))
+	for idx, doc := range docs {
+		flipped[len(docs)-idx-1] = doc
+	}
+
+	return flipped, nil
+}
+
 // GetAll fetches all documents from a particular replica.
 func (b *Bucket) GetAll(repIdx, collectionID uint) ([]*Document, error) {
 	var alldocs []*Document
