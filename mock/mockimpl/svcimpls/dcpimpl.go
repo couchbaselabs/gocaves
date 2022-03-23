@@ -2,7 +2,6 @@ package svcimpls
 
 import (
 	"encoding/binary"
-	"fmt"
 	"log"
 	"time"
 
@@ -57,12 +56,7 @@ func requireRollback(startSeqNo, consumerVBUUID, producerVBUUID uint64) (rollbac
 }
 
 func (dcp *dcpImpl) handleStreamRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
-	// log.Printf("DCP Stream Request")
 	vbucket := source.SelectedBucket().Store().GetVbucket(uint(pak.Vbucket))
-
-	if pak.Vbucket == 59 {
-		fmt.Println("x")
-	}
 
 	flags := binary.BigEndian.Uint64(pak.Extras[0:])
 	startSeqNo := binary.BigEndian.Uint64(pak.Extras[8:])
@@ -122,15 +116,8 @@ func (dcp *dcpImpl) handleStreamRequest(source mock.KvClient, pak *memd.Packet, 
 			goto end
 		}
 
-		if len(docs) > 1 {
-			fmt.Println("")
-		}
-
 		sendSnapshotMarker(source, start, pak.Vbucket, pak.Opaque, startSeqNo, endSeqNo)
 		for _, doc := range docs {
-			if string(doc.Key) == "TestImportDecimalScale0" {
-				fmt.Println("x")
-			}
 			sendData(source, start, pak.Opaque, doc)
 		}
 	}
