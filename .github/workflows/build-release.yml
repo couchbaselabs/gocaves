@@ -21,6 +21,7 @@ jobs:
       - name: Build project
         run: |
           GOOS=darwin GOARCH=amd64 go build -o gocaves-macos
+          GOOS=darwin GOARCH=arm64 go build -o gocaves-macos-arm64
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o gocaves-linux-amd64
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o gocaves-linux-arm64
           GOOS=windows GOARCH=amd64 go build -o gocaves-windows.exe
@@ -64,6 +65,15 @@ jobs:
           upload_url: "${{ steps.create_release.outputs.upload_url }}"
           asset_path: ./gocaves-macos
           asset_name: gocaves-macos
+          asset_content_type: application/octet-stream
+      - name: Upload OSX ARM64 Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        with:
+          upload_url: "${{ steps.create_release.outputs.upload_url }}"
+          asset_path: ./gocaves-macos-arm64
+          asset_name: gocaves-macos-arm64
           asset_content_type: application/octet-stream
       - name: Upload Windows Release
         uses: actions/upload-release-asset@v1
