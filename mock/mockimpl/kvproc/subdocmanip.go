@@ -44,9 +44,14 @@ func (m *subDocManip) getByPathComp(comp *SubDocPathComponent, createPath bool) 
 
 	var newPath interface{}
 	if comp.Path != "" {
-		_, isMap := newRoot.(map[string]interface{})
+		rootMap, isMap := newRoot.(map[string]interface{})
 		if !isMap {
 			return nil, ErrSdPathMismatch
+		}
+
+		_, ok := rootMap[comp.Path]
+		if !ok && !createPath {
+			return nil, ErrSdPathNotFound
 		}
 
 		newPath = comp.Path
