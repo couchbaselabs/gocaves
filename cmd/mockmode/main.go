@@ -32,10 +32,10 @@ type Main struct {
 }
 
 // Go starts the app
-func (m *Main) Go() {
+func (m *Main) Go(port int) {
 	// When running in mock-only mode, we simply start-up, write the output
 	// and then we wait indefinitely until someone kills us.
-	cluster, err := mockimpl.NewDefaultCluster()
+	cluster, err := mockimpl.NewDefaultCluster(port)
 	if err != nil {
 		log.Printf("Failed to start mock cluster: %s", err)
 		return
