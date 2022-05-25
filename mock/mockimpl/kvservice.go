@@ -138,6 +138,12 @@ func newKvService(parent *clusterNodeInst, opts newKvServiceOptions) (*kvService
 		clusterNode: parent,
 	}
 
+	// added for backwards compatibility of tests
+	if opts.NodeOptions.ListenPort == nil {
+		port := 0
+		opts.NodeOptions.ListenPort = &port
+	}
+
 	srv, err := servers.NewMemdService(servers.NewMemdServerOptions{
 		Handlers: servers.MemdServerHandlers{
 			NewClientHandler:  svc.handleNewMemdClient,
