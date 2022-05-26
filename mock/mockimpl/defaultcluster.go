@@ -6,13 +6,7 @@ import (
 )
 
 // NewDefaultCluster returns a new cluster configured with some defaults.
-func NewDefaultCluster(port ...int) (mock.Cluster, error) {
-	listenPort := 0
-
-	// if force-port has been specified the listenPort needs to be changed
-	if len(port) > 0 {
-		listenPort = port[0]
-	}
+func NewDefaultCluster(listenPort int) (mock.Cluster, error) {
 
 	cluster, err := NewCluster(mock.NewClusterOptions{
 		InitialNode: mock.NewNodeOptions{ListenPort: &listenPort},

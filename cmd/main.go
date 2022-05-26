@@ -37,12 +37,8 @@ func Start() {
 
 	if mockOnlyFlag != nil && *mockOnlyFlag {
 		// Mock-only mode
-		if forcePortFlag != nil && *forcePortFlag > 0 {
-			// Force KV Port
-			(&mockmode.Main{}).Go(*forcePortFlag)
-		} else {
-			(&mockmode.Main{}).Go(0)
-		}
+		(&mockmode.Main{}).Go(*forcePortFlag)
+
 	} else if linkAddrFlag != nil && *linkAddrFlag != "" {
 		// Test-suite inside an SDK linked to a dev mod instance
 		if controlPortFlag == nil || *controlPortFlag <= 0 {
