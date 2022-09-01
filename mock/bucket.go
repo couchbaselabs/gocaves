@@ -7,26 +7,73 @@ type BucketType uint
 
 // The following lists the possible bucket types
 const (
-	BucketTypeMemcached = BucketType(1)
-	BucketTypeCouchbase = BucketType(2)
+	BucketTypeMemcached       = BucketType(1)
+	BucketTypeCouchbase       = BucketType(2)
+	BucketTypeEphemeral       = BucketType(3)
+	BucketTypeMemcachedString = "memcached"
+	BucketTypeCouchbaseString = "membase"
+	BucketTypeEphemeralString = "ephemeral"
 )
 
 func (b BucketType) Name() string {
 	switch b {
 	case BucketTypeMemcached:
-		return "memcached"
+		return BucketTypeMemcachedString
 	case BucketTypeCouchbase:
-		return "membase"
+		return BucketTypeCouchbaseString
+	case BucketTypeEphemeral:
+		return BucketTypeEphemeralString
 	}
 
 	return ""
 }
 
+func BucketTypeFromString(bucketTypeString string) BucketType {
+	switch bucketTypeString {
+	case BucketTypeMemcachedString:
+		return BucketTypeMemcached
+	case BucketTypeCouchbaseString:
+		return BucketTypeCouchbase
+	case BucketTypeEphemeralString:
+		return BucketTypeEphemeral
+	}
+
+	// Default to Couchbase?
+	return BucketTypeCouchbase
+}
+
+// CompressionMode specifies the kind of compression to use for a bucket.
+type CompressionMode string
+
+const (
+	// CompressionModeOff specifies to use no compression for a bucket.
+	CompressionModeOff CompressionMode = "off"
+
+	// CompressionModePassive specifies to use passive compression for a bucket.
+	CompressionModePassive CompressionMode = "passive"
+
+	// CompressionModeActive specifies to use active compression for a bucket.
+	CompressionModeActive CompressionMode = "active"
+)
+
 // NewBucketOptions allows you to specify initial options for a new bucket
 type NewBucketOptions struct {
-	Name        string
-	Type        BucketType
-	NumReplicas uint
+	Name                string
+	Type                BucketType
+	NumReplicas         uint
+	FlushEnabled        bool
+	RamQuota            uint64
+	ReplicaIndexEnabled bool
+	CompressionMode     CompressionMode
+}
+
+// UpdateBucketOptions allows you to specify options for updating a bucket
+type UpdateBucketOptions struct {
+	NumReplicas         uint
+	FlushEnabled        bool
+	RamQuota            uint64
+	ReplicaIndexEnabled bool
+	CompressionMode     CompressionMode
 }
 
 // Bucket represents an instance of a bucket.
@@ -66,4 +113,23 @@ type Bucket interface {
 
 	// ViewIndexManager returns the view index manager for this bucket.
 	ViewIndexManager() ViewIndexManager
+
+	// Flush will remove all items from containing vbuckets and reset the high seq no.
+	// Returning true if the flush was successful.
+	Flush()
+
+	// FlushEnabled returns whether or not flush is enabled for this bucket.
+	FlushEnabled() bool
+
+	// RamQuota returns the ram quota assigned to this bucket.
+	RamQuota() uint64
+
+	// ReplicaIndexEnabled returns whether or not replica index is enabled for this bucket.
+	ReplicaIndexEnabled() bool
+
+	// Update updates the settings for this bucket.
+	Update(opts UpdateBucketOptions) error
+
+	// CompressionMode returns the compression mode used by this bucket.
+	CompressionMode() CompressionMode
 }

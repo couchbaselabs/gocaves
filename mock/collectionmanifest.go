@@ -103,13 +103,14 @@ func (m *CollectionManifest) GetByName(scope, collection string) (uint64, uint32
 func (m *CollectionManifest) AddCollection(scope, collection string, maxTTL uint32) (uint64, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	for _, col := range m.Collections {
-		if col != nil && col.Name == collection {
-			return 0, ErrCollectionExists
-		}
-	}
 	for _, scop := range m.Scopes {
 		if scop != nil && scop.Name == scope {
+			for _, col := range m.Collections {
+				if col != nil && col.Name == collection && col.ScopeUID == scop.UID {
+					return 0, ErrCollectionExists
+				}
+			}
+
 			m.Rev++
 			uid := uint32(len(m.Collections))
 			newEntry := &collectionManifestCollectionEntry{

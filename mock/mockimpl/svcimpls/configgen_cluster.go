@@ -19,6 +19,12 @@ func GenClusterConfig(c mock.Cluster, reqNode mock.ClusterNode) []byte {
 	}
 	config["nodes"] = nodesConfig
 
+	config["buckets"] = map[string]interface{}{
+		"uri":                       "/pools/default/buckets",
+		"terseBucketsBase":          "/pools/default/b/",
+		"terseStreamingBucketsBase": "/pools/default/bs/",
+	}
+
 	configBytes, _ := json.Marshal(config)
 	return configBytes
 }

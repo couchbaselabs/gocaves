@@ -499,3 +499,19 @@ func (s *Vbucket) GetHighSeqNo() uint64 {
 
 	return s.maxSeqNo
 }
+  
+// Flush is a basic implementation of this process and simply resets the documents in the vbucket and resets the
+// max seq no
+func (s *Vbucket) Flush() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.documents = make([]*Document, 0)
+	s.revData = []VbRevData{
+		{
+			VbUUID: generateNewVbUUID(),
+			SeqNo: 0,
+		},
+	}
+	s.maxSeqNo = 0
+}

@@ -862,6 +862,7 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 		}
 
 		valueBytes := make([]byte, 0)
+		anOperationFailed := false
 		for _, opRes := range resp.Ops {
 			opBytes := make([]byte, 6)
 			resStatus := x.translateProcErr(opRes.Err)
@@ -871,11 +872,23 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 			opBytes = append(opBytes, opRes.Value...)
 
 			valueBytes = append(valueBytes, opBytes...)
+
+			if opRes.Err != nil {
+				anOperationFailed = true
+			}
 		}
 
 		status := memd.StatusSuccess
 		if resp.IsDeleted {
 			status = memd.StatusSubDocSuccessDeleted
+		}
+
+		if anOperationFailed {
+			if resp.IsDeleted {
+				status = memd.StatusSubDocMultiPathFailureDeleted
+			} else {
+				status = memd.StatusSubDocBadMulti
+			}
 		}
 
 		writePacketToSource(source, &memd.Packet{
@@ -1045,6 +1058,10 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			Cas:             pak.Cas,
 		})
 		if err != nil {
+			if e, ok := err.(kvproc.SubdocMutateError); ok {
+				x.writeSubdocMutateErr(source, pak, start, 0, e.Err)
+				return
+			}
 			x.writeProcErr(source, pak, err, start)
 			return
 		}
@@ -1057,21 +1074,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 		}
 
 		if failedOpIdx >= 0 {
-			resStatus := x.translateProcErr(resp.Ops[failedOpIdx].Err)
-
-			valueBytes := make([]byte, 3)
-			valueBytes[0] = uint8(failedOpIdx)
-			binary.BigEndian.PutUint16(valueBytes[1:], uint16(resStatus))
-
-			// TODO(brett19): Confirm that sub-document errors return 0 CAS.
-			writePacketToSource(source, &memd.Packet{
-				Magic:   memd.CmdMagicRes,
-				Command: pak.Command,
-				Opaque:  pak.Opaque,
-				Status:  memd.StatusSubDocBadMulti,
-				Cas:     0,
-				Value:   valueBytes,
-			}, start)
+			x.writeSubdocMutateErr(source, pak, start, failedOpIdx, resp.Ops[failedOpIdx].Err)
 			return
 		}
 
@@ -1109,6 +1112,23 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			Extras:  extrasBuf,
 		}, start)
 	}
+}
+
+func (x *kvImplCrud) writeSubdocMutateErr(source mock.KvClient, pak *memd.Packet, start time.Time, errIdx int, err error) {
+	resStatus := x.translateProcErr(err)
+
+	valueBytes := make([]byte, 3)
+	valueBytes[0] = uint8(0)
+	binary.BigEndian.PutUint16(valueBytes[1:], uint16(resStatus))
+
+	writePacketToSource(source, &memd.Packet{
+		Magic:   memd.CmdMagicRes,
+		Command: pak.Command,
+		Opaque:  pak.Opaque,
+		Status:  memd.StatusSubDocBadMulti,
+		Cas:     0,
+		Value:   valueBytes,
+	}, start)
 }
 
 func (x *kvImplCrud) handleObserveSeqNo(source mock.KvClient, pak *memd.Packet, start time.Time) {

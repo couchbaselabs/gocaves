@@ -2,6 +2,7 @@ package mockimpl
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -168,6 +169,52 @@ func (c *clusterInst) AddBucket(opts mock.NewBucketOptions) (mock.Bucket, error)
 
 	c.updateConfig()
 	return bucket, nil
+}
+
+// UpdateBucket will update a bucket in a cluster.
+func (c *clusterInst) UpdateBucket(name string, opts mock.UpdateBucketOptions) error {
+	bucket := c.GetBucket(name)
+	if bucket == nil {
+		return errors.New("bucket not found")
+	}
+
+	if err := bucket.Update(opts); err != nil {
+		return err
+	}
+
+	// TODO: should we rebalance or increase cfg version if num replicas didn't change?
+	// Do a rebalance to pick up any changes
+	bucket.UpdateVbMap(c.nodeUuids())
+
+	c.updateConfig()
+
+	return nil
+}
+
+// DeleteBucket will remove a bucket from a cluster.
+func (c *clusterInst) DeleteBucket(name string) error {
+	getIdx := func() (int, error) {
+		for i, bucket := range c.buckets {
+			if bucket.Name() == name {
+				return i, nil
+			}
+		}
+
+		return 0, errors.New("bucket not found")
+	}
+
+	idx, err := getIdx()
+	if err != nil {
+		return err
+	}
+
+	copy(c.buckets[idx:], c.buckets[idx+1:])
+	c.buckets[len(c.buckets)-1] = nil // or the zero value of T
+	c.buckets = c.buckets[:len(c.buckets)-1]
+
+	c.updateConfig()
+
+	return nil
 }
 
 // GetBucket will return a specific bucket from the cluster.

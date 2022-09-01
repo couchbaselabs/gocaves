@@ -1,8 +1,9 @@
 package mockimpl
 
 import (
-	"github.com/couchbaselabs/gocaves/mock/mockmr"
 	"log"
+
+	"github.com/couchbaselabs/gocaves/mock/mockmr"
 
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockdb"
@@ -11,14 +12,18 @@ import (
 
 // bucketInst represents an instance of a bucketInst
 type bucketInst struct {
-	id          string
-	cluster     *clusterInst
-	name        string
-	bucketType  mock.BucketType
-	numReplicas uint
-	numVbuckets uint
-	store       *mockdb.Bucket
-	configRev   uint
+	id                  string
+	cluster             *clusterInst
+	name                string
+	bucketType          mock.BucketType
+	numReplicas         uint
+	numVbuckets         uint
+	store               *mockdb.Bucket
+	configRev           uint
+	flushEnabled        bool
+	ramQuota            uint64
+	replicaIndexEnabled bool
+	compressionMode     mock.CompressionMode
 
 	// vbMap is an array for each vbucket, containing an array for
 	// each replica, containing the UUID of the node responsible.
@@ -55,21 +60,25 @@ func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, er
 	}
 
 	bucket := &bucketInst{
-		id:           uuid.New().String(),
-		cluster:      parent,
-		name:         opts.Name,
-		bucketType:   opts.Type,
-		numReplicas:  replicas,
-		numVbuckets:  vbuckets,
-		store:        bucketStore,
-		collManifest: mock.NewCollectionManifest(),
-		viewEngine:   mockmr.NewEngine(),
+		id:                  uuid.New().String(),
+		cluster:             parent,
+		name:                opts.Name,
+		bucketType:          opts.Type,
+		numReplicas:         replicas,
+		numVbuckets:         vbuckets,
+		store:               bucketStore,
+		collManifest:        mock.NewCollectionManifest(),
+		viewEngine:          mockmr.NewEngine(),
+		replicaIndexEnabled: opts.ReplicaIndexEnabled,
+		flushEnabled:        opts.FlushEnabled,
+		ramQuota:            opts.RamQuota,
+		compressionMode:     opts.CompressionMode,
 	}
 
 	// Initially set up the vbucket map with nothing in it.
 	bucket.UpdateVbMap(nil)
 
-	log.Printf("new bucket created")
+	log.Printf("new bucket created: %s", bucket.Name())
 	return bucket, nil
 }
 
@@ -193,4 +202,35 @@ func (b *bucketInst) VbucketOwnership(node mock.ClusterNode) []int {
 
 func (b *bucketInst) ViewIndexManager() mock.ViewIndexManager {
 	return b.viewEngine
+}
+
+func (b *bucketInst) Flush() {
+	b.Store().Flush()
+}
+
+func (b *bucketInst) FlushEnabled() bool {
+	return b.flushEnabled
+}
+
+func (b *bucketInst) RamQuota() uint64 {
+	return b.ramQuota
+}
+
+func (b *bucketInst) ReplicaIndexEnabled() bool {
+	return b.replicaIndexEnabled
+}
+
+func (b *bucketInst) CompressionMode() mock.CompressionMode {
+	return b.compressionMode
+}
+
+func (b *bucketInst) Update(opts mock.UpdateBucketOptions) error {
+	b.ramQuota = opts.RamQuota
+	b.flushEnabled = opts.FlushEnabled
+	b.replicaIndexEnabled = opts.ReplicaIndexEnabled
+	b.numReplicas = opts.NumReplicas
+
+	// TODO: When the store actually does something with num replicas we should probably update it here.
+
+	return nil
 }
