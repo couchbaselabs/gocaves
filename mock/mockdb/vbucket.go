@@ -278,9 +278,10 @@ func (s *Vbucket) GetRandom(repIdx, collectionID uint) *Document {
 	repVisibleTime := s.chrono.Now().Add(-repLatency)
 
 	var foundDoc *Document
-	start := rand.Intn(len(s.documents))
-	curr := start
-	for {
+	numDocs := len(s.documents)
+	startDocIdx := rand.Intn(numDocs)
+	for i := 0; i < numDocs; i++ {
+		curr := uint((startDocIdx + i) % numDocs)
 		doc := s.documents[curr]
 
 		if !doc.ModifiedTime.Before(repVisibleTime) {
@@ -307,15 +308,6 @@ func (s *Vbucket) GetRandom(repIdx, collectionID uint) *Document {
 		}
 
 		if foundDoc != nil {
-			break
-		}
-
-		curr++
-		if curr == len(s.documents) {
-			curr = 0
-		}
-
-		if curr == start {
 			break
 		}
 	}
@@ -503,7 +495,7 @@ func (s *Vbucket) Flush() {
 	s.revData = []VbRevData{
 		{
 			VbUUID: generateNewVbUUID(),
-			SeqNo: 0,
+			SeqNo:  0,
 		},
 	}
 	s.maxSeqNo = 0
