@@ -83,10 +83,10 @@ func (b *Bucket) Get(repIdx, vbIdx uint, collectionID uint, key []byte) (*Docume
 
 // GetRandom fetches a random document from a particular replica and vbucket index.
 func (b *Bucket) GetRandom(repIdx, collectionID uint) (*Document, error) {
-	max := len(b.vbuckets)
-	start := uint(rand.Intn(max))
-	curr := start
-	for {
+	numVbuckets := len(b.vbuckets)
+	startVbucket := rand.Intn(numVbuckets)
+	for i := 0; i < numVbuckets; i++ {
+		curr := uint((startVbucket + i) % numVbuckets)
 		vbucket := b.GetVbucket(curr)
 		if vbucket == nil {
 			continue
@@ -95,15 +95,6 @@ func (b *Bucket) GetRandom(repIdx, collectionID uint) (*Document, error) {
 		found := vbucket.GetRandom(repIdx, collectionID)
 		if found != nil {
 			return found, nil
-		}
-
-		curr++
-		if curr == uint(max) {
-			curr = 0
-		}
-
-		if curr == start {
-			break
 		}
 	}
 
