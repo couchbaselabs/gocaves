@@ -84,7 +84,7 @@ func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTT
 		}
 	case mock.ErrScopeNotFound:
 		return &mock.HTTPResponse{
-			StatusCode: 400,
+			StatusCode: 404,
 			Body: bytes.NewReader([]byte(
 				fmt.Sprintf(`{"errors":{"_": "Unknown error {error,{scope_not_found,\"%s\"}}"}`, scope))),
 		}
@@ -194,7 +194,7 @@ func (x *mgmtImpl) handleDropCollection(source mock.MgmtService, req *mock.HTTPR
 	switch err {
 	case mock.ErrCollectionNotFound:
 		return &mock.HTTPResponse{
-			StatusCode: 400,
+			StatusCode: 404,
 			Body: bytes.NewReader([]byte(
 				fmt.Sprintf(`{"errors":{"_":"Collection with name "%s" in scope "%s" is not found"}}`,
 					collection,
@@ -203,7 +203,7 @@ func (x *mgmtImpl) handleDropCollection(source mock.MgmtService, req *mock.HTTPR
 		}
 	case mock.ErrScopeNotFound:
 		return &mock.HTTPResponse{
-			StatusCode: 400,
+			StatusCode: 404,
 			Body: bytes.NewReader([]byte(
 				fmt.Sprintf(`{"errors":{"_":"Scope with name "%s" is not found"}`, scope))),
 		}
@@ -250,7 +250,7 @@ func (x *mgmtImpl) handleDropScope(source mock.MgmtService, req *mock.HTTPReques
 	switch err {
 	case mock.ErrScopeNotFound:
 		return &mock.HTTPResponse{
-			StatusCode: 400,
+			StatusCode: 404,
 			Body: bytes.NewReader([]byte(
 				fmt.Sprintf(`{"errors":{"_":"Scope with name "%s" is not found"}`, scope))),
 		}
