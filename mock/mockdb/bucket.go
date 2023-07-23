@@ -147,6 +147,13 @@ func (b *Bucket) GetVbucket(vbIdx uint) *Vbucket {
 	return b.vbuckets[vbIdx]
 }
 
+// ForEachVBucket iterates over all the vbuckets in a bucket and runs the provided function.
+func (b *Bucket) ForEachVBucket(callback func(vbIdx int, vbucket *Vbucket)) {
+	for vbIdx, vbucket := range b.vbuckets {
+		callback(vbIdx, vbucket)
+	}
+}
+
 // Compact will compact all of the vbuckets within this bucket.  This is not
 // yet supported.  See Vbucket::Compact for details on why.
 func (b *Bucket) Compact() error {
