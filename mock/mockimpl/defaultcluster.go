@@ -6,15 +6,16 @@ import (
 )
 
 // NewDefaultCluster returns a new cluster configured with some defaults.
-func NewDefaultCluster() (mock.Cluster, error) {
+func NewDefaultCluster(listenPort int) (mock.Cluster, error) {
+
 	cluster, err := NewCluster(mock.NewClusterOptions{
-		InitialNode: mock.NewNodeOptions{},
+		InitialNode: mock.NewNodeOptions{ListenPort: &listenPort},
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = cluster.AddNode(mock.NewNodeOptions{})
+	_, err = cluster.AddNode(mock.NewNodeOptions{ListenPort: &listenPort})
 	if err != nil {
 		return nil, err
 	}

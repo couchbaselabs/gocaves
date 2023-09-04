@@ -52,7 +52,7 @@ func newClusterNode(parent *clusterInst, opts mock.NewNodeOptions) (*clusterNode
 	}
 
 	if serviceTypeListContains(opts.Services, mock.ServiceTypeKeyValue) {
-		kvService, err := newKvService(node, newKvServiceOptions{})
+		kvService, err := newKvService(node, newKvServiceOptions{NodeOptions: opts})
 		if err != nil {
 			log.Printf("cluster node failed to start kv service: %s", err)
 			node.cleanup()

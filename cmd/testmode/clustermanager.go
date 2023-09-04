@@ -18,7 +18,7 @@ type clusterManager struct {
 }
 
 func (m *clusterManager) NewCluster(clusterID string) (*namedCluster, error) {
-	mock, err := mockimpl.NewDefaultCluster()
+	mock, err := mockimpl.NewDefaultCluster(0)
 	if err != nil {
 		return nil, err
 	}

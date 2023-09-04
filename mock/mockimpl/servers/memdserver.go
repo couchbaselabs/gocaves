@@ -31,15 +31,17 @@ type MemdServer struct {
 
 // NewMemdServerOptions enables the specification of default options for a new memd server.
 type NewMemdServerOptions struct {
-	TLSConfig *tls.Config
-	Handlers  MemdServerHandlers
+	TLSConfig  *tls.Config
+	Handlers   MemdServerHandlers
+	ListenPort int
 }
 
 // NewMemdService instantiates a new instance of the memd server.
 func NewMemdService(opts NewMemdServerOptions) (*MemdServer, error) {
 	svc := &MemdServer{
-		handlers:  opts.Handlers,
-		tlsConfig: opts.TLSConfig,
+		handlers:   opts.Handlers,
+		tlsConfig:  opts.TLSConfig,
+		listenPort: opts.ListenPort,
 	}
 
 	err := svc.start()

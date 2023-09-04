@@ -2,3 +2,4 @@
 /checksuite/checksuite.go
 /mock/data/gobindata.go
 /cmd/reporting/webapp/gobindata.go
+.vscode/launch.json
