@@ -25,7 +25,12 @@ func downloadMock(version string) (path string, err error) {
 	var binary string
 	switch runtime.GOOS {
 	case "darwin":
-		binary = defaultMockFilePrefix + "macos"
+		switch runtime.GOARCH {
+		case "amd64":
+			binary = defaultMockFilePrefix + "macos"
+		case "arm64":
+			binary = defaultMockFilePrefix + "macos-arm64"
+		}
 	case "linux":
 		switch runtime.GOARCH {
 		case "amd64":
