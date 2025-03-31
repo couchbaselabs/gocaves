@@ -3,11 +3,12 @@ package checks
 import (
 	"errors"
 	"fmt"
-	"github.com/couchbaselabs/gocaves/mock/mockimpl"
 	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/couchbaselabs/gocaves/mock/mockimpl"
 
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
@@ -163,7 +164,7 @@ func (t *T) markConfigured() {
 	var cluster mock.Cluster
 	if t.requireMock {
 		var err error
-		cluster, err = mockimpl.NewDefaultCluster()
+		cluster, err = mockimpl.NewDefaultCluster(0)
 		if err != nil {
 			log.Printf("Test cancelled, had error: %v", err)
 			close(t.cancelCh)

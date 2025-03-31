@@ -15,6 +15,7 @@ var controlPortFlag = flag.Int("control-port", 0, "specifies we are running in a
 var linkAddrFlag = flag.String("link-addr", "", "specifies a caves dev server to connect to")
 var reportingAddrFlag = flag.String("reporting-addr", "", "specifies a caves reporting server to use")
 var mockOnlyFlag = flag.Bool("mock-only", false, "specifies only to use the mock")
+var forcePortFlag = flag.Int("force-port", 0, "forces KV service to use the specified port, only for use with mock-only")
 var listenPortFlag = flag.Int("listen-port", 0, "specifies a port for the listen server")
 
 func parseReportingAddr() string {
@@ -36,7 +37,8 @@ func Start() {
 
 	if mockOnlyFlag != nil && *mockOnlyFlag {
 		// Mock-only mode
-		(&mockmode.Main{}).Go()
+		(&mockmode.Main{}).Go(*forcePortFlag)
+
 	} else if linkAddrFlag != nil && *linkAddrFlag != "" {
 		// Test-suite inside an SDK linked to a dev mod instance
 		if controlPortFlag == nil || *controlPortFlag <= 0 {

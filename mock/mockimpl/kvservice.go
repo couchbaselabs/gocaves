@@ -129,6 +129,7 @@ type kvService struct {
 
 // newKvServiceOptions enables the specification of default options for a new kv service.
 type newKvServiceOptions struct {
+	NodeOptions mock.NewNodeOptions
 }
 
 // newKvService instantiates a new instance of the kv service.
@@ -137,15 +138,25 @@ func newKvService(parent *clusterNodeInst, opts newKvServiceOptions) (*kvService
 		clusterNode: parent,
 	}
 
+	// added for backwards compatibility of tests
+	if opts.NodeOptions.ListenPort == nil {
+		port := 0
+		opts.NodeOptions.ListenPort = &port
+	}
+
 	srv, err := servers.NewMemdService(servers.NewMemdServerOptions{
 		Handlers: servers.MemdServerHandlers{
 			NewClientHandler:  svc.handleNewMemdClient,
 			LostClientHandler: svc.handleLostMemdClient,
 			PacketHandler:     svc.handleMemdPacket,
 		},
+		ListenPort: *opts.NodeOptions.ListenPort,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if *opts.NodeOptions.ListenPort != 0 {
+		*opts.NodeOptions.ListenPort++
 	}
 	svc.server = srv
 
@@ -156,10 +167,14 @@ func newKvService(parent *clusterNodeInst, opts newKvServiceOptions) (*kvService
 				LostClientHandler: svc.handleLostMemdClient,
 				PacketHandler:     svc.handleMemdPacket,
 			},
-			TLSConfig: parent.cluster.tlsConfig,
+			TLSConfig:  parent.cluster.tlsConfig,
+			ListenPort: *opts.NodeOptions.ListenPort,
 		})
 		if err != nil {
 			return nil, err
+		}
+		if *opts.NodeOptions.ListenPort != 0 {
+			*opts.NodeOptions.ListenPort++
 		}
 		svc.tlsServer = tlsSrv
 	}

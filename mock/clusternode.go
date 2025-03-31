@@ -2,8 +2,9 @@ package mock
 
 // NewNodeOptions allows the specification of initial options for a new node.
 type NewNodeOptions struct {
-	Features []ClusterNodeFeature
-	Services []ServiceType
+	Features   []ClusterNodeFeature
+	Services   []ServiceType
+	ListenPort *int
 }
 
 // ClusterNode specifies a node within a cluster instance.

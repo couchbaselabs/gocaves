@@ -42,7 +42,7 @@ type TestRunner struct {
 
 // NewTestRunner creates a new test run group for running tests.
 func NewTestRunner() (*TestRunner, error) {
-	defaultCluster, err := mockimpl.NewDefaultCluster()
+	defaultCluster, err := mockimpl.NewDefaultCluster(0)
 	if err != nil {
 		return nil, err
 	}
