@@ -11,7 +11,7 @@ var globalCasIncr uint64 = 1
 // GenerateNewCas will generate a new CAS to use with a document.
 func GenerateNewCas(now time.Time) uint64 {
 	clockTime := uint64(now.UnixNano()) & 0xFFFFFFFFFFFF0000
-	logicalTime := atomic.AddUint64(&globalCasIncr, 1) & 0x000000000000FF00
+	logicalTime := (atomic.AddUint64(&globalCasIncr, 1) << 8) & 0x000000000000FF00
 	mockTime := uint64(0x00000000000000CA)
 
 	return clockTime | logicalTime | mockTime
