@@ -27,6 +27,7 @@ func TestBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to setup caves: %s", err)
 	}
+	defer func() { _ = caves.Shutdown() }()
 
 	clusterID := uuid.New().String()
 	connDetails, err := caves.CreateCluster(clusterID)
