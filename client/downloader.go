@@ -39,7 +39,12 @@ func downloadMock(version string) (path string, err error) {
 			binary = defaultMockFilePrefix + "linux-arm64"
 		}
 	case "windows":
-		binary = defaultMockFilePrefix + "windows.exe"
+		switch runtime.GOARCH {
+		case "amd64":
+			binary = defaultMockFilePrefix + "windows.exe"
+		case "arm64":
+			binary = defaultMockFilePrefix + "windows-arm64.exe"
+		}
 	}
 	if path = os.Getenv("GOCB_MOCK_PATH"); path == "" {
 		path = strings.Join([]string{os.TempDir(), binary + "-" + version}, string(os.PathSeparator))
