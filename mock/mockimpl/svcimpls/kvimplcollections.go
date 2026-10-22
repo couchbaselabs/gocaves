@@ -45,6 +45,7 @@ func (x *kvImplCrud) handleGetCollectionIDRequest(source mock.KvClient, pak *mem
 		uid, cid, err := manifest.GetByName(keyParts[0], keyParts[1])
 		if err != nil {
 			x.writeProcErr(source, pak, err, start)
+			return
 		}
 
 		extrasBuf := make([]byte, 12)
