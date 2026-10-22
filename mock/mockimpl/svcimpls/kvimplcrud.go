@@ -163,6 +163,20 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 	return memd.StatusInternalError
 }
 
+// mutationExtras returns the extras of a successful mutation response: the
+// vbucket UUID and sequence number for clients that negotiated
+// FeatureSeqNo, and nothing for the rest, as kv_engine does.
+func mutationExtras(source mock.KvClient, vbUUID, seqNo uint64) []byte {
+	if !source.HasFeature(memd.FeatureSeqNo) {
+		return nil
+	}
+
+	extras := make([]byte, 16)
+	binary.BigEndian.PutUint64(extras[0:], vbUUID)
+	binary.BigEndian.PutUint64(extras[8:], seqNo)
+	return extras
+}
+
 func (x *kvImplCrud) writeProcErr(source mock.KvClient, pak *memd.Packet, err error, start time.Time) {
 	x.writeStatusReply(source, pak, x.translateProcErr(err), start)
 }
@@ -344,14 +358,7 @@ func (x *kvImplCrud) handleAddRequest(source mock.KvClient, pak *memd.Packet, st
 			return
 		}
 
-		extrasBuf := make([]byte, 0)
-		// TODO(brett19): Implement feature checking for mutation tokens.
-		if true {
-			mtBuf := make([]byte, 16)
-			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
-			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
-			extrasBuf = append(extrasBuf, mtBuf...)
-		}
+		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -389,14 +396,7 @@ func (x *kvImplCrud) handleSetRequest(source mock.KvClient, pak *memd.Packet, st
 			return
 		}
 
-		extrasBuf := make([]byte, 0)
-		// TODO(brett19): Implement feature checking for mutation tokens.
-		if true {
-			mtBuf := make([]byte, 16)
-			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
-			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
-			extrasBuf = append(extrasBuf, mtBuf...)
-		}
+		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -434,14 +434,7 @@ func (x *kvImplCrud) handleReplaceRequest(source mock.KvClient, pak *memd.Packet
 			return
 		}
 
-		extrasBuf := make([]byte, 0)
-		// TODO(brett19): Implement feature checking for mutation tokens.
-		if true {
-			mtBuf := make([]byte, 16)
-			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
-			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
-			extrasBuf = append(extrasBuf, mtBuf...)
-		}
+		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -472,14 +465,7 @@ func (x *kvImplCrud) handleDeleteRequest(source mock.KvClient, pak *memd.Packet,
 			return
 		}
 
-		extrasBuf := make([]byte, 0)
-		// TODO(brett19): Implement feature checking for mutation tokens.
-		if true {
-			mtBuf := make([]byte, 16)
-			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
-			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
-			extrasBuf = append(extrasBuf, mtBuf...)
-		}
+		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -520,14 +506,7 @@ func (x *kvImplCrud) handleIncrementRequest(source mock.KvClient, pak *memd.Pack
 		valueBuf := make([]byte, 8)
 		binary.BigEndian.PutUint64(valueBuf[0:], resp.Value)
 
-		extrasBuf := make([]byte, 0)
-		// TODO(brett19): Implement feature checking for mutation tokens.
-		if true {
-			mtBuf := make([]byte, 16)
-			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
-			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
-			extrasBuf = append(extrasBuf, mtBuf...)
-		}
+		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -569,14 +548,7 @@ func (x *kvImplCrud) handleDecrementRequest(source mock.KvClient, pak *memd.Pack
 		valueBuf := make([]byte, 8)
 		binary.BigEndian.PutUint64(valueBuf[0:], resp.Value)
 
-		extrasBuf := make([]byte, 0)
-		// TODO(brett19): Implement feature checking for mutation tokens.
-		if true {
-			mtBuf := make([]byte, 16)
-			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
-			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
-			extrasBuf = append(extrasBuf, mtBuf...)
-		}
+		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -610,14 +582,7 @@ func (x *kvImplCrud) handleAppendRequest(source mock.KvClient, pak *memd.Packet,
 			return
 		}
 
-		extrasBuf := make([]byte, 0)
-		// TODO(brett19): Implement feature checking for mutation tokens.
-		if true {
-			mtBuf := make([]byte, 16)
-			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
-			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
-			extrasBuf = append(extrasBuf, mtBuf...)
-		}
+		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -650,14 +615,7 @@ func (x *kvImplCrud) handlePrependRequest(source mock.KvClient, pak *memd.Packet
 			return
 		}
 
-		extrasBuf := make([]byte, 0)
-		// TODO(brett19): Implement feature checking for mutation tokens.
-		if true {
-			mtBuf := make([]byte, 16)
-			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
-			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
-			extrasBuf = append(extrasBuf, mtBuf...)
-		}
+		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -690,14 +648,7 @@ func (x *kvImplCrud) handleTouchRequest(source mock.KvClient, pak *memd.Packet, 
 			return
 		}
 
-		extrasBuf := make([]byte, 0)
-		// TODO(brett19): Implement feature checking for mutation tokens.
-		if true {
-			mtBuf := make([]byte, 16)
-			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
-			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
-			extrasBuf = append(extrasBuf, mtBuf...)
-		}
+		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -800,14 +751,7 @@ func (x *kvImplCrud) handleUnlockRequest(source mock.KvClient, pak *memd.Packet,
 			return
 		}
 
-		extrasBuf := make([]byte, 0)
-		// TODO(brett19): Implement feature checking for mutation tokens.
-		if true {
-			mtBuf := make([]byte, 16)
-			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
-			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
-			extrasBuf = append(extrasBuf, mtBuf...)
-		}
+		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
@@ -1116,14 +1060,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			}
 		}
 
-		extrasBuf := make([]byte, 0)
-		// TODO(brett19): Implement feature checking for mutation tokens.
-		if true {
-			mtBuf := make([]byte, 16)
-			binary.BigEndian.PutUint64(mtBuf[0:], resp.VbUUID)
-			binary.BigEndian.PutUint64(mtBuf[8:], resp.SeqNo)
-			extrasBuf = append(extrasBuf, mtBuf...)
-		}
+		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
