@@ -96,3 +96,107 @@ func TestSubdocMutationWithNonJSONValue(t *testing.T) {
 		expectSpecError(t, resp, 0, memd.StatusSubDocCantInsert)
 	}
 }
+
+// counterResult returns the value of a successful single-spec counter
+// mutation.
+func counterResult(t *testing.T, resp *memd.Packet) string {
+	t.Helper()
+
+	if resp.Status != memd.StatusSuccess {
+		t.Fatalf("counter failed with status 0x%02x, body %v", uint16(resp.Status), resp.Value)
+	}
+	if len(resp.Value) < 7 {
+		t.Fatalf("expected a result entry, got %v", resp.Value)
+	}
+	return string(resp.Value[7:])
+}
+
+func TestSubdocCounterStaysWithinInt64(t *testing.T) {
+	c := newTestKvConn(t)
+
+	counter := func(doc, delta string) *memd.Packet {
+		c.mustSucceed(&memd.Packet{
+			Command: memd.CmdSet,
+			Vbucket: c.vbID,
+			Key:     []byte("counter"),
+			Value:   []byte(doc),
+			Extras:  make([]byte, 8),
+		})
+		return c.Do(&memd.Packet{
+			Command: memd.CmdSubDocMultiMutation,
+			Vbucket: c.vbID,
+			Key:     []byte("counter"),
+			Value:   encodeMutationSpecs(subdocSpec{Op: memd.SubDocOpCounter, Path: "counter", Value: delta}),
+		})
+	}
+
+	if got := counterResult(t, counter(`{"counter":0}`, "9223372036854775807")); got != "9223372036854775807" {
+		t.Errorf("expected 9223372036854775807, got %s", got)
+	}
+	expectSpecError(t, counter(`{"counter":9223372036854775807}`, "1"), 0, memd.StatusSubDocCantInsert)
+
+	if got := counterResult(t, counter(`{"counter":-9223372036854775807}`, "-1")); got != "-9223372036854775808" {
+		t.Errorf("expected -9223372036854775808, got %s", got)
+	}
+	expectSpecError(t, counter(`{"counter":-9223372036854775808}`, "-1"), 0, memd.StatusSubDocCantInsert)
+}
+
+func TestSubdocMutationKeepsLargeIntegers(t *testing.T) {
+	c := newTestKvConn(t)
+
+	c.mustSucceed(&memd.Packet{
+		Command: memd.CmdSet,
+		Vbucket: c.vbID,
+		Key:     []byte("doc"),
+		Value:   []byte(`{"id":9007199254740993}`),
+		Extras:  make([]byte, 8),
+	})
+	c.mustSucceed(&memd.Packet{
+		Command: memd.CmdSubDocMultiMutation,
+		Vbucket: c.vbID,
+		Key:     []byte("doc"),
+		Value:   encodeMutationSpecs(subdocSpec{Op: memd.SubDocOpDictSet, Path: "x", Value: "1"}),
+	})
+
+	resp := c.mustSucceed(&memd.Packet{Command: memd.CmdGet, Vbucket: c.vbID, Key: []byte("doc")})
+	if string(resp.Value) != `{"id":9007199254740993,"x":1}` {
+		t.Errorf("unexpected document %s", resp.Value)
+	}
+}
+
+// subjson compares an array-add-unique value with the array's elements by
+// their JSON text, so numbers that are equal in value but written
+// differently are distinct.
+func TestSubdocArrayAddUniqueComparesText(t *testing.T) {
+	c := newTestKvConn(t)
+
+	c.mustSucceed(&memd.Packet{
+		Command: memd.CmdSet,
+		Vbucket: c.vbID,
+		Key:     []byte("doc"),
+		Value:   []byte(`{"array":[0,9007199254740993]}`),
+		Extras:  make([]byte, 8),
+	})
+
+	addUnique := func(value string) *memd.Packet {
+		return c.Do(&memd.Packet{
+			Command: memd.CmdSubDocMultiMutation,
+			Vbucket: c.vbID,
+			Key:     []byte("doc"),
+			Value:   encodeMutationSpecs(subdocSpec{Op: memd.SubDocOpArrayAddUnique, Path: "array", Value: value}),
+		})
+	}
+
+	expectSpecError(t, addUnique("0"), 0, memd.StatusSubDocPathExists)
+	expectSpecError(t, addUnique("9007199254740993"), 0, memd.StatusSubDocPathExists)
+	for _, value := range []string{"-0", "9007199254740992"} {
+		if resp := addUnique(value); resp.Status != memd.StatusSuccess {
+			t.Errorf("adding %s failed with status 0x%02x", value, uint16(resp.Status))
+		}
+	}
+
+	resp := c.mustSucceed(&memd.Packet{Command: memd.CmdGet, Vbucket: c.vbID, Key: []byte("doc")})
+	if string(resp.Value) != `{"array":[0,9007199254740993,-0,9007199254740992]}` {
+		t.Errorf("unexpected document %s", resp.Value)
+	}
+}
