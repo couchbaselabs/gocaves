@@ -190,3 +190,8 @@ func (b *Bucket) Flush() {
 		vbucket.Flush()
 	}
 }
+
+// NumVbuckets returns the number of vbuckets in the bucket.
+func (b *Bucket) NumVbuckets() uint {
+	return uint(len(b.vbuckets))
+}

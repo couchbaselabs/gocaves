@@ -158,6 +158,14 @@ func (m *Main) handleAPIRequest(pkt interface{}) interface{} {
 		}
 
 		return &api.CmdAddedBucket{}
+	case *api.CmdLoadSample:
+		err := m.clusterMgr.LoadSample(pktTyped.ClusterID, pktTyped.BucketName, pktTyped.Path)
+		if err != nil {
+			log.Printf("failed to load sample: %s", err)
+			return &api.CmdLoadedSample{Error: err.Error()}
+		}
+
+		return &api.CmdLoadedSample{}
 	}
 
 	return nil

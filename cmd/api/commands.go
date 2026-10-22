@@ -92,6 +92,21 @@ type CmdAddBucket struct {
 type CmdAddedBucket struct {
 }
 
+// CmdLoadSample requests a sample archive, such as travel-sample.zip, be
+// loaded into an existing bucket. Path names the archive on the machine
+// running CAVES.
+type CmdLoadSample struct {
+	ClusterID  string `json:"cluster"`
+	BucketName string `json:"bucket"`
+	Path       string `json:"path"`
+}
+
+// CmdLoadedSample represents the reply to a load sample request. Error is
+// empty when the sample was loaded.
+type CmdLoadedSample struct {
+	Error string `json:"error,omitempty"`
+}
+
 var cmdsMap = map[string]reflect.Type{
 	"hello":          reflect.TypeOf(CmdHello{}),
 	"createcluster":  reflect.TypeOf(CmdCreateCluster{}),
@@ -108,6 +123,8 @@ var cmdsMap = map[string]reflect.Type{
 	"timetravelled":  reflect.TypeOf(CmdTimeTravelled{}),
 	"addbucket":      reflect.TypeOf(CmdAddBucket{}),
 	"addedbucket":    reflect.TypeOf(CmdAddedBucket{}),
+	"loadsample":     reflect.TypeOf(CmdLoadSample{}),
+	"loadedsample":   reflect.TypeOf(CmdLoadedSample{}),
 }
 
 // EncodeCommandPacket encodes a packet from a structure to bytes bytes.
