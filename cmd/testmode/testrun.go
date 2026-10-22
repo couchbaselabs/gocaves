@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/checks"
 )
 
@@ -125,7 +125,7 @@ func translateCapturedPacket(pak *checks.RecordedPacket) jsonRecordedPacket {
 	jpak.CommandStr = pak.Data.Command.Name()
 	jpak.Datatype = pak.Data.Datatype
 	jpak.Status = uint16(pak.Data.Status)
-	jpak.StatusStr = pak.Data.Status.KVText()
+	jpak.StatusStr = pak.Data.Status.String()
 	jpak.Vbucket = pak.Data.Vbucket
 	jpak.Opaque = pak.Data.Opaque
 	jpak.CasHex = strconv.FormatUint(pak.Data.Cas, 16)

@@ -7,7 +7,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbase/gocbcore/v10/memd"
 )
 
 // MemdServerHandlers provides all the handlers for the memd server
