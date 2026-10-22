@@ -31,7 +31,7 @@ func TestMemdBasic(t *testing.T) {
 				lostClientInvokes = append(lostClientInvokes, cli)
 				lock.Unlock()
 			},
-			PacketHandler: func(cli *MemdClient, pak *memd.Packet) {
+			PacketHandler: func(cli *MemdClient, pak *memd.Packet, _ int) {
 				lock.Lock()
 				packetInvokes = append(packetInvokes, pak)
 				lock.Unlock()
@@ -164,7 +164,7 @@ func TestPacketWaitsForNewClientHandler(t *testing.T) {
 			close(registered)
 		},
 		LostClientHandler: func(cli *MemdClient) {},
-		PacketHandler: func(cli *MemdClient, pak *memd.Packet) {
+		PacketHandler: func(cli *MemdClient, pak *memd.Packet, _ int) {
 			select {
 			case <-registered:
 			default:
@@ -207,7 +207,7 @@ func TestNewClientHandlerCanRejectClient(t *testing.T) {
 			lost++
 			lock.Unlock()
 		},
-		PacketHandler: func(cli *MemdClient, pak *memd.Packet) {
+		PacketHandler: func(cli *MemdClient, pak *memd.Packet, _ int) {
 			echoStatus(t, cli, pak)
 		},
 	})
@@ -253,7 +253,7 @@ func TestCloseWaitsForRegistration(t *testing.T) {
 				lost++
 				lock.Unlock()
 			},
-			PacketHandler: func(cli *MemdClient, pak *memd.Packet) {
+			PacketHandler: func(cli *MemdClient, pak *memd.Packet, _ int) {
 				echoStatus(t, cli, pak)
 			},
 		},

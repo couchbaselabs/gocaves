@@ -22,6 +22,10 @@ type MemdClient struct {
 	lock    sync.Mutex
 	started bool
 	closed  bool
+
+	// writeLock serialises writes, and the protocol features enabled by a
+	// HELLO response, across goroutines.
+	writeLock sync.Mutex
 }
 
 var (
@@ -51,8 +55,18 @@ func (c *MemdClient) RemoteAddr() net.Addr {
 	return c.conn.RemoteAddr()
 }
 
+// IsClosed reports whether Close or Abort has been called.
+func (c *MemdClient) IsClosed() bool {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.closed
+}
+
 // WritePacket writes a packet to the connection.
 func (c *MemdClient) WritePacket(pak *memd.Packet) error {
+	c.writeLock.Lock()
+	defer c.writeLock.Unlock()
+
 	// In order to support various hello features, we detect when there is a hello response
 	// packet sent, and then automatically enable the appropriate protocol features when
 	// we do that.
@@ -87,12 +101,12 @@ func (c *MemdClient) start() error {
 
 	go func() {
 		for {
-			pak, _, err := c.mconn.ReadPacket()
+			pak, size, err := c.mconn.ReadPacket()
 			if err != nil {
 				break
 			}
 
-			c.parent.handleClientRequest(c, pak)
+			c.parent.handleClientRequest(c, pak, size)
 		}
 
 		c.parent.handleClientDisconnect(c)
@@ -103,7 +117,17 @@ func (c *MemdClient) start() error {
 	return nil
 }
 
-// Close will forcefully disconnect a client
+// Abort closes the connection without waiting for the reader, so the reader
+// itself can call it; the reader then fails its next read and exits.
+func (c *MemdClient) Abort() error {
+	c.lock.Lock()
+	c.closed = true
+	c.lock.Unlock()
+	return c.conn.Close()
+}
+
+// Close closes the connection and waits for the reader to exit, so the
+// reader must not call it.
 func (c *MemdClient) Close() error {
 	c.lock.Lock()
 	c.closed = true

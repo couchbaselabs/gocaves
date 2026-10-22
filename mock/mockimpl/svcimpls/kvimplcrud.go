@@ -3,6 +3,7 @@ package svcimpls
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
+	"github.com/couchbaselabs/gocaves/mock/mockdb"
 	"github.com/couchbaselabs/gocaves/mock/mockimpl/kvproc"
 )
 
@@ -79,7 +81,12 @@ func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet, permission
 		}
 	}
 
-	return kvproc.New(selectedBucket.Store(), vbOwnership)
+	proc := kvproc.New(selectedBucket.Store(), vbOwnership)
+	if status := checkDurability(selectedBucket, source, pak, vbOwnership); status != memd.StatusSuccess {
+		proc.SetDurabilityError(durabilityError(status))
+	}
+	proc.SetSyncWrite(syncWrite(source, pak, selectedBucket))
+	return proc
 }
 
 // writeUnknownCollectionReply replies with the error body kv_engine sends for
@@ -100,6 +107,11 @@ func (x *kvImplCrud) writeUnknownCollectionReply(source mock.KvClient, pak *memd
 
 func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 	// TODO(brett19): Implement special handling for various errors on specific versions.
+
+	var durabilityStatus durabilityError
+	if errors.As(err, &durabilityStatus) {
+		return memd.StatusCode(durabilityStatus)
+	}
 
 	switch err {
 	case nil:
@@ -161,6 +173,60 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 
 	log.Printf("Recieved unexpected crud proc error: %s", err)
 	return memd.StatusInternalError
+}
+
+// writeMutationReply sends the response to a successful mutation. The response
+// to a durable write waits for its durability level, and is
+// sync_write_ambiguous if the level is not met in time. The wait runs on its
+// own goroutine. Under unordered execution the dispatcher serves later
+// requests meanwhile, as kv_engine does. On an ordered connection it holds them
+// until the reply is written. The reader goes on reading either way, so a
+// disconnect ends the wait. store is the bucket store the mutation was
+// applied to, whatever the connection has selected since.
+func (x *kvImplCrud) writeMutationReply(source mock.KvClient, store *mockdb.Bucket, req *memd.Packet, vbUUID, seqNo uint64, resp *memd.Packet, start time.Time) {
+	if req.DurabilityLevelFrame == nil {
+		writePacketToSource(source, resp, start)
+		return
+	}
+
+	// The wait also ends, ambiguous, once the bucket is removed or replaced.
+	cluster := source.Source().Node().Cluster()
+	ended := func() bool {
+		return source.Closed() || !hasStore(cluster, store)
+	}
+	reply := func() {
+		vbucket := store.GetVbucket(uint(req.Vbucket))
+		defer vbucket.MarkSyncWriteReplied(vbUUID, seqNo)
+
+		durable := waitForDurability(store, uint(req.Vbucket), vbUUID, seqNo, ended)
+		// kv_engine completes the writes of a vbucket in sequence-number
+		// order, so this response follows those to the client's earlier
+		// writes, which are complete by now. That holds for writes a flush,
+		// a rollback or removal of the bucket discarded, so only closing the
+		// connection ends this wait.
+		for !vbucket.EarlierSyncWritesReplied(vbUUID, seqNo, source) && !source.Closed() {
+			time.Sleep(time.Millisecond)
+		}
+		if source.Closed() {
+			return
+		}
+		if !durable {
+			x.writeStatusReply(source, req, memd.StatusSyncWriteAmbiguous, start)
+			return
+		}
+		writePacketToSource(source, resp, start)
+	}
+	source.RunDetached(reply)
+}
+
+// hasStore reports whether a bucket of cluster has store.
+func hasStore(cluster mock.Cluster, store *mockdb.Bucket) bool {
+	for _, bucket := range cluster.GetAllBuckets() {
+		if bucket.Store() == store {
+			return true
+		}
+	}
+	return false
 }
 
 // mutationExtras returns the extras of a successful mutation response: the
@@ -360,7 +426,7 @@ func (x *kvImplCrud) handleAddRequest(source mock.KvClient, pak *memd.Packet, st
 
 		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
-		writePacketToSource(source, &memd.Packet{
+		x.writeMutationReply(source, proc.Store(), pak, resp.VbUUID, resp.SeqNo, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -398,7 +464,7 @@ func (x *kvImplCrud) handleSetRequest(source mock.KvClient, pak *memd.Packet, st
 
 		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
-		writePacketToSource(source, &memd.Packet{
+		x.writeMutationReply(source, proc.Store(), pak, resp.VbUUID, resp.SeqNo, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -436,7 +502,7 @@ func (x *kvImplCrud) handleReplaceRequest(source mock.KvClient, pak *memd.Packet
 
 		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
-		writePacketToSource(source, &memd.Packet{
+		x.writeMutationReply(source, proc.Store(), pak, resp.VbUUID, resp.SeqNo, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -467,7 +533,7 @@ func (x *kvImplCrud) handleDeleteRequest(source mock.KvClient, pak *memd.Packet,
 
 		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
-		writePacketToSource(source, &memd.Packet{
+		x.writeMutationReply(source, proc.Store(), pak, resp.VbUUID, resp.SeqNo, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -508,7 +574,7 @@ func (x *kvImplCrud) handleIncrementRequest(source mock.KvClient, pak *memd.Pack
 
 		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
-		writePacketToSource(source, &memd.Packet{
+		x.writeMutationReply(source, proc.Store(), pak, resp.VbUUID, resp.SeqNo, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -550,7 +616,7 @@ func (x *kvImplCrud) handleDecrementRequest(source mock.KvClient, pak *memd.Pack
 
 		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
-		writePacketToSource(source, &memd.Packet{
+		x.writeMutationReply(source, proc.Store(), pak, resp.VbUUID, resp.SeqNo, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -584,7 +650,7 @@ func (x *kvImplCrud) handleAppendRequest(source mock.KvClient, pak *memd.Packet,
 
 		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
-		writePacketToSource(source, &memd.Packet{
+		x.writeMutationReply(source, proc.Store(), pak, resp.VbUUID, resp.SeqNo, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -617,7 +683,7 @@ func (x *kvImplCrud) handlePrependRequest(source mock.KvClient, pak *memd.Packet
 
 		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
-		writePacketToSource(source, &memd.Packet{
+		x.writeMutationReply(source, proc.Store(), pak, resp.VbUUID, resp.SeqNo, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
@@ -632,6 +698,13 @@ func (x *kvImplCrud) handleTouchRequest(source mock.KvClient, pak *memd.Packet, 
 	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite, start); proc != nil {
 		if len(pak.Extras) != 4 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
+			return
+		}
+
+		// kv_engine's engine refuses a durable TOUCH or GAT, once the
+		// request has passed validation.
+		if pak.DurabilityLevelFrame != nil {
+			x.writeStatusReply(source, pak, memd.StatusNotSupported, start)
 			return
 		}
 
@@ -665,6 +738,13 @@ func (x *kvImplCrud) handleGATRequest(source mock.KvClient, pak *memd.Packet, st
 	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite, start); proc != nil {
 		if len(pak.Extras) != 4 {
 			x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
+			return
+		}
+
+		// kv_engine's engine refuses a durable TOUCH or GAT, once the
+		// request has passed validation.
+		if pak.DurabilityLevelFrame != nil {
+			x.writeStatusReply(source, pak, memd.StatusNotSupported, start)
 			return
 		}
 
@@ -1062,7 +1142,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 
 		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
-		writePacketToSource(source, &memd.Packet{
+		x.writeMutationReply(source, proc.Store(), pak, resp.VbUUID, resp.SeqNo, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,

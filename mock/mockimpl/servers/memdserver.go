@@ -15,7 +15,7 @@ import (
 type MemdServerHandlers struct {
 	NewClientHandler  func(*MemdClient)
 	LostClientHandler func(*MemdClient)
-	PacketHandler     func(*MemdClient, *memd.Packet)
+	PacketHandler     func(*MemdClient, *memd.Packet, int)
 }
 
 // MemdServer represents an instance of the memd server.
@@ -137,8 +137,10 @@ func (s *MemdServer) GetAllClients() []*MemdClient {
 	return allClients
 }
 
-func (s *MemdServer) handleClientRequest(client *MemdClient, pak *memd.Packet) {
-	s.handlers.PacketHandler(client, pak)
+// handleClientRequest passes on a packet and the number of bytes it took on
+// the wire.
+func (s *MemdServer) handleClientRequest(client *MemdClient, pak *memd.Packet, size int) {
+	s.handlers.PacketHandler(client, pak, size)
 }
 
 func (s *MemdServer) handleClientDisconnect(client *MemdClient) {

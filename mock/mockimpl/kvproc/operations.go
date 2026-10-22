@@ -189,6 +189,9 @@ func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
 	}
+	if e.durabilityErr != nil {
+		return nil, e.durabilityErr
+	}
 
 	doc := &mockdb.Document{
 		VbID:         opts.Vbucket,
@@ -201,7 +204,7 @@ func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
-	newDoc, err := e.db.Insert(doc)
+	newDoc, err := e.insert(doc)
 
 	if err == mockdb.ErrDocExists {
 		return nil, ErrDocExists
@@ -224,6 +227,9 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
 	}
+	if e.durabilityErr != nil {
+		return nil, e.durabilityErr
+	}
 
 	doc := &mockdb.Document{
 		VbID:         opts.Vbucket,
@@ -236,7 +242,7 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
-	newDoc, err := e.db.Update(
+	newDoc, err := e.update(
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if opts.Cas != 0 {
@@ -291,6 +297,9 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
 	}
+	if e.durabilityErr != nil {
+		return nil, e.durabilityErr
+	}
 
 	doc := &mockdb.Document{
 		VbID:         opts.Vbucket,
@@ -303,7 +312,7 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
-	newDoc, err := e.db.Update(
+	newDoc, err := e.update(
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
@@ -360,6 +369,9 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
 	}
+	if e.durabilityErr != nil {
+		return nil, e.durabilityErr
+	}
 
 	lkpDoc := &mockdb.Document{
 		VbID:         opts.Vbucket,
@@ -367,7 +379,7 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 		Key:          opts.Key,
 	}
 
-	newDoc, err := e.db.Update(
+	newDoc, err := e.update(
 		lkpDoc.VbID, lkpDoc.CollectionID, lkpDoc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
@@ -444,7 +456,7 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
-	newDoc, err := e.db.Update(
+	newDoc, err := e.update(
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
@@ -455,8 +467,25 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 				if opts.Cas != 0 {
 					return nil, ErrCasMismatch
 				}
+				if e.durabilityErr != nil {
+					return nil, e.durabilityErr
+				}
 
 				return doc, nil
+			}
+
+			// kv_engine parses the value before it stores the new one, so a
+			// value that is not a number fails before the lock and
+			// durability checks.
+			val, err := strconv.ParseUint(string(idoc.Value), 10, 64)
+			if err != nil {
+				return nil, err
+			}
+
+			// kv_engine stores a counter on a locked document with the locked
+			// CAS when the request has none, and checks durability first.
+			if e.docIsLocked(idoc) && opts.Cas == 0 && e.durabilityErr != nil {
+				return nil, e.durabilityErr
 			}
 
 			if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
@@ -465,12 +494,6 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 
 			if opts.Cas != 0 && idoc.Cas != opts.Cas {
 				return nil, ErrCasMismatch
-			}
-
-			// Otherwise we simply update the value
-			val, err := strconv.ParseUint(string(idoc.Value), 10, 64)
-			if err != nil {
-				return nil, err
 			}
 
 			// TODO(brett19): Double-check the saturation logic on the server...
@@ -490,6 +513,9 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 				}
 			}
 
+			if e.durabilityErr != nil {
+				return nil, e.durabilityErr
+			}
 			idoc.Value = []byte(fmt.Sprintf("%d", val))
 			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
@@ -535,11 +561,17 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
-	newDoc, err := e.db.Update(
+	newDoc, err := e.update(
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
 				return nil, ErrDocNotFound
+			}
+
+			// kv_engine stores to a locked document with the CAS the request
+			// carries, and checks durability first.
+			if e.docIsLocked(idoc) && opts.Cas != 0 && e.durabilityErr != nil {
+				return nil, e.durabilityErr
 			}
 
 			if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
@@ -548,6 +580,10 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 
 			if opts.Cas != 0 && idoc.Cas != opts.Cas {
 				return nil, ErrCasMismatch
+			}
+
+			if e.durabilityErr != nil {
+				return nil, e.durabilityErr
 			}
 
 			// Otherwise we simply update the value
@@ -981,8 +1017,11 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		if err != nil {
 			return nil, err
 		}
+		if e.durabilityErr != nil {
+			return nil, e.durabilityErr
+		}
 
-		newDoc, err := e.db.Update(
+		newDoc, err := e.update(
 			doc.VbID, doc.CollectionID, doc.Key,
 			func(idoc *mockdb.Document) (*mockdb.Document, error) {
 				if idoc == nil {
