@@ -951,19 +951,22 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 
 func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
 	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite, start); proc != nil {
+		// The extras are an optional 4-byte expiry followed by optional
+		// 1-byte document flags.
 		var docFlags memd.SubdocDocFlag
 		var expiry uint32
-		if len(pak.Extras) > 0 {
-			if len(pak.Extras) == 1 {
-				docFlags = memd.SubdocDocFlag(pak.Extras[0])
-			} else {
-				if len(pak.Extras) != 5 {
-					x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
-					return
-				}
-				expiry = binary.BigEndian.Uint32(pak.Extras[0:])
-				docFlags = memd.SubdocDocFlag(pak.Extras[4])
-			}
+		switch len(pak.Extras) {
+		case 0:
+		case 1:
+			docFlags = memd.SubdocDocFlag(pak.Extras[0])
+		case 4:
+			expiry = binary.BigEndian.Uint32(pak.Extras[0:])
+		case 5:
+			expiry = binary.BigEndian.Uint32(pak.Extras[0:])
+			docFlags = memd.SubdocDocFlag(pak.Extras[4])
+		default:
+			x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
+			return
 		}
 
 		mkDoc := docFlags&memd.SubdocDocFlagMkDoc != 0

@@ -916,6 +916,10 @@ type MultiMutateResult struct {
 }
 
 // MultiMutate performs an SD_MULTIMUTATE operation.
+// afterMultiMutateRead runs between MultiMutate's read of the document and its
+// update. Tests use it to change the document in that window.
+var afterMultiMutateRead = func() {}
+
 func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
@@ -975,6 +979,10 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		} else if err != nil {
 			return nil, err
 		}
+		// The update below is valid only for the document as read here; doc
+		// itself is revived below for a create.
+		readDeleted := doc != nil && doc.IsDeleted
+		afterMultiMutateRead()
 
 		// Check for cas mismatch before we do any work. We'll effectively be doing this check again during the update
 		// too so if anyone performs a mutation during that time then we'll catch it there too.
@@ -1017,6 +1025,15 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		if err != nil {
 			return nil, err
 		}
+
+		// A failed spec fails the whole mutation, which must not be stored.
+		for _, res := range sdRes {
+			if res != nil && res.Err != nil {
+				return &MultiMutateResult{Ops: sdRes}, nil
+			}
+		}
+
+		// kv_engine checks durability when it stores, after the specs.
 		if e.durabilityErr != nil {
 			return nil, e.durabilityErr
 		}
@@ -1037,14 +1054,18 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 						return nil, ErrLocked
 					}
 
-					if idoc.Cas != doc.Cas {
+					// A document that expired or was deleted since it was read
+					// keeps its CAS; retry, so the read sees it as it is now.
+					if idoc.Cas != doc.Cas || idoc.IsDeleted != readDeleted {
 						return nil, ErrCasMismatch
 					}
 
 					idoc.Value = doc.Value
 					idoc.Xattrs = doc.Xattrs
 					idoc.IsDeleted = doc.IsDeleted
-					idoc.Expiry = doc.Expiry
+					// A mutation takes the expiry of the request, and a request
+					// without one clears it.
+					idoc.Expiry = mdoc.Expiry
 				}
 
 				idoc.LockExpiry = newMetaDoc.LockExpiry
