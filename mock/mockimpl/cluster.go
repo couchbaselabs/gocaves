@@ -124,6 +124,7 @@ func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 		SearchHooks:    &cluster.searchHooks,
 		ViewHooks:      &cluster.viewHooks,
 	})
+	cluster.kvInHooks.Add(inflateHook)
 
 	return cluster, nil
 }
