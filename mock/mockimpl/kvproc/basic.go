@@ -10,6 +10,47 @@ import (
 type Engine struct {
 	db          *mockdb.Bucket
 	vbOwnership []int
+
+	durabilityErr error
+	syncWrite     *mockdb.SyncWrite
+}
+
+// Store returns the bucket store the engine operates on.
+func (e *Engine) Store() *mockdb.Bucket {
+	return e.db
+}
+
+// SetDurabilityError makes SET, ADD, REPLACE, DELETE, arithmetic, APPEND,
+// PREPEND and sub-document mutations fail with err at the point where
+// kv_engine checks the durability requirements of a write: SET, ADD, REPLACE
+// and DELETE first, once the vbucket is known to be active; the others just
+// before the store, after the document was read and checked.
+func (e *Engine) SetDurabilityError(err error) {
+	e.durabilityErr = err
+}
+
+// SetSyncWrite makes the mutations SetDurabilityError lists durable writes,
+// tracked by the vbucket from the moment they get their sequence number.
+func (e *Engine) SetSyncWrite(w *mockdb.SyncWrite) {
+	e.syncWrite = w
+}
+
+// update and insert store a mutation as a durable write when SetSyncWrite
+// made the request one.
+func (e *Engine) update(vbID, collectionID uint, key []byte,
+	fn func(*mockdb.Document) (*mockdb.Document, error)) (*mockdb.Document, error) {
+	return e.db.Update(vbID, collectionID, key, func(idoc *mockdb.Document) (*mockdb.Document, error) {
+		doc, err := fn(idoc)
+		if doc != nil {
+			doc.SyncWrite = e.syncWrite
+		}
+		return doc, err
+	})
+}
+
+func (e *Engine) insert(doc *mockdb.Document) (*mockdb.Document, error) {
+	doc.SyncWrite = e.syncWrite
+	return e.db.Insert(doc)
 }
 
 // New creates a new crudproc engine using a mockdb and a list of what replicas

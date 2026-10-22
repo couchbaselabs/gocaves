@@ -16,10 +16,17 @@ type hookHelper struct {
 	QueryHooks     mock.QueryHookManager
 	SearchHooks    mock.SearchHookManager
 	ViewHooks      mock.ViewHookManager
+
+	// kvCommands are the commands a KV handler is registered for.
+	kvCommands map[memd.CmdCode]bool
 }
 
 // RegisterKvReq registers a hook for a kv command request.
 func (h *hookHelper) RegisterKvHandler(cmd memd.CmdCode, handler func(source mock.KvClient, pak *memd.Packet, start time.Time)) {
+	if h.kvCommands == nil {
+		h.kvCommands = make(map[memd.CmdCode]bool)
+	}
+	h.kvCommands[cmd] = true
 	h.KvInHooks.Add(func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
 		if pak.Magic == memd.CmdMagicReq && pak.Command == cmd {
 			handler(source, pak, start)

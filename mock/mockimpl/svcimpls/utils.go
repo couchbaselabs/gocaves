@@ -24,6 +24,6 @@ func writePacketToSource(source mock.KvClient, pak *memd.Packet, start time.Time
 	}
 	err := source.WritePacket(pak)
 	if err != nil {
-		log.Printf("failed to write packet %+v to %+v", pak, source)
+		log.Printf("failed to write %s response to %s: %s", pak.Command.Name(), source.RemoteAddr(), err)
 	}
 }

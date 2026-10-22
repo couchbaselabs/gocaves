@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -90,8 +91,26 @@ func connectTestKv(t *testing.T, cluster mock.Cluster, features ...memd.HelloFea
 	return c
 }
 
-// closeTestCluster stops the services of every node of cluster.
+// closeTestCluster stops the services of every node of cluster, and reports
+// any that fails to close.
 func closeTestCluster(t *testing.T, cluster mock.Cluster) {
+	if err := closeClusterServices(cluster); err != nil {
+		t.Errorf("%v", err)
+	}
+}
+
+// closedClusters holds the IDs of the clusters closeClusterServices has
+// closed, so a test that closes its cluster itself does not close it again in
+// its cleanup. Keeping the ID rather than the cluster lets a closed cluster be
+// collected.
+var closedClusters sync.Map
+
+// closeClusterServices stops the services of every node of cluster, once.
+func closeClusterServices(cluster mock.Cluster) error {
+	if _, closed := closedClusters.LoadOrStore(cluster.ID(), true); closed {
+		return nil
+	}
+	var errs []error
 	for _, node := range cluster.Nodes() {
 		n := node.(*clusterNodeInst)
 		var closers []func() error
@@ -115,10 +134,11 @@ func closeTestCluster(t *testing.T, cluster mock.Cluster) {
 		}
 		for _, closeService := range closers {
 			if err := closeService(); err != nil {
-				t.Errorf("failed to close a service of node %s: %v", n.ID(), err)
+				errs = append(errs, fmt.Errorf("failed to close a service of node %s: %w", n.ID(), err))
 			}
 		}
 	}
+	return errors.Join(errs...)
 }
 
 func (c *testKvConn) masterVbucket(node mock.ClusterNode) uint16 {

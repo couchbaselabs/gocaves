@@ -31,8 +31,11 @@ type clusterInst struct {
 	configWatcherLock sync.Mutex
 	configWatchers    []mock.ConfigWatcher
 
-	buckets []*bucketInst
-	nodes   []*clusterNodeInst
+	// bucketsLock guards buckets: KV requests and their durability waits look
+	// buckets up while the management API adds and removes them.
+	bucketsLock sync.RWMutex
+	buckets     []*bucketInst
+	nodes       []*clusterNodeInst
 
 	auth *mockauth.Engine
 
@@ -43,6 +46,10 @@ type clusterInst struct {
 	queryHooks     hooks.QueryHookManager
 	searchHooks    hooks.SearchHookManager
 	viewHooks      hooks.ViewHookManager
+
+	// validKvRequest reports whether kv_engine's request validator accepts a
+	// KV request.
+	validKvRequest func(source mock.KvClient, pak *memd.Packet) bool
 }
 
 // NewCluster instantiates a new cluster instance.
@@ -108,7 +115,7 @@ func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 	// I don't really like this, but the default implementations have to be in the
 	// same package as us or we end up with a circular dependancy.  Maybe fix it with
 	// interfaces later...
-	svcimpls.Register(svcimpls.RegisterOptions{
+	cluster.validKvRequest = svcimpls.Register(svcimpls.RegisterOptions{
 		AnalyticsHooks: &cluster.analyticsHooks,
 		KvInHooks:      &cluster.kvInHooks,
 		KvOutHooks:     &cluster.kvOutHooks,
@@ -165,7 +172,9 @@ func (c *clusterInst) AddBucket(opts mock.NewBucketOptions) (mock.Bucket, error)
 	// Do an initial rebalance for the nodes we currently have
 	bucket.UpdateVbMap(c.nodeUuids())
 
+	c.bucketsLock.Lock()
 	c.buckets = append(c.buckets, bucket)
+	c.bucketsLock.Unlock()
 
 	c.updateConfig()
 	return bucket, nil
@@ -193,6 +202,7 @@ func (c *clusterInst) UpdateBucket(name string, opts mock.UpdateBucketOptions) e
 
 // DeleteBucket will remove a bucket from a cluster.
 func (c *clusterInst) DeleteBucket(name string) error {
+	c.bucketsLock.Lock()
 	getIdx := func() (int, error) {
 		for i, bucket := range c.buckets {
 			if bucket.Name() == name {
@@ -205,12 +215,14 @@ func (c *clusterInst) DeleteBucket(name string) error {
 
 	idx, err := getIdx()
 	if err != nil {
+		c.bucketsLock.Unlock()
 		return err
 	}
 
 	copy(c.buckets[idx:], c.buckets[idx+1:])
 	c.buckets[len(c.buckets)-1] = nil // or the zero value of T
 	c.buckets = c.buckets[:len(c.buckets)-1]
+	c.bucketsLock.Unlock()
 
 	c.updateConfig()
 
@@ -219,6 +231,8 @@ func (c *clusterInst) DeleteBucket(name string) error {
 
 // GetBucket will return a specific bucket from the cluster.
 func (c *clusterInst) GetBucket(name string) mock.Bucket {
+	c.bucketsLock.RLock()
+	defer c.bucketsLock.RUnlock()
 	for _, bucket := range c.buckets {
 		if bucket.Name() == name {
 			return bucket
@@ -229,6 +243,8 @@ func (c *clusterInst) GetBucket(name string) mock.Bucket {
 
 // GetAllBuckets will return all buckets from the cluster.
 func (c *clusterInst) GetAllBuckets() []mock.Bucket {
+	c.bucketsLock.RLock()
+	defer c.bucketsLock.RUnlock()
 	var buckets []mock.Bucket
 	for _, bucket := range c.buckets {
 		buckets = append(buckets, bucket)
@@ -341,7 +357,7 @@ func (c *clusterInst) handleKvPacketIn(source *kvClient, pak *memd.Packet) {
 }
 
 func (c *clusterInst) handleKvPacketOut(source *kvClient, pak *memd.Packet) bool {
-	log.Printf("sending kv packet %p CMD:%s %+v", source, pak.Command.Name(), pak)
+	log.Printf("sending kv packet %p CMD:%s status:%s opaque:%d", source, pak.Command.Name(), pak.Status, pak.Opaque)
 	if !c.kvOutHooks.Invoke(source, pak) {
 		log.Printf("throwing away kv packet %p CMD:%s", source, pak.Command.Name())
 		return false

@@ -52,6 +52,15 @@ type KvClient interface {
 	// WritePacket tries to write data to the underlying connection.
 	WritePacket(pak *memd.Packet) error
 
+	// Closed reports whether the connection has been closed or lost.
+	Closed() bool
+
+	// RunDetached runs fn on its own goroutine, apart from the connection's
+	// dispatcher. It must be called from a request handler, on the dispatcher
+	// goroutine. A request on an ordered connection, or a barrier under
+	// unordered execution, waits for every fn started before it.
+	RunDetached(fn func())
+
 	// Close attempts to close the connection.
 	Close() error
 }

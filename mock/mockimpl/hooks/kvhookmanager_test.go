@@ -30,6 +30,8 @@ func (c *fakeKvClient) SelectedBucket() mock.Bucket               { return nil }
 func (c *fakeKvClient) SetFeatures(features []memd.HelloFeature)  {}
 func (c *fakeKvClient) HasFeature(feature memd.HelloFeature) bool { return false }
 func (c *fakeKvClient) WritePacket(pak *memd.Packet) error        { return nil }
+func (c *fakeKvClient) Closed() bool                              { return false }
+func (c *fakeKvClient) RunDetached(fn func())                     { fn() }
 func (c *fakeKvClient) Close() error                              { return nil }
 func (c *fakeKvClient) CheckAuthenticated(permission mockauth.Permission, collectionID uint32) bool {
 	return true
