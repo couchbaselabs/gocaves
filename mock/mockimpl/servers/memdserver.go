@@ -2,6 +2,7 @@ package servers
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -23,6 +24,7 @@ type MemdServer struct {
 	listenPort int
 	localAddr  string
 	listener   net.Listener
+	acceptDone chan struct{}
 	handlers   MemdServerHandlers
 	tlsConfig  *tls.Config
 
@@ -74,6 +76,9 @@ func (s *MemdServer) start() error {
 		return err
 	}
 
+	s.listener = lsnr
+	s.acceptDone = make(chan struct{})
+
 	// Save the local listening address
 	addr := lsnr.Addr()
 	tcpAddr := addr.(*net.TCPAddr)
@@ -87,6 +92,7 @@ func (s *MemdServer) start() error {
 	}
 
 	go func() {
+		defer close(s.acceptDone)
 		for {
 			conn, err := lsnr.Accept()
 			if err != nil {
@@ -94,11 +100,7 @@ func (s *MemdServer) start() error {
 				break
 			}
 
-			client, err := newMemdClient(s, conn)
-			if err != nil {
-				log.Printf("failed to create memd client: %s", err)
-				break
-			}
+			client := newMemdClient(s, conn)
 
 			s.lock.Lock()
 
@@ -107,6 +109,18 @@ func (s *MemdServer) start() error {
 			s.lock.Unlock()
 
 			s.handlers.NewClientHandler(client)
+			if err := client.start(); err != nil {
+				// A registration handler may close the client to reject it.
+				// Any other failure is logged and the client closed. Either
+				// way no reader ran, so the disconnect is reported here.
+				if !errors.Is(err, errClientClosed) {
+					log.Printf("failed to start memd client: %s", err)
+					if err := client.Close(); err != nil {
+						log.Printf("failed to close memd client: %s", err)
+					}
+				}
+				s.handleClientDisconnect(client)
+			}
 		}
 	}()
 
@@ -150,6 +164,11 @@ func (s *MemdServer) Close() error {
 		log.Printf("failed to close memd listener: %s", err)
 	}
 
+	// A client accepted before the listener closed may still be registering.
+	// Once the accept loop has exited, every client has either started or
+	// been reported lost, so each one below leaves the list when closed.
+	<-s.acceptDone
+
 	var lastClient *MemdClient
 	for {
 		s.lock.Lock()
@@ -167,11 +186,10 @@ func (s *MemdServer) Close() error {
 		}
 		lastClient = nextClient
 
-		err := nextClient.Close()
-		if err != nil {
+		if err := nextClient.Close(); err != nil {
 			log.Printf("failed to close memd client: %s", err)
 		}
 	}
 
-	return nil
+	return err
 }
