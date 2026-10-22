@@ -29,8 +29,11 @@ var (
 	ErrSdXattrInvalidKeyCombo = errors.New("invalid xattr key combination")
 )
 
+// SubdocMutateError is the failure of one spec of a multi-mutation, which
+// fails the whole request. Index is the position of that spec in the request.
 type SubdocMutateError struct {
-	Err error
+	Index int
+	Err   error
 }
 
 func (e SubdocMutateError) Error() string {
