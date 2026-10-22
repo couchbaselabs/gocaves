@@ -3,6 +3,7 @@ package svcimpls
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"log"
 	"os"
 	"runtime"
@@ -12,6 +13,7 @@ import (
 	"github.com/couchbase/gocbcore/v9/memd"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
+	"github.com/couchbaselabs/gocaves/mock/mockdb"
 	"github.com/couchbaselabs/gocaves/mock/mockimpl/kvproc"
 )
 
@@ -303,11 +305,13 @@ func (x *kvImplCrud) handleAddRequest(source mock.KvClient, pak *memd.Packet, st
 		flags := binary.BigEndian.Uint32(pak.Extras[0:])
 		expiry := binary.BigEndian.Uint32(pak.Extras[4:])
 
+		datatype := setDatatypeJSONFromValue(pak.Value)
+
 		resp, err := proc.Add(kvproc.StoreOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
-			Datatype:     pak.Datatype,
+			Datatype:     datatype,
 			Value:        pak.Value,
 			Flags:        flags,
 			Expiry:       expiry,
@@ -1177,7 +1181,7 @@ func (x *kvImplCrud) handleStatsRequest(source mock.KvClient, pak *memd.Packet, 
 				Value:   []byte(source.SelectedBucket().ID()),
 			}, start)
 		} else {
-			stats, err := x.getStats(string(pak.Key))
+			stats, err := x.getStats(source.SelectedBucket(), string(pak.Key))
 			if err != nil {
 				x.writeProcErr(source, pak, err, start)
 				return
@@ -1205,7 +1209,7 @@ func (x *kvImplCrud) handleStatsRequest(source mock.KvClient, pak *memd.Packet, 
 	}
 }
 
-func (x *kvImplCrud) getStats(key string) (map[string]string, error) {
+func (x *kvImplCrud) getStats(bucket mock.Bucket, key string) (map[string]string, error) {
 	if key == "" {
 		return x.defaultStats(), nil
 	} else if key == "memory" {
@@ -1223,6 +1227,14 @@ func (x *kvImplCrud) getStats(key string) (map[string]string, error) {
 		return map[string]string{
 			"ep_dcp_conn_buffer_size": "10485760",
 		}, nil
+	} else if key == "vbucket-seqno" {
+		stats := make(map[string]string)
+		bucket.Store().ForEachVBucket(func(vbIdx int, vbucket *mockdb.Vbucket) {
+			stats[fmt.Sprintf("vb_%d:high_seqno", vbIdx)] = strconv.FormatUint(vbucket.GetHighSeqNo(), 10)
+			stats[fmt.Sprintf("vb_%d:abs_high_seqno", vbIdx)] = strconv.FormatUint(vbucket.GetHighSeqNo(), 10)
+			stats[fmt.Sprintf("vb_%d:uuid", vbIdx)] = strconv.FormatUint(vbucket.CurrentMetaState(0).VbUUID, 10)
+		})
+		return stats, nil
 	}
 
 	return nil, kvproc.ErrDocNotFound

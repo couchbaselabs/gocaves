@@ -1,6 +1,7 @@
 package svcimpls
 
 import (
+	"encoding/json"
 	"log"
 	"math/rand"
 	"time"
@@ -26,4 +27,13 @@ func writePacketToSource(source mock.KvClient, pak *memd.Packet, start time.Time
 	if err != nil {
 		log.Printf("failed to write packet %+v to %+v", pak, source)
 	}
+}
+
+func setDatatypeJSONFromValue(docValue []byte) uint8 {
+	var docBody interface{}
+	err := json.Unmarshal(docValue, &docBody)
+	if err == nil {
+		return uint8(memd.DatatypeFlagJSON)
+	}
+	return 0
 }

@@ -485,6 +485,13 @@ func (s *Vbucket) rollback(snap *vbucketSnapshot) error {
 	return nil
 }
 
+func (s *Vbucket) GetHighSeqNo() uint64 {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	return s.maxSeqNo
+}
+  
 // Flush is a basic implementation of this process and simply resets the documents in the vbucket and resets the
 // max seq no
 func (s *Vbucket) Flush() {
