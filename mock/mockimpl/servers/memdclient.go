@@ -2,7 +2,9 @@ package servers
 
 import (
 	"encoding/binary"
+	"errors"
 	"net"
+	"sync"
 
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/contrib/ctxstore"
@@ -16,24 +18,27 @@ type MemdClient struct {
 	ctxStore ctxstore.Store
 
 	closeWaitCh chan struct{}
+
+	lock    sync.Mutex
+	started bool
+	closed  bool
 }
 
+var (
+	errClientClosed  = errors.New("memd client closed before it started")
+	errClientStarted = errors.New("memd client already started")
+)
+
 // NewMemdClient allows the creation of a new memd client
-func newMemdClient(parent *MemdServer, conn net.Conn) (*MemdClient, error) {
+func newMemdClient(parent *MemdServer, conn net.Conn) *MemdClient {
 	mconn := memd.NewConn(conn)
 
-	cli := &MemdClient{
-		parent: parent,
-		conn:   conn,
-		mconn:  mconn,
+	return &MemdClient{
+		parent:      parent,
+		conn:        conn,
+		mconn:       mconn,
+		closeWaitCh: make(chan struct{}),
 	}
-
-	err := cli.start()
-	if err != nil {
-		return nil, err
-	}
-
-	return cli, nil
 }
 
 // LocalAddr returns the local address of this client.
@@ -65,8 +70,20 @@ func (c *MemdClient) WritePacket(pak *memd.Packet) error {
 	return c.mconn.WritePacket(pak)
 }
 
+// start reads packets from the connection until it closes. The client must
+// be registered with its handlers first, or its first packets have no client
+// state to be dispatched to. It fails if the client was closed during
+// registration, or was already started.
 func (c *MemdClient) start() error {
-	c.closeWaitCh = make(chan struct{})
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.closed {
+		return errClientClosed
+	}
+	if c.started {
+		return errClientStarted
+	}
+	c.started = true
 
 	go func() {
 		for {
@@ -88,11 +105,19 @@ func (c *MemdClient) start() error {
 
 // Close will forcefully disconnect a client
 func (c *MemdClient) Close() error {
+	c.lock.Lock()
+	c.closed = true
+	started := c.started
+	c.lock.Unlock()
+
 	// Close the underlying connection first
 	err := c.conn.Close()
 
-	// Then wait for our reader thread to terminate
-	<-c.closeWaitCh
+	// Then wait for our reader thread to terminate. A client closed during
+	// registration has no reader to wait for.
+	if started {
+		<-c.closeWaitCh
+	}
 
 	// Finally we can return the error that occurred.
 	return err
