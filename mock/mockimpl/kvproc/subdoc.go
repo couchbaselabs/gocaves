@@ -81,7 +81,11 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp, co
 			}
 
 			opDoc, err = e.createXattrDoc(doc, newMeta, op)
-			if err != nil {
+			if err != nil && !continueOnOpError {
+				// kv_engine rejects these xattr specs while validating the
+				// request, so they fail the whole mutation, not one spec.
+				return nil, err
+			} else if err != nil {
 				opReses[reorderedOps.indexes[opIdx]] = &SubDocResult{
 					Value: nil,
 					Err:   err,
@@ -177,7 +181,7 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp, co
 		}
 
 		if !continueOnOpError && opRes.Err != nil {
-			return nil, SubdocMutateError{opRes.Err}
+			return nil, SubdocMutateError{Index: reorderedOps.indexes[opIdx], Err: opRes.Err}
 		}
 
 		if opRes == nil {

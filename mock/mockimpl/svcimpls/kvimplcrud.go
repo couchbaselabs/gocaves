@@ -1080,7 +1080,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 		})
 		if err != nil {
 			if e, ok := err.(kvproc.SubdocMutateError); ok {
-				x.writeSubdocMutateErr(source, pak, start, 0, e.Err)
+				x.writeSubdocMutateErr(source, pak, start, e.Index, e.Err)
 				return
 			}
 			x.writeProcErr(source, pak, err, start)
@@ -1139,7 +1139,7 @@ func (x *kvImplCrud) writeSubdocMutateErr(source mock.KvClient, pak *memd.Packet
 	resStatus := x.translateProcErr(err)
 
 	valueBytes := make([]byte, 3)
-	valueBytes[0] = uint8(0)
+	valueBytes[0] = uint8(errIdx)
 	binary.BigEndian.PutUint16(valueBytes[1:], uint16(resStatus))
 
 	writePacketToSource(source, &memd.Packet{
