@@ -151,6 +151,8 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 		return memd.StatusSubDocCantInsert
 	case kvproc.ErrSdDeltaInvalid:
 		return memd.StatusSubDocBadDelta
+	case kvproc.ErrSdNumRange:
+		return memd.StatusSubDocBadRange
 	case kvproc.ErrSdBadCombo:
 		return memd.StatusSubDocBadCombo
 	case kvproc.ErrInvalidArgument:

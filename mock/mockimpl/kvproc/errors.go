@@ -22,6 +22,7 @@ var (
 	ErrSdPathExists           = errors.New("subdocument path exists")
 	ErrSdCantInsert           = errors.New("subdocument cant insert")
 	ErrSdDeltaInvalid         = errors.New("subdocument counter delta invalid")
+	ErrSdNumRange             = errors.New("subdocument number out of range")
 	ErrSdBadCombo             = errors.New("subdocument invalid combo")
 	ErrSdInvalidFlagCombo     = errors.New("invalid xattr flag combination")
 	ErrUnknownXattrMacro      = errors.New("unknown xattr macro")
