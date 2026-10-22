@@ -199,7 +199,9 @@ func (x *kvImplAuth) handleSelectBucketRequest(source mock.KvClient, pak *memd.P
 			Magic:   memd.CmdMagicRes,
 			Command: memd.CmdSelectBucket,
 			Opaque:  pak.Opaque,
-			Status:  memd.StatusKeyNotFound,
+			// kv_engine checks bucket access before existence, and nobody
+			// has access to a bucket that does not exist.
+			Status: memd.StatusAccessError,
 		}, start)
 		return
 	}
