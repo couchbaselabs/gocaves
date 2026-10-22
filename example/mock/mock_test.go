@@ -11,7 +11,7 @@ import (
 	"github.com/couchbaselabs/gocaves/cmd"
 )
 
-func fakeFunc() { //nolint:deadcode,unused
+func fakeFunc() { //nolint:unused
 	// We secretly have a fake function which depends on the CAVES
 	// command line such that build errors occur here rather than when
 	// we try to actually start up CAVES...

@@ -195,7 +195,9 @@ func (n *clusterNodeInst) Hostname() string {
 
 func (n *clusterNodeInst) cleanup() {
 	if n.kvService != nil {
-		n.kvService.Close()
+		if err := n.kvService.Close(); err != nil {
+			log.Printf("failed to close kv service: %s", err)
+		}
 		n.kvService = nil
 	}
 }

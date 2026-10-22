@@ -6,7 +6,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -70,28 +69,31 @@ func getCheckSuiteFuncs() ([]suiteCheckFunc, error) {
 
 	var suiteChecks []suiteCheckFunc
 
-	for suiteName := range suitePkgs {
+	for suiteName, suiteFiles := range suitePkgs {
 		suitePath := fmt.Sprintf("./checksuite/%s", suiteName)
 
 		fset := token.NewFileSet()
 
-		pkgs, err := parser.ParseDir(fset, suitePath, nil, parser.ParseComments)
-		if err != nil {
-			log.Fatalf("failed to parse checksuite packages: %s", err)
+		var suiteDecls []ast.Decl
+		pkgName := ""
+		for _, fileName := range suiteFiles {
+			if !strings.HasSuffix(fileName, ".go") {
+				continue
+			}
+
+			file, err := parser.ParseFile(fset, filepath.Join(suitePath, fileName), nil, parser.ParseComments)
+			if err != nil {
+				log.Fatalf("failed to parse checksuite packages: %s", err)
+			}
+
+			if pkgName != "" && file.Name.Name != pkgName {
+				log.Fatalf("found more than one package name per checksuite directory")
+			}
+			pkgName = file.Name.Name
+			suiteDecls = append(suiteDecls, file.Decls...)
 		}
 
-		if len(pkgs) != 1 {
-			log.Fatalf("found more than one package name per checksuite directory")
-		}
-
-		var suitePkg *ast.Package
-		for _, pkg := range pkgs {
-			suitePkg = pkg
-		}
-
-		suiteFile := ast.MergePackageFiles(suitePkg, ast.MergeMode(0))
-
-		for _, suiteDecl := range suiteFile.Decls {
+		for _, suiteDecl := range suiteDecls {
 			if suiteFunc, ok := suiteDecl.(*ast.FuncDecl); ok {
 				// Ignore methods which have receivers (methods not functions)
 				if suiteFunc.Recv != nil {
@@ -192,7 +194,7 @@ func updateCheckSuiteDotGo() {
 	indexOut += "}"
 	indexOut += "\n"
 
-	err = ioutil.WriteFile("./checksuite/checksuite.go", []byte(indexOut), 0644)
+	err = os.WriteFile("./checksuite/checksuite.go", []byte(indexOut), 0644)
 	if err != nil {
 		panic(err)
 	}

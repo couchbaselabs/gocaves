@@ -3,7 +3,7 @@ package mockimpl
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"reflect"
 	"testing"
 
@@ -12,7 +12,7 @@ import (
 )
 
 func testReadJSONFile(t *testing.T, path string) interface{} {
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read test data file: %s", err)
 	}

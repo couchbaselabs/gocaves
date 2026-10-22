@@ -116,7 +116,7 @@ func EncodeCommandPacket(command interface{}) ([]byte, error) {
 
 	cmdType := ""
 	for name, inst := range cmdsMap {
-		if inst == typeofCmd || reflect.PtrTo(inst) == typeofCmd {
+		if inst == typeofCmd || reflect.PointerTo(inst) == typeofCmd {
 			cmdType = name
 		}
 	}

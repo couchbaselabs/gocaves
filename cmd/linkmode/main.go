@@ -1,6 +1,7 @@
 package linkmode
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -43,8 +44,8 @@ func (m *Main) Go() {
 		if err != nil {
 			log.Printf("server to client copying errored: %v", err)
 		}
-		cliConn.Close()
-		srvConn.Close()
+		closeConn("sdk", cliConn)
+		closeConn("caves server", srvConn)
 	}()
 
 	log.Printf("Starting client to server copying")
@@ -52,6 +53,15 @@ func (m *Main) Go() {
 	if err != nil {
 		log.Printf("client to server copying errored: %v", err)
 	}
-	cliConn.Close()
-	srvConn.Close()
+	closeConn("sdk", cliConn)
+	closeConn("caves server", srvConn)
+}
+
+// closeConn closes one side of the link. Both copy loops close both
+// connections, so the second close of each reports net.ErrClosed, which is
+// expected.
+func closeConn(name string, conn net.Conn) {
+	if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		log.Printf("failed to close connection to the %s: %v", name, err)
+	}
 }

@@ -133,7 +133,9 @@ func (c *Client) start() error {
 			}
 		}
 
-		c.conn.Close()
+		if err := c.conn.Close(); err != nil {
+			log.Printf("failed to close api client connection: %s", err)
+		}
 
 		log.Printf("api client disconnected: %p", c)
 

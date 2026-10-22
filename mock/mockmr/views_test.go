@@ -22,7 +22,7 @@ func TestExecute(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err)
 	}
 
 	_, res, err := e.Execute(ExecuteOptions{
@@ -45,7 +45,7 @@ func TestExecute(t *testing.T) {
 		// Reduce:    true,
 	})
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err)
 	}
 
 	fmt.Printf("%#v", res)
