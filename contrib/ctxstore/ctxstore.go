@@ -14,12 +14,12 @@ type Store struct {
 // Get returns an associated context by its type
 func (s *Store) Get(valuePtr interface{}) {
 	v := reflect.ValueOf(valuePtr)
-	if v.Kind() != reflect.Ptr {
+	if v.Kind() != reflect.Pointer {
 		panic("should specify a pointer to pointer type (1)")
 	}
 
 	ptrV := reflect.Indirect(v)
-	if ptrV.Kind() != reflect.Ptr {
+	if ptrV.Kind() != reflect.Pointer {
 		panic("should specify a pointer to pointer type (2)")
 	}
 

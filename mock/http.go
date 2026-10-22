@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 )
@@ -24,7 +23,7 @@ type HTTPRequest struct {
 // PeekBody will return the full body and swap the reader with a
 // new one which will allow other users to continue to use it.
 func (r *HTTPRequest) PeekBody() []byte {
-	data, _ := ioutil.ReadAll(r.Body)
+	data, _ := io.ReadAll(r.Body)
 	r.Body = bytes.NewReader(data)
 	return data
 }
@@ -40,7 +39,7 @@ type HTTPResponse struct {
 // PeekBody will return the full body and swap the reader with a
 // new one which will allow other users to continue to use it.
 func (r *HTTPResponse) PeekBody() []byte {
-	data, _ := ioutil.ReadAll(r.Body)
+	data, _ := io.ReadAll(r.Body)
 	r.Body = bytes.NewReader(data)
 	return data
 }

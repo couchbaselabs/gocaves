@@ -91,7 +91,9 @@ func TestMemdBasic(t *testing.T) {
 	assert.Equal(pak.Command, memd.CmdGetClusterConfig)
 	assert.Equal(pak.Opaque, uint32(1))
 
-	conn.Close()
+	if err := conn.Close(); err != nil {
+		t.Fatalf("failed to close connection: %v", err)
+	}
 
 	time.Sleep(100 * time.Millisecond)
 

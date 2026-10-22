@@ -1,0 +1,19 @@
+version: "2"
+
+linters:
+  # The linters golangci-lint v1 ran by default: errcheck, govet,
+  # ineffassign, staticcheck and unused.
+  default: standard
+  settings:
+    staticcheck:
+      # v2 folds stylecheck and the quick fixes into staticcheck; v1 ran
+      # neither.
+      checks:
+        - all
+        - -ST*
+        - -QF*
+  exclusions:
+    paths:
+      # Written by tools/prebuildstep.go.
+      - mock/data/gobindata.go
+      - checksuite/checksuite.go

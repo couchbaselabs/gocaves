@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"log"
 	"net/url"
 	"strconv"
 
@@ -126,7 +127,9 @@ func (x *mgmtImpl) handleGetTerseBucketStreamingConfig(source mock.MgmtService, 
 			select {
 			case <-req.Context.Done():
 				source.Node().Cluster().RemoveConfigWatcher(watcher)
-				writer.Close()
+				if err := writer.Close(); err != nil {
+					log.Printf("failed to close streaming config writer: %s", err)
+				}
 				return
 			case <-watcher.configChan:
 			}

@@ -11,14 +11,14 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.20" # newest Go that golangci-lint v1.51 can read
+          go-version-file: go.mod
       - name: Pre-build project
         run: |
           go run tools/prebuildstep.go
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.51
+          version: v2.14.0
