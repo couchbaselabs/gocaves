@@ -5,12 +5,14 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/contrib/scramserver"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
+	"github.com/golang/snappy"
 )
 
 // kvClient represents all the state about a connected kv client.
@@ -564,4 +566,59 @@ func (s *kvService) dispatchPacket(kvCli *kvClient, pak *memd.Packet) {
 	}
 
 	s.clusterNode.cluster.handleKvPacketIn(kvCli, pak)
+}
+
+// maxInflatedSize is the largest value kv_engine inflates, its maximum packet
+// size. A value that inflates to more than the store's 20 MiB item limit but
+// within this one is answered too_big by the store, as kv_engine answers it.
+const maxInflatedSize = 30 * 1024 * 1024
+
+// inflateRequestValue decompresses a snappy-compressed request value, as
+// kv_engine does before dispatch. It refuses a client that did not negotiate
+// snappy, and a value whose header claims more than maxInflatedSize, before
+// the decoder allocates that length.
+func inflateRequestValue(source mock.KvClient, value []byte) ([]byte, bool) {
+	if !source.HasFeature(memd.FeatureSnappy) {
+		return nil, false
+	}
+	size, err := snappy.DecodedLen(value)
+	if err != nil || size > maxInflatedSize {
+		return nil, false
+	}
+	inflated, err := snappy.Decode(nil, value)
+	if err != nil {
+		return nil, false
+	}
+	return inflated, true
+}
+
+// inflateHook replaces a compressed request value with the inflated one while
+// the built-in handlers run, and restores it when they return. The cluster
+// adds it after the handlers, so it runs just before them: hooks added later,
+// such as the packet recording of checks, see the request as the client sent
+// it, both before and after they call next.
+func inflateHook(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
+	if pak.Datatype&uint8(memd.DatatypeFlagCompressed) == 0 {
+		next()
+		return
+	}
+
+	value, ok := inflateRequestValue(source, pak.Value)
+	if !ok {
+		err := source.WritePacket(&memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: pak.Command,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusInvalidArgs,
+		})
+		if err != nil {
+			log.Printf("failed to write invalid arguments packet: %s", err)
+		}
+		return
+	}
+	compressed, datatype := pak.Value, pak.Datatype
+	pak.Value = value
+	pak.Datatype &^= uint8(memd.DatatypeFlagCompressed)
+	next()
+	pak.Value, pak.Datatype = compressed, datatype
 }
