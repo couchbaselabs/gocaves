@@ -21,7 +21,7 @@ func newSubDocManip(data []byte) (*subDocManip, error) {
 	var val interface{}
 	err := json.Unmarshal(data, &val)
 	if err != nil {
-		return nil, err
+		return nil, ErrSdNotJSON
 	}
 
 	return &subDocManip{
@@ -207,4 +207,13 @@ func (m *subDocManip) GetJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(val)
+}
+
+// unmarshalSpecValue decodes the value of a mutation spec. A value that is not
+// JSON cannot be inserted into the document.
+func unmarshalSpecValue(data []byte, v interface{}) error {
+	if err := json.Unmarshal(data, v); err != nil {
+		return ErrSdCantInsert
+	}
+	return nil
 }

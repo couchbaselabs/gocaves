@@ -574,7 +574,7 @@ func doBasicMutation(doc []byte, op *SubDocOp, mutationFn func(pathVal *subDocMa
 	}
 
 	var valueObj interface{}
-	err = json.Unmarshal(op.Value, &valueObj)
+	err = unmarshalSpecValue(op.Value, &valueObj)
 	if err != nil {
 		return nil, err
 	}
@@ -800,7 +800,7 @@ func subDocArrayPush(docVal *subDocManip, op *SubDocOp, pushFront bool) error {
 
 	var fullValue []interface{}
 	fullValueBytes := append([]byte("["), append(append([]byte{}, op.Value...), []byte("]")...)...)
-	err = json.Unmarshal(fullValueBytes, &fullValue)
+	err = unmarshalSpecValue(fullValueBytes, &fullValue)
 	if err != nil {
 		return err
 	}
@@ -925,7 +925,7 @@ func (e SubDocArrayInsertExecutor) Execute(op *SubDocOp) (*SubDocResult, error) 
 
 	var fullValue []interface{}
 	fullValueBytes := append([]byte("["), append(append([]byte{}, op.Value...), []byte("]")...)...)
-	err = json.Unmarshal(fullValueBytes, &fullValue)
+	err = unmarshalSpecValue(fullValueBytes, &fullValue)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
@@ -987,7 +987,7 @@ func (e SubDocArrayAddUniqueExecutor) Execute(op *SubDocOp) (*SubDocResult, erro
 	}
 
 	var valueObj interface{}
-	err = json.Unmarshal(op.Value, &valueObj)
+	err = unmarshalSpecValue(op.Value, &valueObj)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
