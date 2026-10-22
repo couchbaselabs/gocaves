@@ -3,6 +3,7 @@ package svcimpls
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"log"
 	"os"
 	"runtime"
@@ -70,7 +71,31 @@ func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet, permission
 		return nil
 	}
 
+	if source.HasFeature(memd.FeatureCollections) && memd.IsCommandCollectionEncoded(pak.Command) {
+		manifest := selectedBucket.CollectionManifest()
+		if scopeName, _ := manifest.GetByID(pak.CollectionID); scopeName == "" {
+			x.writeUnknownCollectionReply(source, pak, manifest, start)
+			return nil
+		}
+	}
+
 	return kvproc.New(selectedBucket.Store(), vbOwnership)
+}
+
+// writeUnknownCollectionReply replies with the error body kv_engine sends for
+// an unknown collection, including the current manifest UID.
+func (x *kvImplCrud) writeUnknownCollectionReply(source mock.KvClient, pak *memd.Packet, manifest *mock.CollectionManifest, start time.Time) {
+	manifestUID := manifest.UID()
+	value := fmt.Sprintf(`{"error":{"context":"Unknown scope or collection in operation"},"manifest_uid":"%x"}`, manifestUID)
+
+	writePacketToSource(source, &memd.Packet{
+		Magic:    memd.CmdMagicRes,
+		Command:  pak.Command,
+		Opaque:   pak.Opaque,
+		Status:   memd.StatusCollectionUnknown,
+		Datatype: uint8(memd.DatatypeFlagJSON),
+		Value:    []byte(value),
+	}, start)
 }
 
 func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {

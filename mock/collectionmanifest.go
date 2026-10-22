@@ -191,6 +191,13 @@ func (m *CollectionManifest) DropScope(scope string) (uint64, error) {
 	return 0, ErrScopeNotFound
 }
 
+// UID returns the current manifest UID.
+func (m *CollectionManifest) UID() uint64 {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	return m.Rev
+}
+
 // GetManifest gets the current manifest represented as a list of scopes, including collections, and the manifest uid.
 func (m *CollectionManifest) GetManifest() (uint64, []CollectionManifestScope) {
 	m.lock.Lock()
