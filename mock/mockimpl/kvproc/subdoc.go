@@ -777,8 +777,16 @@ func (e SubDocCounterExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 	if !isNum {
 		return e.itemErrorResult(ErrSdPathMismatch)
 	}
+	// Only an integer can be incremented, however large. ParseInt reports a
+	// range error before it reaches a fraction or exponent, so those are
+	// rejected first.
+	if strings.ContainsAny(string(numVal), ".eE") {
+		return e.itemErrorResult(ErrSdPathMismatch)
+	}
 	curVal, err := strconv.ParseInt(string(numVal), 10, 64)
-	if err != nil {
+	if numErr, ok := err.(*strconv.NumError); ok && numErr.Err == strconv.ErrRange {
+		return e.itemErrorResult(ErrSdNumRange)
+	} else if err != nil {
 		return e.itemErrorResult(ErrSdPathMismatch)
 	}
 

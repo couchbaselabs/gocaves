@@ -233,3 +233,50 @@ func TestSubdocCounterRejectsInvalidDelta(t *testing.T) {
 	})
 	expectSpecError(t, resp, 0, memd.StatusSubDocBadDelta)
 }
+
+func TestSubdocCounterOnNumberOutsideInt64(t *testing.T) {
+	c := newTestKvConn(t)
+
+	for _, doc := range []string{
+		`{"counter":9223372036854775807999999999999999999999999999999}`,
+		`{"counter":-9223372036854775809}`,
+	} {
+		c.mustSucceed(&memd.Packet{
+			Command: memd.CmdSet,
+			Vbucket: c.vbID,
+			Key:     []byte("counter"),
+			Value:   []byte(doc),
+			Extras:  make([]byte, 8),
+		})
+		resp := c.Do(&memd.Packet{
+			Command: memd.CmdSubDocMultiMutation,
+			Vbucket: c.vbID,
+			Key:     []byte("counter"),
+			Value:   encodeMutationSpecs(subdocSpec{Op: memd.SubDocOpCounter, Path: "counter", Value: "1"}),
+		})
+		expectSpecError(t, resp, 0, memd.StatusSubDocBadRange)
+	}
+
+	// A number that is not an integer is a path mismatch, not a range error,
+	// even when its integer part is outside int64.
+	for _, doc := range []string{
+		`{"counter":1.5}`,
+		`{"counter":99999999999999999999.5}`,
+		`{"counter":100000000000000000000e1}`,
+	} {
+		c.mustSucceed(&memd.Packet{
+			Command: memd.CmdSet,
+			Vbucket: c.vbID,
+			Key:     []byte("counter"),
+			Value:   []byte(doc),
+			Extras:  make([]byte, 8),
+		})
+		resp := c.Do(&memd.Packet{
+			Command: memd.CmdSubDocMultiMutation,
+			Vbucket: c.vbID,
+			Key:     []byte("counter"),
+			Value:   encodeMutationSpecs(subdocSpec{Op: memd.SubDocOpCounter, Path: "counter", Value: "1"}),
+		})
+		expectSpecError(t, resp, 0, memd.StatusSubDocPathMismatch)
+	}
+}
