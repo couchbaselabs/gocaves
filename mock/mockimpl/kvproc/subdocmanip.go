@@ -1,8 +1,10 @@
 package kvproc
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 )
 
 type subDocManip struct {
@@ -19,7 +21,7 @@ func newSubDocManip(data []byte) (*subDocManip, error) {
 	}
 
 	var val interface{}
-	err := json.Unmarshal(data, &val)
+	err := decodeJSON(data, &val)
 	if err != nil {
 		return nil, ErrSdNotJSON
 	}
@@ -209,10 +211,24 @@ func (m *subDocManip) GetJSON() ([]byte, error) {
 	return json.Marshal(val)
 }
 
+// decodeJSON decodes a single JSON value. Numbers decode as json.Number, so
+// integers beyond 2^53 keep their exact digits for counters and re-encoding.
+func decodeJSON(data []byte, v interface{}) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return errors.New("unexpected data after JSON value")
+	}
+	return nil
+}
+
 // unmarshalSpecValue decodes the value of a mutation spec. A value that is not
 // JSON cannot be inserted into the document.
 func unmarshalSpecValue(data []byte, v interface{}) error {
-	if err := json.Unmarshal(data, v); err != nil {
+	if err := decodeJSON(data, v); err != nil {
 		return ErrSdCantInsert
 	}
 	return nil

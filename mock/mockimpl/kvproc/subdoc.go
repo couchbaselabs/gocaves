@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -751,13 +752,20 @@ func (e SubDocCounterExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 		return e.itemErrorResult(err)
 	}
 
-	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, false)
+	var deltaVal interface{}
+	if err := decodeJSON(op.Value, &deltaVal); err != nil {
+		return e.itemErrorResult(err)
+	}
+	deltaNum, isNum := deltaVal.(json.Number)
+	if !isNum {
+		return e.itemErrorResult(errors.New("counter delta is not a number"))
+	}
+	delta, err := strconv.ParseInt(string(deltaNum), 10, 64)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
 
-	var delta float64
-	err = json.Unmarshal(op.Value, &delta)
+	pathVal, err := docVal.GetByPath(op.Path, op.CreatePath, false)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
@@ -769,12 +777,20 @@ func (e SubDocCounterExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 		return e.itemErrorResult(err)
 	}
 
-	floatVal, isFloat := val.(float64)
-	if !isFloat {
+	numVal, isNum := val.(json.Number)
+	if !isNum {
+		return e.itemErrorResult(ErrSdPathMismatch)
+	}
+	curVal, err := strconv.ParseInt(string(numVal), 10, 64)
+	if err != nil {
 		return e.itemErrorResult(ErrSdPathMismatch)
 	}
 
-	newVal := int64(floatVal + delta)
+	// The result must stay within int64, as in kv_engine.
+	if (delta > 0 && curVal > math.MaxInt64-delta) || (delta < 0 && curVal < math.MinInt64-delta) {
+		return e.itemErrorResult(ErrSdCantInsert)
+	}
+	newVal := curVal + delta
 
 	err = pathVal.Set(newVal)
 	if err != nil {
