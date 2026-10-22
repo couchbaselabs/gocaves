@@ -1,7 +1,7 @@
 package error
 
 import (
-	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/checks"
 	"github.com/couchbaselabs/gocaves/checksuite/kv/helpers"
 	"github.com/couchbaselabs/gocaves/mock"

@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/couchbase/gocbcore/v9/memd"
+	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/mock"
 )
 
