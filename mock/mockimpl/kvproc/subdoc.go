@@ -752,15 +752,7 @@ func (e SubDocCounterExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 		return e.itemErrorResult(err)
 	}
 
-	var deltaVal interface{}
-	if err := decodeJSON(op.Value, &deltaVal); err != nil {
-		return e.itemErrorResult(err)
-	}
-	deltaNum, isNum := deltaVal.(json.Number)
-	if !isNum {
-		return e.itemErrorResult(errors.New("counter delta is not a number"))
-	}
-	delta, err := strconv.ParseInt(string(deltaNum), 10, 64)
+	delta, err := parseCounterDelta(op.Value)
 	if err != nil {
 		return e.itemErrorResult(err)
 	}
@@ -806,6 +798,20 @@ func (e SubDocCounterExecutor) Execute(op *SubDocOp) (*SubDocResult, error) {
 		Value: []byte(strconv.FormatInt(newVal, 10)),
 		Err:   nil,
 	}, nil
+}
+
+// parseCounterDelta accepts what kv_engine accepts as a counter delta: a
+// non-zero int64 in decimal, with an optional minus sign and no leading zeros.
+func parseCounterDelta(value []byte) (int64, error) {
+	digits := bytes.TrimPrefix(value, []byte("-"))
+	if len(digits) == 0 || digits[0] < '1' || digits[0] > '9' {
+		return 0, ErrSdDeltaInvalid
+	}
+	delta, err := strconv.ParseInt(string(value), 10, 64)
+	if err != nil || delta == 0 {
+		return 0, ErrSdDeltaInvalid
+	}
+	return delta, nil
 }
 
 func subDocArrayPush(docVal *subDocManip, op *SubDocOp, pushFront bool) error {

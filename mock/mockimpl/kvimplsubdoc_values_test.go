@@ -200,3 +200,36 @@ func TestSubdocArrayAddUniqueComparesText(t *testing.T) {
 		t.Errorf("unexpected document %s", resp.Value)
 	}
 }
+
+func TestSubdocCounterRejectsInvalidDelta(t *testing.T) {
+	c := newTestKvConn(t)
+
+	c.mustSucceed(&memd.Packet{
+		Command: memd.CmdSet,
+		Vbucket: c.vbID,
+		Key:     []byte("counter"),
+		Value:   []byte(`{"counter":1}`),
+		Extras:  make([]byte, 8),
+	})
+
+	for _, delta := range []string{"0", "-0", "01", "+1", "1.5", "1e3", "9223372036854775808", "\"1\""} {
+		resp := c.Do(&memd.Packet{
+			Command: memd.CmdSubDocMultiMutation,
+			Vbucket: c.vbID,
+			Key:     []byte("counter"),
+			Value:   encodeMutationSpecs(subdocSpec{Op: memd.SubDocOpCounter, Path: "counter", Value: delta}),
+		})
+		t.Run(delta, func(t *testing.T) {
+			expectSpecError(t, resp, 0, memd.StatusSubDocBadDelta)
+		})
+	}
+
+	// The delta is checked before the path is resolved.
+	resp := c.Do(&memd.Packet{
+		Command: memd.CmdSubDocMultiMutation,
+		Vbucket: c.vbID,
+		Key:     []byte("counter"),
+		Value:   encodeMutationSpecs(subdocSpec{Op: memd.SubDocOpCounter, Path: "missing", Value: "0"}),
+	})
+	expectSpecError(t, resp, 0, memd.StatusSubDocBadDelta)
+}
