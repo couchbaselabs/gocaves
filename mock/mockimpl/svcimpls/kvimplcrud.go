@@ -450,14 +450,15 @@ func (x *kvImplCrud) handleSetRequest(source mock.KvClient, pak *memd.Packet, st
 		expiry := binary.BigEndian.Uint32(pak.Extras[4:])
 
 		resp, err := proc.Set(kvproc.StoreOptions{
-			Vbucket:      uint(pak.Vbucket),
-			CollectionID: uint(pak.CollectionID),
-			Key:          pak.Key,
-			Cas:          pak.Cas,
-			Datatype:     pak.Datatype,
-			Value:        pak.Value,
-			Flags:        flags,
-			Expiry:       expiry,
+			Vbucket:        uint(pak.Vbucket),
+			CollectionID:   uint(pak.CollectionID),
+			Key:            pak.Key,
+			Cas:            pak.Cas,
+			Datatype:       pak.Datatype,
+			Value:          pak.Value,
+			Flags:          flags,
+			Expiry:         expiry,
+			PreserveExpiry: pak.PreserveExpiryFrame != nil,
 		})
 		if err != nil {
 			x.writeProcErr(source, pak, err, start)
@@ -488,14 +489,15 @@ func (x *kvImplCrud) handleReplaceRequest(source mock.KvClient, pak *memd.Packet
 		expiry := binary.BigEndian.Uint32(pak.Extras[4:])
 
 		resp, err := proc.Replace(kvproc.StoreOptions{
-			Vbucket:      uint(pak.Vbucket),
-			CollectionID: uint(pak.CollectionID),
-			Key:          pak.Key,
-			Cas:          pak.Cas,
-			Datatype:     pak.Datatype,
-			Value:        pak.Value,
-			Flags:        flags,
-			Expiry:       expiry,
+			Vbucket:        uint(pak.Vbucket),
+			CollectionID:   uint(pak.CollectionID),
+			Key:            pak.Key,
+			Cas:            pak.Cas,
+			Datatype:       pak.Datatype,
+			Value:          pak.Value,
+			Flags:          flags,
+			Expiry:         expiry,
+			PreserveExpiry: pak.PreserveExpiryFrame != nil,
 		})
 		if err != nil {
 			x.writeProcErr(source, pak, err, start)
@@ -1107,6 +1109,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			CreateOnly:      docFlags&memd.SubdocDocFlagAddDoc != 0,
 			Ops:             ops,
 			Expiry:          expiry,
+			PreserveExpiry:  pak.PreserveExpiryFrame != nil,
 			Cas:             pak.Cas,
 		})
 		if err != nil {

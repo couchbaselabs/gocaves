@@ -44,13 +44,16 @@ func (h *hookHelper) validateRequest(source mock.KvClient, pak *memd.Packet) (me
 	if status, context := checkHeader(source, pak); status != memd.StatusSuccess {
 		return status, context
 	}
-	return checkFrames(pak)
+	if status, context := checkFrames(pak); status != memd.StatusSuccess {
+		return status, context
+	}
+	return checkPreserveTTLFrame(pak)
 }
 
 // hasFrames reports whether a request carries a frame validateRequest checks
 // the request for.
 func hasFrames(pak *memd.Packet) bool {
-	return pak.DurabilityLevelFrame != nil || pak.BarrierFrame != nil || len(pak.UnsupportedFrames) > 0
+	return pak.DurabilityLevelFrame != nil || pak.BarrierFrame != nil || pak.PreserveExpiryFrame != nil || len(pak.UnsupportedFrames) > 0
 }
 
 // writeErrorContextReply answers a request with status and the error context
@@ -75,4 +78,20 @@ func writeErrorContextReply(source mock.KvClient, pak *memd.Packet, status memd.
 		Datatype: uint8(memd.DatatypeFlagJSON),
 		Value:    value,
 	}, start)
+}
+
+// checkPreserveTTLFrame validates a PreserveTtl frame as kv_engine does: only
+// the commands below accept it. kv_engine also rejects a frame that carries
+// data, which memd.Conn does not report.
+func checkPreserveTTLFrame(pak *memd.Packet) (memd.StatusCode, string) {
+	if pak.PreserveExpiryFrame == nil {
+		return memd.StatusSuccess, ""
+	}
+	switch pak.Command {
+	case memd.CmdSet, memd.CmdReplace, memd.CmdIncrement, memd.CmdDecrement,
+		memd.CmdAppend, memd.CmdPrepend, memd.CmdSubDocMultiMutation:
+		return memd.StatusSuccess, ""
+	default:
+		return memd.StatusNotSupported, "This command does not support PreserveTtl"
+	}
 }
