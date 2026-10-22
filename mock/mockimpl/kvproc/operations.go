@@ -175,6 +175,9 @@ type StoreOptions struct {
 	Value        []byte
 	Flags        uint32
 	Expiry       uint32
+	// PreserveExpiry keeps the expiry of an existing document instead of
+	// replacing it with Expiry.
+	PreserveExpiry bool
 }
 
 // StoreResult contains the results for various store operations.
@@ -270,11 +273,13 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 			}
 
 			// Otherwise we simply update the value
+			if !opts.PreserveExpiry || idoc.IsDeleted {
+				idoc.Expiry = doc.Expiry
+			}
 			idoc.IsDeleted = false
 			idoc.Value = doc.Value
 			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
-			idoc.Expiry = doc.Expiry
 			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
 			return idoc, nil
@@ -331,7 +336,9 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 			idoc.Value = doc.Value
 			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
-			idoc.Expiry = doc.Expiry
+			if !opts.PreserveExpiry {
+				idoc.Expiry = doc.Expiry
+			}
 			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
 			return idoc, nil
@@ -516,10 +523,12 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 			if e.durabilityErr != nil {
 				return nil, e.durabilityErr
 			}
+
+			// The expiry of the request applies only when the counter is
+			// created. kv_engine keeps the expiry of an existing counter.
 			idoc.Value = []byte(fmt.Sprintf("%d", val))
 			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
-			idoc.Expiry = doc.Expiry
 			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
 			return idoc, nil
@@ -904,6 +913,7 @@ type MultiMutateOptions struct {
 	CreateIfMissing bool
 	CreateOnly      bool
 	Expiry          uint32
+	PreserveExpiry  bool
 	Cas             uint64
 }
 
@@ -1060,12 +1070,15 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 						return nil, ErrCasMismatch
 					}
 
+					// A mutation takes the expiry of the request, and a request
+					// without one clears it. PreserveExpiry keeps the expiry of a
+					// live document; a deleted or expired one has none to keep.
+					if !opts.PreserveExpiry || idoc.IsDeleted {
+						idoc.Expiry = mdoc.Expiry
+					}
 					idoc.Value = doc.Value
 					idoc.Xattrs = doc.Xattrs
 					idoc.IsDeleted = doc.IsDeleted
-					// A mutation takes the expiry of the request, and a request
-					// without one clears it.
-					idoc.Expiry = mdoc.Expiry
 				}
 
 				idoc.LockExpiry = newMetaDoc.LockExpiry

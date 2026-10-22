@@ -46,6 +46,7 @@ func (x *kvImplHello) handleHelloRequest(source mock.KvClient, pak *memd.Packet,
 		memd.FeatureCollections,
 		//memd.FeatureOpenTracing,
 		memd.FeatureCreateAsDeleted,
+		memd.FeaturePreserveExpiry,
 	}
 	enabledFeatures := make([]memd.HelloFeature, 0)
 
