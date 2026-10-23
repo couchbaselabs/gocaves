@@ -441,19 +441,13 @@ func (s *Vbucket) isSeqNoInHistoryLocked(vbUUID, seqNo uint64) bool {
 		return false
 	}
 
-	if foundHistIdx+1 >= len(s.revData) {
-		// This is the last entry in the history, everything past it is fine.
-		return true
+	// Each later branch starts at the sequence number its rollback kept. A
+	// sequence number past any of them was discarded by that rollback.
+	for _, later := range s.revData[foundHistIdx+1:] {
+		if seqNo > later.SeqNo {
+			return false
+		}
 	}
-
-	if seqNo >= s.revData[foundHistIdx+1].SeqNo {
-		// This seqno is later in the history than the vbuuid would indicated.
-		// This likely indicates that the mutation came from a revision which
-		// has since been rolled back a new history started.
-		return false
-	}
-
-	// Otherwise we are within the acceptable bounds.
 	return true
 }
 
@@ -477,8 +471,11 @@ func (s *Vbucket) rollback(snap *vbucketSnapshot) error {
 	s.documents = newMutations
 	s.maxSeqNo = snap.SeqNo
 
+	// Every branch of history gets its own UUID, as a failover entry does
+	// on a server, so a mutation is identified by its UUID and sequence
+	// number across any number of rollbacks.
 	s.revData = append(s.revData, VbRevData{
-		VbUUID: 0,
+		VbUUID: generateNewVbUUID(),
 		SeqNo:  s.maxSeqNo,
 	})
 
