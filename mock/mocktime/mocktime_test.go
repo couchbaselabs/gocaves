@@ -218,3 +218,29 @@ func TestBackInTime(t *testing.T) {
 		t.Errorf("after func was not invoked after its timeout")
 	}
 }
+
+func TestTimeShiftDuringTimeTravel(t *testing.T) {
+	// Catches a TimeShift that reads the shift without an atomic load;
+	// the race detector reports it.
+	chrono := &Chrono{}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 10; i++ {
+			chrono.TimeTravel(time.Second)
+		}
+	}()
+
+	for {
+		select {
+		case <-done:
+			if shift := chrono.TimeShift(); shift != 10*time.Second {
+				t.Fatalf("time shift was %v after ten one-second travels", shift)
+			}
+			return
+		default:
+			chrono.TimeShift()
+		}
+	}
+}
