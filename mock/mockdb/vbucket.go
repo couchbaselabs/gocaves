@@ -2,8 +2,10 @@ package mockdb
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"math/rand"
+	"slices"
 	"sync"
 	"time"
 
@@ -30,7 +32,55 @@ type Document struct {
 	SeqNo        uint64
 	ModifiedTime time.Time
 	RevID        uint64
+
+	// SyncWrite, when set on a document handed to a mutation, makes the
+	// mutation a durable write, tracked from the moment it gets its sequence
+	// number. It is not stored with the document.
+	SyncWrite *SyncWrite
 }
+
+// SyncWrite is a durable write, tracked by its vbucket as kv_engine's
+// durability monitor tracks a prepare, until its response has been sent.
+type SyncWrite struct {
+	// PersistActive is set when the active copy acknowledges the write only
+	// once it has persisted it: majority_and_persist_to_active and
+	// persist_to_majority.
+	PersistActive bool
+	// PersistReplicas is set when replicas acknowledge the write only once
+	// they have persisted it: persist_to_majority.
+	PersistReplicas bool
+	// Replicas is the number of replicas that must acknowledge the write
+	// besides the active copy.
+	Replicas uint
+	// Deadline is the mock time after which the write is aborted, once
+	// every earlier write on the vbucket has completed.
+	Deadline time.Time
+	// Client identifies the connection that made the write. kv_engine
+	// completes the writes of a vbucket in sequence-number order, so a
+	// connection receives their responses in that order.
+	Client any
+
+	vbUUID uint64
+	seqNo  uint64
+	// end is the first instant the write is complete, and aborted whether it
+	// is aborted then. Both follow from the write and the one before it, so
+	// they are fixed when the write is stored.
+	end     time.Time
+	aborted bool
+}
+
+// SyncWriteState is the state of a durable write at a given mock time.
+type SyncWriteState int
+
+const (
+	// SyncWriteUntracked is a write the vbucket does not track: it was not
+	// durable, it is in another history than the current one, or it has been
+	// answered.
+	SyncWriteUntracked SyncWriteState = iota
+	SyncWritePending
+	SyncWriteCommitted
+	SyncWriteAborted
+)
 
 func copyDocument(src *Document) *Document {
 	var dst Document
@@ -75,6 +125,17 @@ type Vbucket struct {
 	replicaLatency time.Duration
 	persistLatency time.Duration
 	revData        []VbRevData
+	// syncWrites are the durable writes of the current history whose
+	// responses are still to be sent, in sequence-number order.
+	syncWrites []SyncWrite
+	// lastSyncWriteEnd is when the last durable write stored in the current
+	// history completes, and lastSyncWriteAborted whether it is aborted.
+	lastSyncWriteEnd     time.Time
+	lastSyncWriteAborted bool
+	// discardedSyncWrites are the writes a flush or rollback discarded
+	// before their responses were sent. They keep the responses to a
+	// client in sequence-number order.
+	discardedSyncWrites []SyncWrite
 }
 
 type newVbucketOptions struct {
@@ -169,6 +230,15 @@ func (s *Vbucket) pushDocMutationLocked(doc *Document) *Document {
 
 	s.documents = append(s.documents, newDoc)
 
+	if doc.SyncWrite != nil {
+		w := *doc.SyncWrite
+		w.seqNo = newDoc.SeqNo
+		w.vbUUID = newDoc.VbUUID
+		w.end, w.aborted = s.syncWriteEndLocked(&w, newDoc.ModifiedTime, s.lastSyncWriteEnd, s.lastSyncWriteAborted)
+		s.lastSyncWriteEnd, s.lastSyncWriteAborted = w.end, w.aborted
+		s.syncWrites = append(s.syncWrites, w)
+	}
+
 	return copyDocument(newDoc)
 }
 
@@ -215,6 +285,117 @@ func (s *Vbucket) CurrentMetaState(repIdx uint) VbMetaState {
 		CurrentSeqNo: currentSeqNo,
 		PersistSeqNo: persistSeqNo,
 	}
+}
+
+// SyncWriteStateAt returns the state at mock time at of the durable write with
+// sequence number seqNo in the history vbUUID.
+func (s *Vbucket) SyncWriteStateAt(vbUUID, seqNo uint64, at time.Time) SyncWriteState {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if vbUUID != s.currentUUIDLocked() {
+		return SyncWriteUntracked
+	}
+	i, found := slices.BinarySearchFunc(s.syncWrites, seqNo, func(w SyncWrite, seqNo uint64) int {
+		return cmp.Compare(w.seqNo, seqNo)
+	})
+	if !found {
+		return SyncWriteUntracked
+	}
+	switch w := &s.syncWrites[i]; {
+	case at.Before(w.end):
+		return SyncWritePending
+	case w.aborted:
+		return SyncWriteAborted
+	default:
+		return SyncWriteCommitted
+	}
+}
+
+// syncWriteEndLocked returns the first instant w, stored at stored, is
+// complete, and whether it is aborted, given that the write before it on the
+// vbucket is complete from prevEnd. kv_engine expires a write only after its
+// deadline, so an abort is complete a nanosecond after it. kv_engine completes
+// the writes of a vbucket in sequence-number order: a write that meets its
+// level waits for the writes before it, and one past its deadline is aborted
+// only once it is the first incomplete write. A write behind an aborted one is
+// aborted with it if its own deadline has passed, as removeExpired aborts
+// every expired write at the front of the queue.
+func (s *Vbucket) syncWriteEndLocked(w *SyncWrite, stored, prevEnd time.Time, prevAborted bool) (time.Time, bool) {
+	if prevAborted && w.Deadline.Before(prevEnd) {
+		return prevEnd, true
+	}
+
+	// Replica r receives a mutation r replica latencies after the active
+	// copy, and each copy persists it a persist latency after receiving it.
+	durable := stored
+	if w.PersistActive {
+		durable = durable.Add(s.persistLatency)
+	}
+	if w.Replicas > 0 {
+		replicated := stored.Add(time.Duration(w.Replicas) * s.replicaLatency)
+		if w.PersistReplicas {
+			replicated = replicated.Add(s.persistLatency)
+		}
+		if replicated.After(durable) {
+			durable = replicated
+		}
+	}
+
+	end, limit := durable, w.Deadline
+	if end.Before(prevEnd) {
+		end = prevEnd
+	}
+	if limit.Before(prevEnd) {
+		limit = prevEnd
+	}
+	if end.After(limit) {
+		return limit.Add(time.Nanosecond), true
+	}
+	return end, false
+}
+
+// MarkSyncWriteReplied records that the response to the durable write with
+// sequence number seqNo in the history vbUUID has been sent, or will not be,
+// and stops tracking it.
+func (s *Vbucket) MarkSyncWriteReplied(vbUUID, seqNo uint64) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	// slices.DeleteFunc clears the vacated tail, so no client stays
+	// reachable through the backing arrays.
+	answered := func(w SyncWrite) bool { return w.vbUUID == vbUUID && w.seqNo == seqNo }
+	s.discardedSyncWrites = slices.DeleteFunc(s.discardedSyncWrites, answered)
+	s.syncWrites = slices.DeleteFunc(s.syncWrites, answered)
+}
+
+// EarlierSyncWritesReplied reports whether every durable write that the same
+// client made on this vbucket before the one with sequence number seqNo in the
+// history vbUUID has had its response sent. The writes a flush or rollback
+// discarded come before those of the current history.
+func (s *Vbucket) EarlierSyncWritesReplied(vbUUID, seqNo uint64, client any) bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	for _, writes := range [][]SyncWrite{s.discardedSyncWrites, s.syncWrites} {
+		for _, w := range writes {
+			if w.vbUUID == vbUUID && w.seqNo == seqNo {
+				return true
+			}
+			if w.Client == client {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// discardSyncWritesLocked ends the durable writes of the current history,
+// keeping them only to order their responses.
+func (s *Vbucket) discardSyncWritesLocked() {
+	s.discardedSyncWrites = append(s.discardedSyncWrites, s.syncWrites...)
+	s.syncWrites = nil
+	s.lastSyncWriteEnd, s.lastSyncWriteAborted = time.Time{}, false
 }
 
 // GetAll returns all documents in the vbucket.
@@ -470,6 +651,7 @@ func (s *Vbucket) rollback(snap *vbucketSnapshot) error {
 
 	s.documents = newMutations
 	s.maxSeqNo = snap.SeqNo
+	s.discardSyncWritesLocked()
 
 	// Every branch of history gets its own UUID, as a failover entry does
 	// on a server, so a mutation is identified by its UUID and sequence
@@ -489,6 +671,7 @@ func (s *Vbucket) Flush() {
 	defer s.lock.Unlock()
 
 	s.documents = make([]*Document, 0)
+	s.discardSyncWritesLocked()
 	s.revData = []VbRevData{
 		{
 			VbUUID: generateNewVbUUID(),
