@@ -632,16 +632,10 @@ func (s *Vbucket) isSeqNoInHistoryLocked(vbUUID, seqNo uint64) bool {
 	return true
 }
 
-// rollback will rollback this vbucket to a specific seqno (including that seqno).
-// It will additionally rollback the history for this vbucket to match.
-func (s *Vbucket) rollback(snap *vbucketSnapshot) error {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	if !s.isSeqNoInHistoryLocked(snap.VbUUID, snap.SeqNo) {
-		return errors.New("snapshot is no longer valid")
-	}
-
+// rollbackLocked will rollback this vbucket to a specific seqno (including that
+// seqno). It will additionally rollback the history for this vbucket to match.
+// The snapshot must be in the vbucket's history.
+func (s *Vbucket) rollbackLocked(snap *vbucketSnapshot) {
 	newMutations := make([]*Document, 0, len(s.documents))
 	for _, mutation := range s.documents {
 		if mutation.SeqNo <= snap.SeqNo {
@@ -660,8 +654,6 @@ func (s *Vbucket) rollback(snap *vbucketSnapshot) error {
 		VbUUID: generateNewVbUUID(),
 		SeqNo:  s.maxSeqNo,
 	})
-
-	return nil
 }
 
 // Flush is a basic implementation of this process and simply resets the documents in the vbucket and resets the

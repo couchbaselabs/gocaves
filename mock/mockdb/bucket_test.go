@@ -2,6 +2,7 @@ package mockdb
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -250,5 +251,54 @@ func TestRollbackToSnapshotDiscardedByLaterRollback(t *testing.T) {
 	// The second rollback discarded what the late snapshot names.
 	if err := bucket.Rollback(late); err == nil {
 		t.Errorf("expected the discarded snapshot to be refused")
+	}
+}
+
+func TestFailedRollbackLeavesBucketUnchanged(t *testing.T) {
+	chrono := &mocktime.Chrono{}
+	bucket, err := NewBucket(NewBucketOptions{Chrono: chrono, NumReplicas: 1, NumVbuckets: 2})
+	if err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+	insert := func(vbID uint, key string) {
+		t.Helper()
+		if _, err := bucket.Insert(&Document{VbID: vbID, Key: []byte(key), Value: []byte("{}"), Cas: GenerateNewCas(chrono.Now())}); err != nil {
+			t.Fatalf("failed to insert document: %v", err)
+		}
+	}
+	type vbState struct {
+		meta VbMetaState
+		docs int
+	}
+	state := func() []vbState {
+		t.Helper()
+		var states []vbState
+		for vbID := uint(0); vbID < 2; vbID++ {
+			vbucket := bucket.GetVbucket(vbID)
+			docs, err := vbucket.GetAll(0, 0)
+			if err != nil {
+				t.Fatalf("failed to read vbucket %d: %v", vbID, err)
+			}
+			states = append(states, vbState{meta: vbucket.CurrentMetaState(0), docs: len(docs)})
+		}
+		return states
+	}
+
+	early := bucket.Snapshot()
+	insert(1, "first")
+	late := bucket.Snapshot()
+	if err := bucket.Rollback(early); err != nil {
+		t.Fatalf("failed to roll back to the early snapshot: %v", err)
+	}
+	// Vbucket 0 still has the late snapshot in its history; vbucket 1 does
+	// not.
+	insert(0, "second")
+	before := state()
+
+	if err := bucket.Rollback(late); err == nil {
+		t.Fatalf("expected the discarded snapshot to be refused")
+	}
+	if after := state(); !reflect.DeepEqual(after, before) {
+		t.Errorf("failed rollback changed the bucket: before %+v, after %+v", before, after)
 	}
 }

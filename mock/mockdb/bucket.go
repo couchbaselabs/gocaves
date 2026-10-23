@@ -173,13 +173,23 @@ func (b *Bucket) Snapshot() *BucketSnapshot {
 }
 
 // Rollback will rollback the bucket to a previously snapshotted state.
+// Every vbucket is checked before any is rolled back, so a rollback that fails
+// leaves the bucket unchanged.
 func (b *Bucket) Rollback(snap *BucketSnapshot) error {
-	// Rollback all the vbuckets
+	for _, vbucket := range b.vbuckets {
+		vbucket.lock.Lock()
+		defer vbucket.lock.Unlock()
+	}
+
 	for vbIdx, vbucket := range b.vbuckets {
-		err := vbucket.rollback(snap.vbuckets[vbIdx])
-		if err != nil {
-			return err
+		vbSnap := snap.vbuckets[vbIdx]
+		if !vbucket.isSeqNoInHistoryLocked(vbSnap.VbUUID, vbSnap.SeqNo) {
+			return errors.New("snapshot is no longer valid")
 		}
+	}
+
+	for vbIdx, vbucket := range b.vbuckets {
+		vbucket.rollbackLocked(snap.vbuckets[vbIdx])
 	}
 
 	return nil
