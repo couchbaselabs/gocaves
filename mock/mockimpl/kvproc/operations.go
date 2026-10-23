@@ -44,7 +44,7 @@ func (e *Engine) Get(opts GetOptions) (*GetResult, error) {
 
 	if e.docIsLocked(doc) {
 		// If the doc is locked, we return -1 as the CAS instead.
-		doc.Cas = 0xFFFFFFFFFFFFFFFF
+		doc.Cas = lockedCas
 	}
 
 	return &GetResult{
@@ -88,7 +88,7 @@ func (e *Engine) GetMeta(opts GetMetaOptions) (*GetMetaResult, error) {
 
 	if e.docIsLocked(doc) {
 		// If the doc is locked, we return -1 as the CAS instead.
-		doc.Cas = 0xFFFFFFFFFFFFFFFF
+		doc.Cas = lockedCas
 	}
 
 	return &GetMetaResult{
@@ -127,7 +127,7 @@ func (e *Engine) GetRandom(opts GetRandomOptions) (*GetRandomResult, error) {
 
 	if e.docIsLocked(doc) {
 		// If the doc is locked, we return -1 as the CAS instead.
-		doc.Cas = 0xFFFFFFFFFFFFFFFF
+		doc.Cas = lockedCas
 	}
 
 	return &GetRandomResult{
@@ -481,26 +481,32 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 				return doc, nil
 			}
 
-			// kv_engine parses the value before it stores the new one, so a
-			// value that is not a number fails before the lock and
-			// durability checks.
-			val, err := strconv.ParseUint(string(idoc.Value), 10, 64)
-			if err != nil {
-				return nil, err
+			// kv_engine compares a supplied CAS with the one a read reports,
+			// which for a locked document is lockedCas. It then parses the
+			// value before it stores the new one, so a value that is not a
+			// number fails before the lock and durability checks.
+			// The lock is read once, so the checks below agree on it.
+			locked := e.docIsLocked(idoc)
+			readCas := idoc.Cas
+			if locked {
+				readCas = lockedCas
+			}
+			if opts.Cas != 0 && opts.Cas != readCas {
+				return nil, ErrCasMismatch
+			}
+			val, ok := parseCounter(idoc.Value)
+			if !ok {
+				return nil, ErrDeltaBadval
 			}
 
 			// kv_engine stores a counter on a locked document with the locked
 			// CAS when the request has none, and checks durability first.
-			if e.docIsLocked(idoc) && opts.Cas == 0 && e.durabilityErr != nil {
+			if locked && opts.Cas == 0 && e.durabilityErr != nil {
 				return nil, e.durabilityErr
 			}
 
-			if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
+			if locked && idoc.Cas != opts.Cas {
 				return nil, ErrLocked
-			}
-
-			if opts.Cas != 0 && idoc.Cas != opts.Cas {
-				return nil, ErrCasMismatch
 			}
 
 			// TODO(brett19): Double-check the saturation logic on the server...
@@ -573,8 +579,10 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 	newDoc, err := e.update(
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
+			// kv_engine answers APPEND and PREPEND on a missing document with
+			// not_stored.
 			if idoc == nil || idoc.IsDeleted {
-				return nil, ErrDocNotFound
+				return nil, ErrNotStored
 			}
 
 			// kv_engine stores to a locked document with the CAS the request
@@ -926,8 +934,8 @@ type MultiMutateResult struct {
 }
 
 // MultiMutate performs an SD_MULTIMUTATE operation.
-// afterMultiMutateRead runs between MultiMutate's read of the document and its
-// update. Tests use it to change the document in that window.
+// afterMultiMutateRead runs between MultiMutate's checks of the document it
+// read and its update. Tests use it to change the document in that window.
 var afterMultiMutateRead = func() {}
 
 func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error) {
@@ -992,18 +1000,27 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		// The update below is valid only for the document as read here; doc
 		// itself is revived below for a create.
 		readDeleted := doc != nil && doc.IsDeleted
-		afterMultiMutateRead()
+
+		// kv_engine refuses an Add of an existing document before it looks at
+		// the CAS or the lock.
+		if opts.CreateOnly && doc != nil && !doc.IsDeleted {
+			return nil, ErrDocExists
+		}
+
+		// A locked document is refused only without a CAS, or with the CAS a
+		// GET reports for it; a supplied CAS is checked against the lock when
+		// the mutation is stored, as in kv_engine.
+		locked := e.docIsLocked(doc)
+		if locked && (opts.Cas == 0 || opts.Cas == lockedCas) {
+			return nil, ErrLocked
+		}
 
 		// Check for cas mismatch before we do any work. We'll effectively be doing this check again during the update
 		// too so if anyone performs a mutation during that time then we'll catch it there too.
 		// If doc is deleted, and we're only updating the tombstoned xattr then no cas mismatch is performed, so we can
 		// continue
-		if opts.Cas != 0 && doc.Cas != opts.Cas && !(doc.IsDeleted && !xattrUpdateOnly) {
+		if !locked && opts.Cas != 0 && doc.Cas != opts.Cas && !(doc.IsDeleted && !xattrUpdateOnly) {
 			return nil, ErrCasMismatch
-		}
-
-		if opts.CreateOnly && doc != nil && !doc.IsDeleted {
-			return nil, ErrDocExists
 		}
 
 		if opts.CreateIfMissing || opts.CreateOnly {
@@ -1023,15 +1040,20 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			return nil, ErrDocNotFound
 		}
 
-		if e.docIsLocked(doc) {
-			return nil, ErrLocked
-		}
+		afterMultiMutateRead()
 
 		newMetaDoc := &mockdb.Document{
 			Cas: mockdb.GenerateNewCas(e.HLC()),
 		}
 
+		// The specs see the CAS a read reports, which for a locked document
+		// is lockedCas, as kv_engine expands ${$document.CAS} from it.
+		readCas := doc.Cas
+		if locked {
+			doc.Cas = lockedCas
+		}
 		sdRes, err := e.executeSdOps(doc, newMetaDoc, opts.Ops, false)
+		doc.Cas = readCas
 		if err != nil {
 			return nil, err
 		}
@@ -1060,8 +1082,14 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 
 					idoc = doc
 				} else {
-					if e.docIsLocked(idoc) {
+					if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
 						return nil, ErrLocked
+					}
+					// The CAS of a request for a document locked when it was read is
+					// checked here. If the lock has since gone, the retry reads the
+					// document unlocked and reports the mismatch.
+					if locked && idoc.Cas != opts.Cas {
+						return nil, ErrCasMismatch
 					}
 
 					// A document that expired or was deleted since it was read

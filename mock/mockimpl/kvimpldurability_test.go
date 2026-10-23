@@ -487,8 +487,8 @@ func TestDurabilityCheckedBeforeLockWhereKvEngineStores(t *testing.T) {
 		Command: memd.CmdIncrement, Vbucket: vbID, Key: []byte("text"), Extras: make([]byte, 20),
 		DurabilityLevelFrame: durable,
 	})
-	if resp.Status == memd.StatusDurabilityImpossible || resp.Status == memd.StatusLocked {
-		t.Errorf("INCREMENT of a value that is not a number: expected the value refused first, got status 0x%02x", uint16(resp.Status))
+	if resp.Status != memd.StatusBadDelta {
+		t.Errorf("INCREMENT of a value that is not a number: expected status 0x%02x, got 0x%02x", uint16(memd.StatusBadDelta), uint16(resp.Status))
 	}
 }
 
