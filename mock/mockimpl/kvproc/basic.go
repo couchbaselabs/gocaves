@@ -1,6 +1,8 @@
 package kvproc
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/couchbaselabs/gocaves/mock/mockdb"
@@ -79,8 +81,32 @@ func (e *Engine) confirmIsMaster(vbIdx uint) error {
 	return nil
 }
 
+// lockedCas is the CAS a read reports for a locked document.
+const lockedCas = 0xFFFFFFFFFFFFFFFF
+
+// parseCounter parses a counter value as kv_engine's safe_strtoull does.
+// Leading white space and one plus sign are skipped, and the digits may be
+// followed by white space and then anything.
+func parseCounter(value []byte) (uint64, bool) {
+	s := strings.TrimLeft(string(value), " \t\n\v\f\r")
+	s = strings.TrimPrefix(s, "+")
+	digits := strings.IndexFunc(s, func(r rune) bool { return r < '0' || r > '9' })
+	if digits == -1 {
+		digits = len(s)
+	} else if !strings.ContainsRune(" \t\n\v\f\r", rune(s[digits])) {
+		return 0, false
+	}
+	val, err := strconv.ParseUint(s[:digits], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return val, true
+}
+
+// docIsLocked reports whether doc is locked. A deleted or expired document is
+// not, whatever lock it carried.
 func (e *Engine) docIsLocked(doc *mockdb.Document) bool {
-	if doc == nil {
+	if doc == nil || doc.IsDeleted {
 		return false
 	}
 

@@ -9,6 +9,8 @@ var (
 	ErrInternal               = errors.New("internal error")
 	ErrDocExists              = errors.New("doc exists")
 	ErrDocNotFound            = errors.New("doc not found")
+	ErrNotStored              = errors.New("not stored")
+	ErrDeltaBadval            = errors.New("counter value is not a number")
 	ErrValueTooBig            = errors.New("doc value too big")
 	ErrCasMismatch            = errors.New("cas mismatch")
 	ErrLocked                 = errors.New("locked")
