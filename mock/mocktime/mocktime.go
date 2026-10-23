@@ -59,7 +59,7 @@ func (t *Chrono) TimeTravel(d time.Duration) {
 
 // TimeShift returns the current time shift from the mock time.
 func (t *Chrono) TimeShift() time.Duration {
-	return time.Duration(t.timeShiftNs)
+	return time.Duration(atomic.LoadUint64(&t.timeShiftNs))
 }
 
 func (t *Chrono) addTimer(mtmr *mockTimer) {
