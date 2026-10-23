@@ -304,3 +304,22 @@ func (c *Client) AddBucketCluster(clusterID string, name, typ string, replicas u
 	})
 	return err
 }
+
+// LoadSampleCluster loads a sample archive, such as travel-sample.zip, into a
+// bucket of a specific cluster. The path is read on the machine running CAVES.
+func (c *Client) LoadSampleCluster(clusterID, bucketName, zipPath string) error {
+	resp, err := c.roundTripCommand(map[string]interface{}{
+		"type":    "loadsample",
+		"cluster": clusterID,
+		"bucket":  bucketName,
+		"path":    zipPath,
+	})
+	if err != nil {
+		return err
+	}
+
+	if msg, ok := resp["error"].(string); ok && msg != "" {
+		return errors.New(msg)
+	}
+	return nil
+}

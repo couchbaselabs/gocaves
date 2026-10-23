@@ -84,3 +84,17 @@ func (m *clusterManager) AddBucket(clusterID, name, typ string, replicas uint) e
 	})
 	return err
 }
+
+func (m *clusterManager) LoadSample(clusterID, bucketName, path string) error {
+	ncluster := m.Get(clusterID)
+	if ncluster == nil {
+		return errors.New("invalid cluster id")
+	}
+
+	bucket := ncluster.Mock.GetBucket(bucketName)
+	if bucket == nil {
+		return errors.New("invalid bucket name")
+	}
+
+	return mock.LoadSample(bucket, path)
+}
