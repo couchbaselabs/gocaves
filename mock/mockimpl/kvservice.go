@@ -298,13 +298,15 @@ func (c *kvClient) RunDetached(fn func()) {
 	}()
 }
 
-// Close attempts to close the connection.
+// Close closes the connection. It does not wait for the reader to exit: a
+// handler calls it on the dispatcher, and the reader may be waiting for the
+// dispatcher to run a queued HELLO.
 func (c *kvClient) Close() error {
 	cli := c.memdClient()
 	if cli == nil {
 		return errKvClientLost
 	}
-	return cli.Close()
+	return cli.Abort()
 }
 
 // kvService represents an instance of the kv service.

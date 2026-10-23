@@ -231,3 +231,36 @@ func TestKvConnRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected value %q", resp.Value)
 	}
 }
+
+// A hook may close its connection while a HELLO waits behind the request it is
+// handling: the reader waits for that HELLO to be dispatched, so a close that
+// waited for the reader would never return.
+func TestHookClosesConnectionWithHelloQueued(t *testing.T) {
+	c := newTestKvConn(t)
+
+	closed := make(chan error, 1)
+	c.cluster.KvInHooks().Add(func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
+		if pak.Command != memd.CmdNoop {
+			next()
+			return
+		}
+		// Give the reader time to queue the HELLO and wait for it.
+		time.Sleep(100 * time.Millisecond)
+		closed <- source.Close()
+	})
+
+	for _, cmd := range []memd.CmdCode{memd.CmdNoop, memd.CmdHello} {
+		if err := c.conn.WritePacket(&memd.Packet{Magic: memd.CmdMagicReq, Command: cmd}); err != nil {
+			t.Fatalf("failed to write %s: %v", cmd.Name(), err)
+		}
+	}
+
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatalf("failed to close the connection: %v", err)
+		}
+	case <-time.After(testKvTimeout):
+		t.Fatalf("closing the connection from a hook did not return")
+	}
+}
