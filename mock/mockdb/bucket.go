@@ -140,7 +140,7 @@ func (b *Bucket) Remove(vbIdx uint, key []byte) (*Document, error) {
 // GetVbucket will return the Vbucket object for a particular replica and
 // vbucket index within this particular bucket store.
 func (b *Bucket) GetVbucket(vbIdx uint) *Vbucket {
-	if vbIdx > uint(len(b.vbuckets)) {
+	if vbIdx >= uint(len(b.vbuckets)) {
 		return nil
 	}
 

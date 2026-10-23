@@ -159,3 +159,96 @@ func TestGetRandomExpired(t *testing.T) {
 		t.Fatalf("expected doc not found, was: %s", err)
 	}
 }
+
+func TestRollbackStartsNewHistory(t *testing.T) {
+	chrono := &mocktime.Chrono{}
+	bucket, err := NewBucket(NewBucketOptions{
+		Chrono:      chrono,
+		NumReplicas: 1,
+		NumVbuckets: 1,
+	})
+	if err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+	vbucket := bucket.GetVbucket(0)
+
+	uuids := map[uint64]bool{vbucket.CurrentMetaState(0).VbUUID: true}
+	for i := 0; i < 2; i++ {
+		snap := bucket.Snapshot()
+		_, err := bucket.Insert(&Document{Key: []byte("doc"), Value: []byte("{}"), Cas: GenerateNewCas(chrono.Now())})
+		if err != nil {
+			t.Fatalf("failed to insert document: %v", err)
+		}
+		if err := bucket.Rollback(snap); err != nil {
+			t.Fatalf("failed to roll back: %v", err)
+		}
+
+		uuid := vbucket.CurrentMetaState(0).VbUUID
+		if uuids[uuid] {
+			t.Fatalf("rollback %d reused vbucket UUID %x", i+1, uuid)
+		}
+		uuids[uuid] = true
+	}
+}
+
+func TestGetVbucketOutOfRange(t *testing.T) {
+	bucket, err := NewBucket(NewBucketOptions{Chrono: &mocktime.Chrono{}, NumVbuckets: 4})
+	if err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+	for _, vbIdx := range []uint{4, 5} {
+		if vbucket := bucket.GetVbucket(vbIdx); vbucket != nil {
+			t.Errorf("vbucket %d of 4: expected nil, got %v", vbIdx, vbucket)
+		}
+	}
+}
+
+func TestRollbackToSameSnapshotTwice(t *testing.T) {
+	chrono := &mocktime.Chrono{}
+	bucket, err := NewBucket(NewBucketOptions{Chrono: chrono, NumReplicas: 1, NumVbuckets: 1})
+	if err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+
+	// The first rollback starts a branch at the snapshot's sequence number,
+	// which the snapshot still names.
+	snap := bucket.Snapshot()
+	for i := 0; i < 2; i++ {
+		if _, err := bucket.Insert(&Document{Key: []byte("doc"), Value: []byte("{}"), Cas: GenerateNewCas(chrono.Now())}); err != nil {
+			t.Fatalf("failed to insert document: %v", err)
+		}
+		if err := bucket.Rollback(snap); err != nil {
+			t.Fatalf("rollback %d: %v", i+1, err)
+		}
+	}
+}
+
+func TestRollbackToSnapshotDiscardedByLaterRollback(t *testing.T) {
+	chrono := &mocktime.Chrono{}
+	bucket, err := NewBucket(NewBucketOptions{Chrono: chrono, NumReplicas: 1, NumVbuckets: 1})
+	if err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+	insert := func(key string) {
+		t.Helper()
+		if _, err := bucket.Insert(&Document{Key: []byte(key), Value: []byte("{}"), Cas: GenerateNewCas(chrono.Now())}); err != nil {
+			t.Fatalf("failed to insert document: %v", err)
+		}
+	}
+
+	early := bucket.Snapshot()
+	insert("first")
+	late := bucket.Snapshot()
+	insert("second")
+	if err := bucket.Rollback(late); err != nil {
+		t.Fatalf("failed to roll back to the late snapshot: %v", err)
+	}
+	if err := bucket.Rollback(early); err != nil {
+		t.Fatalf("failed to roll back to the early snapshot: %v", err)
+	}
+
+	// The second rollback discarded what the late snapshot names.
+	if err := bucket.Rollback(late); err == nil {
+		t.Errorf("expected the discarded snapshot to be refused")
+	}
+}
