@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/couchbase/gocbcore/v10/memd"
@@ -26,7 +27,8 @@ type clusterInst struct {
 	replicaLatency time.Duration
 	persistLatency time.Duration
 	tlsConfig      *tls.Config
-	configRev      uint
+	// configRev changes while requests read it.
+	configRev atomic.Uint64
 
 	configWatcherLock sync.Mutex
 	configWatchers    []mock.ConfigWatcher
@@ -255,17 +257,17 @@ func (c *clusterInst) GetAllBuckets() []mock.Bucket {
 
 // ConfigRev returns the current configuration revision for this cluster.
 func (c *clusterInst) ConfigRev() uint {
-	return c.configRev
+	return uint(c.configRev.Load())
 }
 
 func (c *clusterInst) updateConfig() {
-	c.configRev++
+	rev := uint(c.configRev.Add(1))
 	c.configWatcherLock.Lock()
 	watchers := c.configWatchers
 	c.configWatcherLock.Unlock()
 
 	for _, w := range watchers {
-		w.OnNewConfig(c.configRev)
+		w.OnNewConfig(rev)
 	}
 }
 
