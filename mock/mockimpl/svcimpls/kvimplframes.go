@@ -47,15 +47,25 @@ func (h *hookHelper) validateRequest(source mock.KvClient, pak *memd.Packet) (me
 	return checkFrames(pak)
 }
 
-// hasFrames reports whether a request carries a frame validateRequest checks
-// the request for.
+// hasFrames reports whether a request carries frames. The reader lists every
+// frame in Packet.UnsupportedFrames.
 func hasFrames(pak *memd.Packet) bool {
-	return pak.DurabilityLevelFrame != nil || pak.BarrierFrame != nil || pak.PreserveExpiryFrame != nil || len(pak.UnsupportedFrames) > 0
+	return len(pak.UnsupportedFrames) > 0
 }
 
 // writeErrorContextReply answers a request with status and the error context
-// body kv_engine sends with it.
+// body kv_engine sends with it. kv_engine sends no body for a refusal without
+// a context.
 func writeErrorContextReply(source mock.KvClient, pak *memd.Packet, status memd.StatusCode, context string, start time.Time) {
+	if context == "" {
+		writePacketToSource(source, &memd.Packet{
+			Magic:   memd.CmdMagicRes,
+			Command: pak.Command,
+			Opaque:  pak.Opaque,
+			Status:  status,
+		}, start)
+		return
+	}
 	var body struct {
 		Error struct {
 			Context string `json:"context"`
@@ -75,20 +85,4 @@ func writeErrorContextReply(source mock.KvClient, pak *memd.Packet, status memd.
 		Datatype: uint8(memd.DatatypeFlagJSON),
 		Value:    value,
 	}, start)
-}
-
-// checkPreserveTTLFrame validates a PreserveTtl frame as kv_engine does: only
-// the commands below accept it. kv_engine also rejects a frame that carries
-// data, which memd.Conn does not report.
-func checkPreserveTTLFrame(pak *memd.Packet) (memd.StatusCode, string) {
-	if pak.PreserveExpiryFrame == nil {
-		return memd.StatusSuccess, ""
-	}
-	switch pak.Command {
-	case memd.CmdSet, memd.CmdReplace, memd.CmdIncrement, memd.CmdDecrement,
-		memd.CmdAppend, memd.CmdPrepend, memd.CmdSubDocMultiMutation:
-		return memd.StatusSuccess, ""
-	default:
-		return memd.StatusNotSupported, "This command does not support PreserveTtl"
-	}
 }
