@@ -44,10 +44,7 @@ func (h *hookHelper) validateRequest(source mock.KvClient, pak *memd.Packet) (me
 	if status, context := checkHeader(source, pak); status != memd.StatusSuccess {
 		return status, context
 	}
-	if status, context := checkFrames(pak); status != memd.StatusSuccess {
-		return status, context
-	}
-	return checkPreserveTTLFrame(pak)
+	return checkFrames(pak)
 }
 
 // hasFrames reports whether a request carries a frame validateRequest checks

@@ -16,6 +16,10 @@ type MemdServerHandlers struct {
 	NewClientHandler  func(*MemdClient)
 	LostClientHandler func(*MemdClient)
 	PacketHandler     func(*MemdClient, *memd.Packet, int)
+	// PacketSizeHandler, when set, reports whether a client may send a packet
+	// of the given size, header included. The reader asks before it reads the
+	// body, and closes the connection on false.
+	PacketSizeHandler func(*MemdClient, int) bool
 }
 
 // MemdServer represents an instance of the memd server.
