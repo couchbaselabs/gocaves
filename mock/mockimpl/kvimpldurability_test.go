@@ -1,6 +1,7 @@
 package mockimpl
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -2009,5 +2011,74 @@ func TestInvalidDurabilityPrecedesUnknownCollection(t *testing.T) {
 	})
 	if resp.Status != memd.StatusDurabilityInvalidLevel {
 		t.Errorf("expected status 0x%02x, got 0x%02x", uint16(memd.StatusDurabilityInvalidLevel), uint16(resp.Status))
+	}
+}
+
+// A queued request is charged the memory it holds, not only its bytes on the
+// wire, so a flood of header-only requests behind a stalled one is
+// disconnected before the heap grows past about twice the limit.
+func TestQueuedRequestsChargedTheirMemory(t *testing.T) {
+	const limit = 4 * 1024 * 1024
+	saved := maxOutstandingRequestBytes
+	t.Cleanup(func() { maxOutstandingRequestBytes = saved })
+	maxOutstandingRequestBytes = limit
+	cluster, c := newStalledReplicationCluster(t)
+	maxOutstandingRequestBytes = saved
+
+	kvService := cluster.Nodes()[0].(*clusterNodeInst).kvService
+	clients := kvService.GetAllClients()
+	if len(clients) != 1 {
+		t.Fatalf("expected one client, got %d", len(clients))
+	}
+	queue := &clients[0].(*kvClient).requests
+	outstanding := func() int {
+		queue.lock.Lock()
+		defer queue.lock.Unlock()
+		return queue.outstanding
+	}
+	heap := func() uint64 {
+		var stats runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&stats)
+		return stats.HeapAlloc
+	}
+
+	writeStalledDurableSet(t, c)
+	// The flood runs until the server disconnects, however long that takes.
+	if err := c.netConn.SetDeadline(time.Time{}); err != nil {
+		t.Fatalf("failed to clear deadline: %v", err)
+	}
+	base := heap()
+	var grown uint64
+	noop := make([]byte, 24)
+	noop[0] = byte(memd.CmdMagicReq)
+	noop[1] = byte(memd.CmdNoop)
+	batch := bytes.Repeat(noop, 1000)
+	for len(kvService.GetAllClients()) != 0 {
+		if _, err := c.netConn.Write(batch); err != nil {
+			// Expected once the server disconnects, which is checked
+			// below.
+			t.Logf("write failed: %v", err)
+			break
+		}
+		// Wait until the reader has queued the batch, or disconnected.
+		for last := -1; last != outstanding(); {
+			last = outstanding()
+			time.Sleep(20 * time.Millisecond)
+		}
+		if now := heap(); now > base && now-base > grown {
+			grown = now - base
+		}
+		if grown > 2*limit {
+			t.Fatalf("the heap grew by %d bytes before the client was disconnected, the limit is %d", grown, limit)
+		}
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(kvService.GetAllClients()) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("the server kept the client after its writes failed")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
