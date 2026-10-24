@@ -57,6 +57,16 @@ type kvClient struct {
 	holdingSlot bool
 }
 
+// maxUnauthenticatedPacketSize is kv_engine's MaxUnauthenticatedFrameSize, the
+// largest packet, header included, a connection may send before it
+// authenticates.
+const maxUnauthenticatedPacketSize = 16 * 1024
+
+// unauthenticatedWaitLimit bounds how long the reader of a connection that
+// has not authenticated waits for its earlier requests before it decides on a
+// packet over maxUnauthenticatedPacketSize.
+var unauthenticatedWaitLimit = 5 * time.Second
+
 // maxConcurrentCommands is kv_engine's default
 // max_concurrent_commands_per_connection: it starts no further request on a
 // connection while this many are in flight.
@@ -92,6 +102,8 @@ type requestQueue struct {
 	limit       int
 	closed      bool
 	ready       chan struct{}
+	// idle is signalled when nothing is outstanding, or the queue closes.
+	idle *sync.Cond
 }
 
 // push queues req, charging it req.charge, and reports false, queueing
@@ -113,14 +125,40 @@ func (q *requestQueue) push(req queuedRequest) bool {
 func (q *requestQueue) release(size int) {
 	q.lock.Lock()
 	q.outstanding -= size
+	if q.outstanding == 0 {
+		q.idle.Broadcast()
+	}
 	q.lock.Unlock()
 }
 
 func (q *requestQueue) close() {
 	q.lock.Lock()
 	q.closed = true
+	q.idle.Broadcast()
 	q.lock.Unlock()
 	q.signal()
+}
+
+// waitIdle waits until every request queued has completed, or the queue
+// closes, and reports false if timeout passes first.
+func (q *requestQueue) waitIdle(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	timer := time.AfterFunc(timeout, func() {
+		q.lock.Lock()
+		q.idle.Broadcast()
+		q.lock.Unlock()
+	})
+	defer timer.Stop()
+
+	q.lock.Lock()
+	defer q.lock.Unlock()
+	for q.outstanding != 0 && !q.closed {
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		q.idle.Wait()
+	}
+	return true
 }
 
 func (q *requestQueue) signal() {
@@ -342,6 +380,7 @@ func newKvService(parent *clusterNodeInst, opts newKvServiceOptions) (*kvService
 			NewClientHandler:  svc.handleNewMemdClient,
 			LostClientHandler: svc.handleLostMemdClient,
 			PacketHandler:     svc.handleMemdPacket,
+			PacketSizeHandler: svc.allowMemdPacketSize,
 		},
 	})
 	if err != nil {
@@ -355,6 +394,7 @@ func newKvService(parent *clusterNodeInst, opts newKvServiceOptions) (*kvService
 				NewClientHandler:  svc.handleNewTLSMemdClient,
 				LostClientHandler: svc.handleLostMemdClient,
 				PacketHandler:     svc.handleMemdPacket,
+				PacketSizeHandler: svc.allowMemdPacketSize,
 			},
 			TLSConfig: parent.cluster.tlsConfig,
 		})
@@ -475,6 +515,7 @@ func (s *kvService) handleLostMemdClient(cli *servers.MemdClient) {
 // them, until the lost-client handler closes the queue.
 func (s *kvService) startDispatcher(kvCli *kvClient) {
 	kvCli.requests.ready = make(chan struct{}, 1)
+	kvCli.requests.idle = sync.NewCond(&kvCli.requests.lock)
 	kvCli.requests.limit = maxOutstandingRequestBytes
 	kvCli.slots = make(chan struct{}, maxConcurrentCommands)
 	s.workers.Add(1)
@@ -513,6 +554,25 @@ var reorderableCommands = map[memd.CmdCode]bool{
 	memd.CmdSubDocArrayAddUnique: true, memd.CmdSubDocCounter: true,
 	memd.CmdSubDocMultiLookup: true, memd.CmdSubDocMultiMutation: true,
 	memd.CmdSubDocReplaceBodyWithXattr: true,
+}
+
+// allowMemdPacketSize reports whether the client may send a packet of size
+// bytes, header included. Until a connection authenticates, kv_engine closes
+// it on a packet over MaxUnauthenticatedFrameSize, when it examines the
+// packet: once the requests before it have completed, so a request behind a
+// SASL_AUTH counts that authentication. The reader waits for them only in
+// that case.
+func (s *kvService) allowMemdPacketSize(cli *servers.MemdClient, size int) bool {
+	kvCli := s.getKvClient(cli)
+	if size <= maxUnauthenticatedPacketSize || kvCli.AuthenticatedUserName() != "" {
+		return true
+	}
+	// The reader cannot see the connection close while it waits, so the wait
+	// is bounded, and the packet refused if the requests take longer.
+	if !kvCli.requests.waitIdle(unauthenticatedWaitLimit) {
+		return false
+	}
+	return kvCli.AuthenticatedUserName() != ""
 }
 
 func (s *kvService) handleMemdPacket(cli *servers.MemdClient, pak *memd.Packet, size int) {

@@ -7,6 +7,7 @@ import (
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockdb"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
 )
 
 // maxSyncWriteReplicas is kv_engine's default sync_writes_max_allowed_replicas.
@@ -128,8 +129,30 @@ const (
 // or 0xffff. Its protocol documentation names invalid arguments for those
 // timeouts, but the frame parser does not return that. A durability frame on a
 // command without durability support is invalid arguments.
+//
+// Framing extras that end inside a frame are invalid arguments. The frames
+// decoded before that point are checked first, as kv_engine checks each frame
+// as it parses it.
 func checkFrames(pak *memd.Packet) (memd.StatusCode, string) {
+	if status, context := checkDecodedFrames(pak); status != memd.StatusSuccess {
+		return status, context
+	}
+	if status, context := checkPreserveTTLFrame(pak); status != memd.StatusSuccess {
+		return status, context
+	}
 	for _, frame := range pak.UnsupportedFrames {
+		if servers.IsInvalidFrameEncoding(frame) {
+			return memd.StatusInvalidArgs, "Invalid encoding in FrameExtras"
+		}
+	}
+	return memd.StatusSuccess, ""
+}
+
+func checkDecodedFrames(pak *memd.Packet) (memd.StatusCode, string) {
+	for _, frame := range pak.UnsupportedFrames {
+		if servers.IsInvalidFrameEncoding(frame) {
+			continue
+		}
 		switch frame.Type {
 		case unsupportedBarrierFrame:
 			return memd.StatusInvalidArgs, "Barrier should not contain value"

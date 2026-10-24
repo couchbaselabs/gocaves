@@ -3,6 +3,8 @@ package servers
 import (
 	"encoding/binary"
 	"errors"
+	"io"
+	"log"
 	"net"
 	"sync"
 
@@ -14,6 +16,7 @@ import (
 type MemdClient struct {
 	parent   *MemdServer
 	conn     net.Conn
+	stream   *packetStream
 	mconn    *memd.Conn
 	ctxStore ctxstore.Store
 
@@ -35,12 +38,13 @@ var (
 
 // NewMemdClient allows the creation of a new memd client
 func newMemdClient(parent *MemdServer, conn net.Conn) *MemdClient {
-	mconn := memd.NewConn(conn)
+	stream := &packetStream{conn: conn}
 
 	return &MemdClient{
 		parent:      parent,
 		conn:        conn,
-		mconn:       mconn,
+		stream:      stream,
+		mconn:       memd.NewConn(stream),
 		closeWaitCh: make(chan struct{}),
 	}
 }
@@ -101,8 +105,11 @@ func (c *MemdClient) start() error {
 
 	go func() {
 		for {
-			pak, size, err := c.mconn.ReadPacket()
+			pak, size, err := c.readPacket()
 			if err != nil {
+				if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+					log.Printf("disconnecting memd client %s: %s", c.conn.RemoteAddr(), err)
+				}
 				break
 			}
 
