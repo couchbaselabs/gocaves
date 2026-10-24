@@ -1010,10 +1010,15 @@ func TestInvalidRequestDoesNotWaitForPendingDurableWrite(t *testing.T) {
 			memd.Packet{Command: memd.CmdSet, Key: []byte("other"), Value: []byte(`{}`), BarrierFrame: &memd.BarrierFrame{}},
 			memd.StatusInvalidArgs,
 		},
+		{
+			"barrier for an unknown collection",
+			memd.Packet{Command: memd.CmdSet, Key: []byte("other"), Value: []byte(`{}`), Extras: make([]byte, 8), CollectionID: 999, BarrierFrame: &memd.BarrierFrame{}},
+			memd.StatusCollectionUnknown,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// The replica never receives the durable write before it times out.
-			c := newReplicationConn(t, time.Hour, 0, memd.FeatureUnorderedExec)
+			c := newReplicationConn(t, time.Hour, 0, memd.FeatureUnorderedExec, memd.FeatureCollections)
 
 			pipelineDurableSet(t, c, 1, "doc", memd.DurabilityLevelMajority, 500*time.Millisecond)
 			pak := tc.pak

@@ -50,8 +50,24 @@ func Register(opts RegisterOptions) func(source mock.KvClient, pak *memd.Packet)
 
 	return func(source mock.KvClient, pak *memd.Packet) bool {
 		status, _ := h.validateRequest(source, pak)
-		return status == memd.StatusSuccess
+		return status == memd.StatusSuccess && collectionKnown(source, pak)
 	}
+}
+
+// collectionKnown reports whether the collection a request names is in the
+// selected bucket's manifest. kv_engine's validator looks the collection up,
+// so a request for an unknown one is refused before it can wait as a barrier.
+// The CRUD handlers answer it.
+func collectionKnown(source mock.KvClient, pak *memd.Packet) bool {
+	if !source.HasFeature(memd.FeatureCollections) || !memd.IsCommandCollectionEncoded(pak.Command) {
+		return true
+	}
+	bucket := source.SelectedBucket()
+	if bucket == nil {
+		return true
+	}
+	scopeName, _ := bucket.CollectionManifest().GetByID(pak.CollectionID)
+	return scopeName != ""
 }
 
 func replyWithError(source mock.KvClient, pak *memd.Packet, start time.Time, err error) {
