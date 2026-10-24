@@ -138,6 +138,8 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 		return memd.StatusLocked
 	case kvproc.ErrNotLocked:
 		return memd.StatusTmpFail
+	case mockdb.ErrSyncWriteInProgress:
+		return memd.StatusSyncWriteInProgress
 	case kvproc.ErrSdToManyTries:
 		// TODO(brett19): Confirm too many sd retries is TMPFAIL.
 		return memd.StatusTmpFail

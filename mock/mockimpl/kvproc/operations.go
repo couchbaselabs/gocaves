@@ -213,6 +213,8 @@ func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 		return nil, ErrDocExists
 	} else if err == mockdb.ErrValueTooBig {
 		return nil, ErrValueTooBig
+	} else if err == mockdb.ErrSyncWriteInProgress {
+		return nil, err
 	} else if err != nil {
 		// TODO(brett19): Correctly handle the various errors which can occur in an ADD.
 		return nil, ErrInternal
@@ -317,7 +319,7 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
-	newDoc, err := e.update(
+	newDoc, err := e.updateIfFound(
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
@@ -463,7 +465,7 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
-	newDoc, err := e.update(
+	newDoc, err := e.updateAfterRead(
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if idoc == nil || idoc.IsDeleted {
@@ -497,6 +499,11 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 			val, ok := parseCounter(idoc.Value)
 			if !ok {
 				return nil, ErrDeltaBadval
+			}
+
+			// The read-time checks passed, so the request stores.
+			if idoc.SyncWriteInProgress {
+				return nil, e.syncWriteStoreErr()
 			}
 
 			// kv_engine stores a counter on a locked document with the locked
@@ -576,13 +583,22 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
-	newDoc, err := e.update(
+	newDoc, err := e.updateAfterRead(
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			// kv_engine answers APPEND and PREPEND on a missing document with
 			// not_stored.
 			if idoc == nil || idoc.IsDeleted {
 				return nil, ErrNotStored
+			}
+
+			// kv_engine refuses a locked document without a CAS, and a CAS
+			// that does not match an unlocked one, when it reads it; a request
+			// that passes then stores.
+			locked := e.docIsLocked(idoc)
+			readFails := locked && opts.Cas == 0 || !locked && opts.Cas != 0 && idoc.Cas != opts.Cas
+			if idoc.SyncWriteInProgress && !readFails {
+				return nil, e.syncWriteStoreErr()
 			}
 
 			// kv_engine stores to a locked document with the CAS the request
@@ -1070,7 +1086,7 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			return nil, e.durabilityErr
 		}
 
-		newDoc, err := e.update(
+		newDoc, err := e.updateAfterRead(
 			doc.VbID, doc.CollectionID, doc.Key,
 			func(idoc *mockdb.Document) (*mockdb.Document, error) {
 				if idoc == nil {
@@ -1082,6 +1098,12 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 
 					idoc = doc
 				} else {
+					// The specs ran on the committed document; kv_engine refuses
+					// the store of a key with a durable write in progress before
+					// its lock check.
+					if idoc.SyncWriteInProgress {
+						return nil, mockdb.ErrSyncWriteInProgress
+					}
 					if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
 						return nil, ErrLocked
 					}

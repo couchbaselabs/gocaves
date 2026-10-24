@@ -10,3 +10,7 @@ var ErrDocNotFound = errors.New("document not found")
 
 // ErrValueTooBig is thrown when a document was set with a value that is too large.
 var ErrValueTooBig = errors.New("document value too large")
+
+// ErrSyncWriteInProgress is returned for a write to a key whose latest
+// mutation is a durable write that has not completed.
+var ErrSyncWriteInProgress = errors.New("sync write in progress")

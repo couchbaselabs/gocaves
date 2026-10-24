@@ -41,13 +41,42 @@ func (e *Engine) SetSyncWrite(w *mockdb.SyncWrite) {
 // made the request one.
 func (e *Engine) update(vbID, collectionID uint, key []byte,
 	fn func(*mockdb.Document) (*mockdb.Document, error)) (*mockdb.Document, error) {
-	return e.db.Update(vbID, collectionID, key, func(idoc *mockdb.Document) (*mockdb.Document, error) {
+	return e.db.Update(vbID, collectionID, key, e.durable(fn))
+}
+
+// updateAfterRead is update for a request kv_engine serves by reading the
+// committed document and then storing a new one: a durable write in progress
+// on the key refuses it only when it would store.
+func (e *Engine) updateAfterRead(vbID, collectionID uint, key []byte,
+	fn func(*mockdb.Document) (*mockdb.Document, error)) (*mockdb.Document, error) {
+	return e.db.UpdateAfterRead(vbID, collectionID, key, e.durable(fn))
+}
+
+// updateIfFound is update for REPLACE, which kv_engine refuses for a missing
+// document before it looks for a durable write in progress.
+func (e *Engine) updateIfFound(vbID, collectionID uint, key []byte,
+	fn func(*mockdb.Document) (*mockdb.Document, error)) (*mockdb.Document, error) {
+	return e.db.UpdateIfFound(vbID, collectionID, key, e.durable(fn))
+}
+
+// syncWriteStoreErr is what kv_engine answers the store of a request that
+// passed its read-time checks on a key with a durable write in progress: its
+// durability check comes first, and its lock check after.
+func (e *Engine) syncWriteStoreErr() error {
+	if e.durabilityErr != nil {
+		return e.durabilityErr
+	}
+	return mockdb.ErrSyncWriteInProgress
+}
+
+func (e *Engine) durable(fn mockdb.UpdateFunc) mockdb.UpdateFunc {
+	return func(idoc *mockdb.Document) (*mockdb.Document, error) {
 		doc, err := fn(idoc)
 		if doc != nil {
 			doc.SyncWrite = e.syncWrite
 		}
 		return doc, err
-	})
+	}
 }
 
 func (e *Engine) insert(doc *mockdb.Document) (*mockdb.Document, error) {

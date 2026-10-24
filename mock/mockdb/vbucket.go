@@ -33,10 +33,27 @@ type Document struct {
 	ModifiedTime time.Time
 	RevID        uint64
 
+	// SyncWriteInProgress is set on the committed document an update hands its
+	// functor when the key has a durable write in progress, so a request that
+	// reads before it stores can tell where kv_engine refuses it.
+	SyncWriteInProgress bool
+
 	// SyncWrite, when set on a document handed to a mutation, makes the
 	// mutation a durable write, tracked from the moment it gets its sequence
 	// number. It is not stored with the document.
 	SyncWrite *SyncWrite
+
+	// A stored durable write is a prepare, as in kv_engine: reads see the
+	// committed document before it until it commits at syncEnd, and never if
+	// it is aborted then.
+	prepare     bool
+	syncEnd     time.Time
+	syncAborted bool
+}
+
+// visibleAt reports whether doc, as stored, can be read at mock time at.
+func (doc *Document) visibleAt(at time.Time) bool {
+	return !doc.prepare || (!at.Before(doc.syncEnd) && !doc.syncAborted)
 }
 
 // SyncWrite is a durable write, tracked by its vbucket as kv_engine's
@@ -180,6 +197,11 @@ func (s *Vbucket) hasDocExpired(doc *Document) bool {
 }
 
 func (s *Vbucket) findDocLocked(repIdx, collectionID uint, key []byte) *Document {
+	return s.findDocAtLocked(repIdx, collectionID, key, s.chrono.Now())
+}
+
+// findDocAtLocked is findDocLocked at mock time now.
+func (s *Vbucket) findDocAtLocked(repIdx, collectionID uint, key []byte, now time.Time) *Document {
 	// TODO(brett19): Maybe someday we can improve the performance of this by
 	// scanning from end-to-start instead of start-to-end...
 
@@ -188,11 +210,14 @@ func (s *Vbucket) findDocLocked(repIdx, collectionID uint, key []byte) *Document
 
 	// Calculate when replica becomes visible
 	repLatency := time.Duration(repIdx) * s.replicaLatency
-	repVisibleTime := s.chrono.Now().Add(-repLatency)
+	repVisibleTime := now.Add(-repLatency)
 
 	var foundDoc *Document
 	for _, doc := range s.documents {
 		if repIdx > 0 && !doc.ModifiedTime.Before(repVisibleTime) {
+			continue
+		}
+		if !doc.visibleAt(repVisibleTime) {
 			continue
 		}
 
@@ -206,12 +231,12 @@ func (s *Vbucket) findDocLocked(repIdx, collectionID uint, key []byte) *Document
 		foundDoc = copyDocument(foundDoc)
 
 		// We cheat and convert an expired document directly to being deleted.
-		if s.hasDocExpired(foundDoc) {
+		if !foundDoc.Expiry.IsZero() && !now.Before(foundDoc.Expiry) {
 			foundDoc.IsDeleted = true
 		}
 
 		// We also cheat and clean this up here...
-		if !s.chrono.Now().Before(foundDoc.LockExpiry) {
+		if !now.Before(foundDoc.LockExpiry) {
 			foundDoc.LockExpiry = time.Time{}
 		}
 	}
@@ -237,6 +262,7 @@ func (s *Vbucket) pushDocMutationLocked(doc *Document) *Document {
 		w.end, w.aborted = s.syncWriteEndLocked(&w, newDoc.ModifiedTime, s.lastSyncWriteEnd, s.lastSyncWriteAborted)
 		s.lastSyncWriteEnd, s.lastSyncWriteAborted = w.end, w.aborted
 		s.syncWrites = append(s.syncWrites, w)
+		newDoc.prepare, newDoc.syncEnd, newDoc.syncAborted = true, w.end, w.aborted
 	}
 
 	return copyDocument(newDoc)
@@ -412,6 +438,9 @@ func (s *Vbucket) GetAll(repIdx, collectionID uint) ([]*Document, error) {
 		if repIdx > 0 && !doc.ModifiedTime.Before(repVisibleTime) {
 			continue
 		}
+		if !doc.visibleAt(repVisibleTime) {
+			continue
+		}
 
 		if doc.CollectionID != collectionID {
 			continue
@@ -465,7 +494,7 @@ func (s *Vbucket) GetRandom(repIdx, collectionID uint) *Document {
 		curr := uint((startDocIdx + i) % numDocs)
 		doc := s.documents[curr]
 
-		if !doc.ModifiedTime.Before(repVisibleTime) {
+		if !doc.ModifiedTime.Before(repVisibleTime) || !doc.visibleAt(repVisibleTime) {
 			continue
 		}
 
@@ -538,25 +567,69 @@ func (s *Vbucket) insert(doc *Document) (*Document, error) {
 		}
 
 		return doc, nil
-	})
+	}, pendingFirst)
 }
 
 // UpdateFunc represents a function which can modify the state of a document.
 type UpdateFunc func(*Document) (*Document, error)
 
+// syncWriteInProgressLocked reports whether the latest mutation of a key is a
+// durable write that has not completed.
+func (s *Vbucket) syncWriteInProgressLocked(collectionID uint, key []byte, now time.Time) bool {
+	for i := len(s.documents) - 1; i >= 0; i-- {
+		doc := s.documents[i]
+		if doc.CollectionID == collectionID && bytes.Equal(doc.Key, key) {
+			return doc.prepare && now.Before(doc.syncEnd)
+		}
+	}
+	return false
+}
+
+// pendingCheck is when a write to a key with a durable write in progress is
+// refused with ErrSyncWriteInProgress.
+type pendingCheck int
+
+const (
+	// pendingFirst refuses it before the functor runs.
+	pendingFirst pendingCheck = iota
+	// pendingIfFound refuses it before the functor runs when a committed
+	// document exists, and leaves the functor to refuse a missing one.
+	pendingIfFound
+	// pendingAtStore refuses it when the functor returns a document to
+	// store.
+	pendingAtStore
+)
+
 // update allows a document to be atomically operated upon in the vbucket.
+// A key with a durable write in progress cannot be written; check says when
+// that is found out.
 // NOTE: This must never be called on a replica vbucket.
-func (s *Vbucket) update(collectionID uint, key []byte, fn UpdateFunc) (*Document, error) {
+func (s *Vbucket) update(collectionID uint, key []byte, fn UpdateFunc, check pendingCheck) (*Document, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	// Try to find the document as input to the functor.
-	foundDoc := s.findDocLocked(0, collectionID, key)
+	// One instant for both, so a prepare that commits meanwhile is either
+	// in progress or the document read.
+	now := s.chrono.Now()
+	foundDoc := s.findDocAtLocked(0, collectionID, key, now)
+
+	inProgress := s.syncWriteInProgressLocked(collectionID, key, now)
+	if foundDoc != nil {
+		foundDoc.SyncWriteInProgress = inProgress
+	}
+	found := foundDoc != nil && !foundDoc.IsDeleted
+	if inProgress && (check == pendingFirst || check == pendingIfFound && found) {
+		return nil, ErrSyncWriteInProgress
+	}
 
 	// Pass the existing document to the functor and get back the new copy.
 	newDoc, err := fn(foundDoc)
 	if err != nil {
 		return nil, err
+	}
+	if inProgress {
+		return nil, ErrSyncWriteInProgress
 	}
 
 	if len(newDoc.Value) > 20*1024*1024 {

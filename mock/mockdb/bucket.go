@@ -117,13 +117,35 @@ func (b *Bucket) Insert(doc *Document) (*Document, error) {
 }
 
 // Update allows a document to be atomically operated upon in the bucket.
+// A key with a durable write in progress is refused with
+// ErrSyncWriteInProgress before fn runs.
 func (b *Bucket) Update(vbID, collectionID uint, key []byte, fn UpdateFunc) (*Document, error) {
+	return b.update(vbID, collectionID, key, fn, pendingFirst)
+}
+
+// UpdateIfFound is Update for a request that kv_engine refuses for a missing
+// document before it looks for a durable write in progress, as
+// VBucket::replace does: fn runs on a missing document, and a key with a
+// durable write in progress and a committed document is refused before it.
+func (b *Bucket) UpdateIfFound(vbID, collectionID uint, key []byte, fn UpdateFunc) (*Document, error) {
+	return b.update(vbID, collectionID, key, fn, pendingIfFound)
+}
+
+// UpdateAfterRead is Update for a request kv_engine serves by reading the
+// committed document and then storing a new one: fn runs on the committed
+// document, and a key with a durable write in progress is refused only when
+// fn returns a document to store.
+func (b *Bucket) UpdateAfterRead(vbID, collectionID uint, key []byte, fn UpdateFunc) (*Document, error) {
+	return b.update(vbID, collectionID, key, fn, pendingAtStore)
+}
+
+func (b *Bucket) update(vbID, collectionID uint, key []byte, fn UpdateFunc, check pendingCheck) (*Document, error) {
 	vbucket := b.GetVbucket(vbID)
 	if vbucket == nil {
 		return nil, errors.New("invalid vbucket")
 	}
 
-	doc, err := vbucket.update(collectionID, key, fn)
+	doc, err := vbucket.update(collectionID, key, fn, check)
 	if err != nil {
 		return nil, err
 	}
