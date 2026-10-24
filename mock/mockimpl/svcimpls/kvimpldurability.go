@@ -1,6 +1,7 @@
 package svcimpls
 
 import (
+	"encoding/binary"
 	"fmt"
 	"time"
 
@@ -112,72 +113,127 @@ func checkHeader(source mock.KvClient, pak *memd.Packet) (memd.StatusCode, strin
 	return memd.StatusSuccess, ""
 }
 
-// Frame types memd leaves in Packet.UnsupportedFrames when it cannot decode
-// them: a barrier frame that carries data, and a durability frame that is
-// neither 1 nor 3 bytes long.
+// statusUnknownFrameInfo is kv_engine's Status::UnknownFrameInfo, which memd
+// does not name.
+const statusUnknownFrameInfo = memd.StatusCode(0x80)
+
+// The frame ids kv_engine defines (cb::mcbp::request::FrameInfoId).
 const (
-	unsupportedBarrierFrame    = 0
-	unsupportedDurabilityFrame = 1
+	frameBarrier                        = 0
+	frameDurabilityRequirement          = 1
+	frameDcpStreamID                    = 2
+	frameVBucketUUID                    = 3
+	frameImpersonate                    = 4
+	framePreserveTTL                    = 5
+	frameImpersonateExtraPrivilege      = 6
+	frameImpersonateWithTokenAuthDataID = 7
 )
 
-// checkFrames checks the frames of a request as kv_engine's request
-// validator parses them, and returns the status and the error context kv_engine
-// sends when it refuses them, or success. A barrier frame with data, or a
-// durability frame of the wrong size, is invalid arguments. kv_engine answers
-// durability_invalid_level for any durability frame of the right size it cannot
-// parse into a requirement: level None, an undefined level, or a timeout of 0
-// or 0xffff. Its protocol documentation names invalid arguments for those
-// timeouts, but the frame parser does not return that. A durability frame on a
-// command without durability support is invalid arguments.
-//
-// Framing extras that end inside a frame are invalid arguments. The frames
-// decoded before that point are checked first, as kv_engine checks each frame
-// as it parses it.
+// checkFrames checks the frames of a request one by one, in the order sent, as
+// kv_engine's parseFrameExtras does, and returns the status and the error
+// context of the first it refuses, or success. The reader lists every frame in
+// Packet.UnsupportedFrames. kv_engine answers durability_invalid_level for any
+// durability frame of the right size it cannot parse into a requirement: level
+// None, an undefined level, or a timeout of 0 or 0xffff. Its protocol
+// documentation names invalid arguments for those timeouts, but the frame
+// parser does not return that. Framing extras that end inside a frame are
+// invalid arguments once the frames before it have passed.
 func checkFrames(pak *memd.Packet) (memd.StatusCode, string) {
-	if status, context := checkDecodedFrames(pak); status != memd.StatusSuccess {
-		return status, context
-	}
-	if status, context := checkPreserveTTLFrame(pak); status != memd.StatusSuccess {
-		return status, context
-	}
+	impersonated := false
 	for _, frame := range pak.UnsupportedFrames {
 		if servers.IsInvalidFrameEncoding(frame) {
 			return memd.StatusInvalidArgs, "Invalid encoding in FrameExtras"
+		}
+		if id := uint8(frame.Type); id == frameImpersonate || id == frameImpersonateWithTokenAuthDataID {
+			if impersonated {
+				return memd.StatusInvalidArgs, "Only one impersonate frame may be present"
+			}
+			impersonated = true
+		}
+		if status, context := checkFrame(pak.Command, uint8(frame.Type), frame.Data); status != memd.StatusSuccess {
+			return status, context
 		}
 	}
 	return memd.StatusSuccess, ""
 }
 
-func checkDecodedFrames(pak *memd.Packet) (memd.StatusCode, string) {
-	for _, frame := range pak.UnsupportedFrames {
-		if servers.IsInvalidFrameEncoding(frame) {
-			continue
-		}
-		switch frame.Type {
-		case unsupportedBarrierFrame:
+// vbucketUUIDCommands are the commands named in gocbcore's memd package that
+// kv_engine's opcode.cc gives Attribute::VBucketUuid. kv_engine accepts the
+// frame on them and does not enforce it.
+var vbucketUUIDCommands = map[memd.CmdCode]bool{
+	memd.CmdSet: true, memd.CmdAdd: true, memd.CmdReplace: true, memd.CmdDelete: true,
+	memd.CmdIncrement: true, memd.CmdDecrement: true, memd.CmdAppend: true, memd.CmdPrepend: true,
+	memd.CmdSetMeta: true, memd.CmdDelMeta: true,
+}
+
+func checkFrame(command memd.CmdCode, id uint8, data []byte) (memd.StatusCode, string) {
+	switch id {
+	case frameBarrier:
+		if len(data) > 0 {
 			return memd.StatusInvalidArgs, "Barrier should not contain value"
-		case unsupportedDurabilityFrame:
-			return memd.StatusInvalidArgs, fmt.Sprintf("Invalid sized buffer provided: %d", len(frame.Data))
 		}
+	case frameDurabilityRequirement:
+		return checkDurabilityFrame(command, data)
+	case frameDcpStreamID:
+		if len(data) != 2 {
+			return memd.StatusInvalidArgs, fmt.Sprintf("DcpStreamId invalid size:%d", len(data))
+		}
+	case frameVBucketUUID:
+		if len(data) != 8 {
+			return memd.StatusInvalidArgs, fmt.Sprintf("VBucketUuid invalid size:%d", len(data))
+		}
+		if !vbucketUUIDCommands[command] {
+			return memd.StatusNotSupported, "This command does not support VBucketUuid"
+		}
+	case frameImpersonate:
+		if len(data) == 0 {
+			return memd.StatusInvalidArgs, "Impersonated user must be set"
+		}
+	case framePreserveTTL:
+		if len(data) > 0 {
+			return memd.StatusInvalidArgs, "PreserveTtl should not contain value"
+		}
+		switch command {
+		case memd.CmdSet, memd.CmdReplace, memd.CmdIncrement, memd.CmdDecrement,
+			memd.CmdAppend, memd.CmdPrepend, memd.CmdSubDocMultiMutation:
+		default:
+			return memd.StatusNotSupported, "This command does not support PreserveTtl"
+		}
+	case frameImpersonateExtraPrivilege:
+		if len(data) == 0 {
+			return memd.StatusInvalidArgs, "Privilege name must be set"
+		}
+	case frameImpersonateWithTokenAuthDataID:
+		if len(data) != 2 {
+			return memd.StatusInvalidArgs, fmt.Sprintf("ImpersonateWithTokenAuthDataId invalid size:%d", len(data))
+		}
+	default:
+		return statusUnknownFrameInfo, ""
 	}
-	if pak.DurabilityLevelFrame == nil {
-		return memd.StatusSuccess, ""
+	return memd.StatusSuccess, ""
+}
+
+// checkDurabilityFrame checks a durability frame as kv_engine's
+// cb::durability::Requirements parses it.
+func checkDurabilityFrame(command memd.CmdCode, data []byte) (memd.StatusCode, string) {
+	if len(data) != 1 && len(data) != 3 {
+		return memd.StatusInvalidArgs, fmt.Sprintf("Invalid sized buffer provided: %d", len(data))
 	}
 	// kv_engine constructs the timeout before it validates the level.
-	if frame := pak.DurabilityTimeoutFrame; frame != nil {
-		switch frame.DurabilityTimeout / time.Millisecond {
+	if len(data) == 3 {
+		switch binary.BigEndian.Uint16(data[1:]) {
 		case 0:
 			return memd.StatusDurabilityInvalidLevel, "Timeout(): Cannot specify bucket default timeout"
 		case 0xffff:
 			return memd.StatusDurabilityInvalidLevel, "Timeout(): Cannot specify an infinite timeout"
 		}
 	}
-	switch pak.DurabilityLevelFrame.DurabilityLevel {
+	switch memd.DurabilityLevel(data[0]) {
 	case memd.DurabilityLevelMajority, memd.DurabilityLevelMajorityAndPersistOnMaster, memd.DurabilityLevelPersistToMajority:
 	default:
 		return memd.StatusDurabilityInvalidLevel, "Content represents an invalid requirement specification"
 	}
-	if !durabilityCommands[pak.Command] {
+	if !durabilityCommands[command] {
 		return memd.StatusInvalidArgs, "The requested command does not support durability requirements"
 	}
 	return memd.StatusSuccess, ""

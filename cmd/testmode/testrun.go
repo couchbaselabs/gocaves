@@ -2,12 +2,14 @@ package testmode
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/checks"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
 )
 
 type testRun struct {
@@ -134,6 +136,13 @@ func translateCapturedPacket(pak *checks.RecordedPacket) jsonRecordedPacket {
 	jpak.ValueBase64 = base64.StdEncoding.EncodeToString(pak.Data.Value)
 	jpak.ExtrasBase64 = base64.StdEncoding.EncodeToString(pak.Data.Extras)
 
+	// The reader lists every frame of a received request in
+	// UnsupportedFrames, in order, which the fields memd decodes repeat.
+	if !pak.WasSent {
+		jpak.ExtFrames = translateRequestFrames(pak.Data.UnsupportedFrames)
+		return jpak
+	}
+
 	if pak.Data.BarrierFrame != nil {
 		jpak.ExtFrames = append(jpak.ExtFrames, map[string]interface{}{
 			"type": "barrier",
@@ -211,4 +220,56 @@ func (m *testRun) GenerateReport() jsonRunReport {
 	}
 
 	return jrun
+}
+
+// translateRequestFrames reports the frames of a received request by their
+// kv_engine ids.
+func translateRequestFrames(frames []memd.UnsupportedFrame) []jsonPacketExtraFrame {
+	var jframes []jsonPacketExtraFrame
+	for _, frame := range frames {
+		data := base64.StdEncoding.EncodeToString(frame.Data)
+		if servers.IsInvalidFrameEncoding(frame) {
+			jframes = append(jframes, jsonPacketExtraFrame{"type": "invalidEncoding"})
+			continue
+		}
+		switch id := uint8(frame.Type); {
+		case id == 0 && len(frame.Data) == 0:
+			jframes = append(jframes, jsonPacketExtraFrame{"type": "barrier"})
+		case id == 1 && (len(frame.Data) == 1 || len(frame.Data) == 3):
+			level := memd.DurabilityLevel(frame.Data[0])
+			jframes = append(jframes, jsonPacketExtraFrame{
+				"type":     "durabilityLevel",
+				"level":    uint8(level),
+				"levelStr": durabilityLevelToString(level),
+			})
+			if len(frame.Data) == 3 {
+				timeout := time.Duration(binary.BigEndian.Uint16(frame.Data[1:])) * time.Millisecond
+				jframes = append(jframes, jsonPacketExtraFrame{
+					"type":        "durabilityLevel",
+					"durationStr": timeout.String(),
+				})
+			}
+		case id == 2 && len(frame.Data) == 2:
+			jframes = append(jframes, jsonPacketExtraFrame{
+				"type":     "streamId",
+				"streamId": binary.BigEndian.Uint16(frame.Data),
+			})
+		case id == 3 && len(frame.Data) == 8:
+			jframes = append(jframes, jsonPacketExtraFrame{
+				"type":   "vbucketUuid",
+				"vbUuid": binary.BigEndian.Uint64(frame.Data),
+			})
+		case id == 4:
+			jframes = append(jframes, jsonPacketExtraFrame{"type": "impersonate", "dataBase64": data})
+		case id == 5:
+			jframes = append(jframes, jsonPacketExtraFrame{"type": "preserveTtl", "dataBase64": data})
+		case id == 6:
+			jframes = append(jframes, jsonPacketExtraFrame{"type": "impersonateExtraPrivilege", "dataBase64": data})
+		case id == 7:
+			jframes = append(jframes, jsonPacketExtraFrame{"type": "impersonateWithTokenAuthDataId", "dataBase64": data})
+		default:
+			jframes = append(jframes, jsonPacketExtraFrame{"type": fmt.Sprintf("unk:%d", id), "dataBase64": data})
+		}
+	}
+	return jframes
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 
 	"github.com/couchbase/gocbcore/v10/memd"
 )
@@ -78,33 +79,41 @@ func checkHeader(header []byte) (int, int, error) {
 	return framesLen, int(bodyLen), nil
 }
 
-// validFramesLen returns the length of the frames at the start of frames that
-// lie wholly within it, reading them as kv_engine's parseFrameExtras does.
-func validFramesLen(frames []byte) int {
+// parseFrames reads the frames at the start of frames that lie wholly within
+// it, as kv_engine's parseFrameExtras does, and returns them in order with the
+// length they take. A frame's Type is its id; an id above 0xfe, which an
+// escaped id can reach and kv_engine does not define, is 0xff.
+func parseFrames(frames []byte) ([]memd.UnsupportedFrame, int) {
+	var parsed []memd.UnsupportedFrame
 	valid := 0
 	for valid < len(frames) {
 		offset := valid
-		id, size := frames[offset]>>4, int(frames[offset]&0x0f)
+		id, size := int(frames[offset]>>4), int(frames[offset]&0x0f)
 		offset++
 		if id == 0x0f {
 			if offset+1 > len(frames) {
-				return valid
+				return parsed, valid
 			}
+			id += int(frames[offset])
 			offset++
 		}
 		if size == 0x0f {
 			if offset+1 > len(frames) {
-				return valid
+				return parsed, valid
 			}
 			size += int(frames[offset])
 			offset++
 		}
 		if offset+size > len(frames) {
-			return valid
+			return parsed, valid
 		}
+		frame := memd.UnsupportedFrame{Data: frames[offset : offset+size]}
+		// The type of Type is unexported, so it is set through reflection.
+		reflect.ValueOf(&frame.Type).Elem().SetUint(uint64(min(id, 0xff)))
+		parsed = append(parsed, frame)
 		valid = offset + size
 	}
-	return valid
+	return parsed, valid
 }
 
 // readPacket reads one packet from the connection. A header kv_engine
@@ -129,7 +138,7 @@ func (c *MemdClient) readPacket() (*memd.Packet, int, error) {
 
 	// memd cannot decode a frame that runs past the framing extras, so the
 	// request is decoded with the frames before it only.
-	validLen := validFramesLen(frames)
+	parsed, validLen := parseFrames(frames)
 	if validLen < framesLen {
 		header[2] = byte(validLen)
 		binary.BigEndian.PutUint32(header[8:], uint32(bodyLen-(framesLen-validLen)))
@@ -146,6 +155,9 @@ func (c *MemdClient) readPacket() (*memd.Packet, int, error) {
 	if n, _ := c.stream.pending.Read(make([]byte, 1)); n != 0 {
 		return nil, 0, errors.New("packet decoded short of its body")
 	}
+	// memd decodes frames into fields that keep neither their order nor ids
+	// above 0xff, so every frame is listed here for validation.
+	pak.UnsupportedFrames = parsed
 	if validLen < framesLen {
 		pak.UnsupportedFrames = append(pak.UnsupportedFrames, InvalidFrameEncoding)
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/couchbase/gocbcore/v10/memd"
 )
@@ -52,5 +53,50 @@ func TestCheckHeaderRefusesLargeBodyLength(t *testing.T) {
 		if _, _, err := checkHeader(header); err == nil {
 			t.Errorf("body length 0x%x: expected the header refused", bodyLen)
 		}
+	}
+}
+
+// A frame's data comes from the framing extras alone, so a queued request does
+// not keep a second copy of its body alive.
+func TestFrameDataHoldsNoBody(t *testing.T) {
+	server, client := net.Pipe()
+	t.Cleanup(func() {
+		for _, conn := range []net.Conn{server, client} {
+			if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+				t.Errorf("failed to close pipe: %v", err)
+			}
+		}
+	})
+	c := newMemdClient(&MemdServer{}, server)
+	if err := server.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatalf("failed to set deadline: %v", err)
+	}
+
+	written := make(chan error, 1)
+	go func() {
+		conn := memd.NewConn(client)
+		conn.EnableFeature(memd.FeatureAltRequests)
+		conn.EnableFeature(memd.FeatureSyncReplication)
+		written <- conn.WritePacket(&memd.Packet{
+			Magic:                memd.CmdMagicReq,
+			Command:              memd.CmdSet,
+			Key:                  []byte("doc"),
+			Extras:               make([]byte, 8),
+			Value:                make([]byte, 1024*1024),
+			DurabilityLevelFrame: &memd.DurabilityLevelFrame{DurabilityLevel: memd.DurabilityLevelMajority},
+		})
+	}()
+	pak, _, err := c.readPacket()
+	if err != nil {
+		t.Fatalf("failed to read packet: %v", err)
+	}
+	if err := <-written; err != nil {
+		t.Fatalf("failed to write packet: %v", err)
+	}
+	if len(pak.UnsupportedFrames) != 1 {
+		t.Fatalf("expected one frame, got %d", len(pak.UnsupportedFrames))
+	}
+	if data := pak.UnsupportedFrames[0].Data; cap(data) > 255 {
+		t.Errorf("frame data has a capacity of %d bytes, more than framing extras can hold", cap(data))
 	}
 }
