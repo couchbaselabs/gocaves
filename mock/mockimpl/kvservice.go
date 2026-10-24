@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/contrib/scramserver"
@@ -61,19 +62,25 @@ type kvClient struct {
 // connection while this many are in flight.
 const maxConcurrentCommands = 32
 
-// maxOutstandingRequestBytes bounds the requests a connection holds at once: a
-// request is charged its size on the wire from when the reader takes it until
-// it completes, its detached reply included. A client that sends more is
+// maxOutstandingRequestBytes bounds the memory the requests a connection holds
+// at once take: a request is charged from when the reader takes it until it
+// completes, its detached reply included. A client that sends more is
 // disconnected, rather than its reader blocked.
 var maxOutstandingRequestBytes = 64 * 1024 * 1024
 
-// queuedRequest is a packet and its size on the wire. done, when set, is
-// closed once the request has been dispatched.
+// queuedRequest is a packet, its size on the wire and its charge. done, when
+// set, is closed once the request has been dispatched.
 type queuedRequest struct {
-	pak  *memd.Packet
-	size int
-	done chan struct{}
+	pak    *memd.Packet
+	size   int
+	charge int
+	done   chan struct{}
 }
+
+// requestOverhead is the memory a request holds besides its bytes on the wire:
+// the decoded packet, and its queue entry, which the queue's slice holds up to
+// twice over as it grows.
+const requestOverhead = int(unsafe.Sizeof(memd.Packet{}) + 2*unsafe.Sizeof(queuedRequest{}))
 
 // requestQueue is a FIFO of packets whose outstanding requests are bounded by
 // maxOutstandingRequestBytes. push never blocks, so the reader keeps reading,
@@ -87,16 +94,16 @@ type requestQueue struct {
 	ready       chan struct{}
 }
 
-// push queues req, charging it req.size, and reports false, queueing nothing,
-// if that would exceed the limit.
+// push queues req, charging it req.charge, and reports false, queueing
+// nothing, if that would exceed the limit.
 func (q *requestQueue) push(req queuedRequest) bool {
 	q.lock.Lock()
-	if q.outstanding+req.size > q.limit {
+	if q.outstanding+req.charge > q.limit {
 		q.lock.Unlock()
 		return false
 	}
 	q.requests = append(q.requests, req)
-	q.outstanding += req.size
+	q.outstanding += req.charge
 	q.lock.Unlock()
 	q.signal()
 	return true
@@ -478,7 +485,7 @@ func (s *kvService) startDispatcher(kvCli *kvClient) {
 			if !ok {
 				return
 			}
-			kvCli.dispatching = req.size
+			kvCli.dispatching = req.charge
 			s.dispatchPacket(kvCli, req.pak)
 			kvCli.requests.release(kvCli.dispatching)
 			kvCli.dispatching = 0
@@ -509,7 +516,7 @@ var reorderableCommands = map[memd.CmdCode]bool{
 }
 
 func (s *kvService) handleMemdPacket(cli *servers.MemdClient, pak *memd.Packet, size int) {
-	req := queuedRequest{pak: pak, size: size}
+	req := queuedRequest{pak: pak, size: size, charge: size + requestOverhead}
 	// The features a HELLO enables change how the connection decodes the
 	// requests after it, and take effect when its response is written. The
 	// reader reads nothing further until then. A HELLO queued behind a stalled
@@ -525,7 +532,7 @@ func (s *kvService) handleMemdPacket(cli *servers.MemdClient, pak *memd.Packet, 
 	kvCli := s.getKvClient(cli)
 	if !kvCli.requests.push(req) {
 		req.done = nil
-		log.Printf("disconnecting a client whose outstanding requests exceed %d bytes", kvCli.requests.limit)
+		log.Printf("disconnecting a client whose outstanding requests take more than %d bytes", kvCli.requests.limit)
 		if err := cli.Abort(); err != nil && !errors.Is(err, net.ErrClosed) {
 			log.Printf("failed to abort memd client: %s", err)
 		}
