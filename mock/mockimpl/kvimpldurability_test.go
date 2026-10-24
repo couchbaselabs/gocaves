@@ -599,20 +599,42 @@ func newReplicationConn(t *testing.T, replicaLatency, persistLatency time.Durati
 	return connectTestKv(t, cluster, append([]memd.HelloFeature{memd.FeatureAltRequests, memd.FeatureSyncReplication}, features...)...)
 }
 
-// waitForDocument waits until key is stored in the active copy of the
-// connection's vbucket.
+// hasMutation reports whether key has a mutation in the active copy of vbID,
+// a durable write in progress included, which reads do not see.
+func hasMutation(store *mockdb.Bucket, vbID uint16, key string) (bool, error) {
+	vbucket := store.GetVbucket(uint(vbID))
+	if vbucket == nil {
+		return false, fmt.Errorf("no vbucket %d", vbID)
+	}
+	if vbucket.CurrentMetaState(0).CurrentSeqNo == 0 {
+		return false, nil
+	}
+	docs, _, err := vbucket.GetAllWithin(0, 0, 0)
+	if err != nil {
+		return false, err
+	}
+	for _, doc := range docs {
+		if string(doc.Key) == key {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// waitForDocument waits until key has a mutation in the active copy of the
+// connection's vbucket, a durable write in progress included.
 func waitForDocument(t *testing.T, c *testKvConn, key string) {
 	t.Helper()
 
 	store := c.cluster.GetBucket("default").Store()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		_, err := store.Get(0, uint(c.vbID), 0, []byte(key))
-		if err == nil {
-			return
+		stored, err := hasMutation(store, c.vbID, key)
+		if err != nil {
+			t.Fatalf("failed to list mutations: %v", err)
 		}
-		if !errors.Is(err, mockdb.ErrDocNotFound) {
-			t.Fatalf("failed to read %s: %v", key, err)
+		if stored {
+			return
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("%s was never stored", key)
@@ -630,11 +652,11 @@ func discardPendingWrite(c *testKvConn, key string, discard func(store *mockdb.B
 	go func() {
 		deadline := time.Now().Add(5 * time.Second)
 		for {
-			if _, err := store.Get(0, uint(c.vbID), 0, []byte(key)); err == nil {
-				break
-			} else if !errors.Is(err, mockdb.ErrDocNotFound) {
+			if stored, err := hasMutation(store, c.vbID, key); err != nil {
 				done <- err
 				return
+			} else if stored {
+				break
 			}
 			if time.Now().After(deadline) {
 				done <- fmt.Errorf("%s was never stored", key)
@@ -712,12 +734,12 @@ func TestDiscardedDurableResponsesFollowSequenceNumberOrder(t *testing.T) {
 	store := c.cluster.GetBucket("default").Store()
 	for _, key := range []string{"first", "second"} {
 		for {
-			_, err := store.Get(0, uint(c.vbID), 0, []byte(key))
-			if err == nil {
-				break
+			stored, err := hasMutation(store, c.vbID, key)
+			if err != nil {
+				t.Fatalf("failed to list mutations: %v", err)
 			}
-			if !errors.Is(err, mockdb.ErrDocNotFound) {
-				t.Fatalf("failed to read %s: %v", key, err)
+			if stored {
+				break
 			}
 			if time.Since(start) > testKvTimeout {
 				t.Fatalf("%s was not stored", key)
@@ -1158,12 +1180,12 @@ func storedOrDisconnected(t *testing.T, cluster mock.Cluster, c *testKvConn, key
 	store := c.cluster.GetBucket("default").Store()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		_, err := store.Get(0, uint(c.vbID), 0, []byte(key))
-		if err == nil {
-			return true
+		stored, err := hasMutation(store, c.vbID, key)
+		if err != nil {
+			t.Fatalf("failed to list mutations: %v", err)
 		}
-		if !errors.Is(err, mockdb.ErrDocNotFound) {
-			t.Fatalf("failed to read %s: %v", key, err)
+		if stored {
+			return true
 		}
 		if len(kvService.GetAllClients()) == 0 {
 			return false

@@ -315,3 +315,71 @@ func TestAnsweredWriteDroppedBehindUnansweredOne(t *testing.T) {
 	firstEnd := first.ModifiedTime.Add(fenceReplicaLatency + fencePersistLatency)
 	expectState(t, vb, first, firstEnd.Add(fenceMargin), SyncWriteCommitted)
 }
+
+// A durable write is a prepare: reads of the active copy see the committed
+// document before it until it commits, and replica reads until the commit
+// has reached the replica.
+func TestPrepareVisibleOnceCommitted(t *testing.T) {
+	const replicaLatency = time.Second
+	chrono := &mocktime.Chrono{}
+	bucket, err := NewBucket(NewBucketOptions{Chrono: chrono, NumReplicas: 1, NumVbuckets: 1, ReplicaLatency: replicaLatency})
+	if err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+	if _, err := bucket.Insert(&Document{Key: []byte("doc"), Value: []byte("old")}); err != nil {
+		t.Fatalf("failed to store doc: %v", err)
+	}
+	// The committed document reaches the replica.
+	chrono.TimeTravel(2 * replicaLatency)
+
+	_, err = bucket.Update(0, 0, []byte("doc"), func(idoc *Document) (*Document, error) {
+		idoc.Value = []byte("new")
+		idoc.SyncWrite = &SyncWrite{Replicas: 1, Deadline: chrono.Now().Add(time.Hour)}
+		return idoc, nil
+	})
+	if err != nil {
+		t.Fatalf("failed to store the durable write: %v", err)
+	}
+
+	expect := func(when string, repIdx uint, want string) {
+		t.Helper()
+		doc, err := bucket.Get(repIdx, 0, 0, []byte("doc"))
+		if err != nil {
+			t.Fatalf("%s: failed to read copy %d: %v", when, repIdx, err)
+		}
+		if string(doc.Value) != want {
+			t.Errorf("%s: copy %d read %q, expected %q", when, repIdx, doc.Value, want)
+		}
+		if repIdx != 0 {
+			return
+		}
+		// GetRandom picks among all mutations, superseded ones included, so
+		// it is asked often enough to pick each.
+		for i := 0; want == "old" && i < 64; i++ {
+			random, err := bucket.GetRandom(0, 0)
+			if err != nil {
+				t.Fatalf("%s: failed to read a random document: %v", when, err)
+			}
+			if string(random.Value) == "new" {
+				t.Fatalf("%s: GetRandom read the pending write", when)
+			}
+		}
+		all, err := bucket.GetAll(0, 0)
+		if err != nil {
+			t.Fatalf("%s: failed to read all documents: %v", when, err)
+		}
+		if last := all[len(all)-1]; string(last.Value) != want {
+			t.Errorf("%s: GetAll ends with %q, expected %q", when, last.Value, want)
+		}
+	}
+
+	// The write commits once the replica acknowledges it, a replica latency
+	// after it was stored, and reaches the replica a replica latency later.
+	expect("pending", 0, "old")
+	expect("pending", 1, "old")
+	chrono.TimeTravel(replicaLatency + fenceMargin)
+	expect("committed", 0, "new")
+	expect("committed", 1, "old")
+	chrono.TimeTravel(replicaLatency)
+	expect("committed on the replica", 1, "new")
+}
