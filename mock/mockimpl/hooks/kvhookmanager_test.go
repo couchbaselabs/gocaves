@@ -96,9 +96,7 @@ func TestKvHooksBasic(t *testing.T) {
 // reports it.
 func TestKvHooksChangeDuringInvoke(t *testing.T) {
 	var root KvHookManager
-	// Destroy removes destroyers from the manager's grandparent, so every
-	// manager destroyed here needs a grandparent.
-	middle := root.Child().Child()
+	middle := root.Child()
 	source := mock.KvClient(&fakeKvClient{})
 
 	var changers sync.WaitGroup
@@ -163,6 +161,33 @@ func TestKvHooksAddDuringDestroyLeavesNoAncestorHook(t *testing.T) {
 
 		if reached := root.Invoke(source, &memd.Packet{}); !reached {
 			t.Fatalf("iteration %d: a hook stayed in the root after its manager was destroyed", i)
+		}
+	}
+}
+
+// A destroyer runs once, whichever of its manager and their ancestors is
+// destroyed first.
+func TestKvHooksDestroyRunsDestroyersOnce(t *testing.T) {
+	for _, order := range [][]string{
+		{"child", "parent", "root"},
+		{"parent", "child", "root"},
+		{"root", "parent", "child"},
+	} {
+		var root KvHookManager
+		parent := root.Child().(*KvHookManager)
+		child := parent.Child().(*KvHookManager)
+		managers := map[string]*KvHookManager{"root": &root, "parent": parent, "child": child}
+
+		runs := map[string]int{}
+		parent.PushDestroyer(func() { runs["parent"]++ })
+		child.PushDestroyer(func() { runs["child"]++ })
+
+		for _, name := range order {
+			managers[name].Destroy()
+		}
+
+		if runs["parent"] != 1 || runs["child"] != 1 {
+			t.Errorf("destroying %v: expected each destroyer to run once, got %v", order, runs)
 		}
 	}
 }

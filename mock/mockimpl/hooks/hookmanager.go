@@ -1,6 +1,9 @@
 package hooks
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // KvHookManager implements a tree of hooks which can handle a KV packet.
 type hookManager struct {
@@ -52,8 +55,17 @@ func (m *hookManager) pushDestroyer(fnPtr *func()) {
 	}
 }
 
+// PushDestroyer registers fn to run when this manager or any ancestor is
+// destroyed. Each of those managers holds it, and it runs once, whichever is
+// destroyed first.
 func (m *hookManager) PushDestroyer(fn func()) {
-	fnPtr := &fn
+	var ran atomic.Bool
+	once := func() {
+		if ran.CompareAndSwap(false, true) {
+			fn()
+		}
+	}
+	fnPtr := &once
 	lock := m.treeLock()
 	lock.Lock()
 	defer lock.Unlock()
@@ -103,7 +115,7 @@ func (m *hookManager) Destroy() {
 		}
 
 		for _, hook := range m.destroyHooks {
-			m.parent.parent.removeDestroyer(hook)
+			m.parent.removeDestroyer(hook)
 		}
 	}
 	m.hooks = nil
