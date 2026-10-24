@@ -1,10 +1,26 @@
 package hooks
 
+import "sync"
+
 // KvHookManager implements a tree of hooks which can handle a KV packet.
 type hookManager struct {
-	parent       *hookManager
+	parent *hookManager
+
+	// lock, in the root manager, guards destroyHooks and hooks of every
+	// manager in the tree. Tests change the hooks while connections invoke
+	// them, and Add and Destroy change a manager and its ancestors in one
+	// step under it. It is never held while a hook or destroyer runs.
+	lock         sync.Mutex
 	destroyHooks []*func()
 	hooks        []interface{}
+}
+
+// treeLock returns the lock of the root of the manager's tree.
+func (m *hookManager) treeLock() *sync.Mutex {
+	for m.parent != nil {
+		m = m.parent
+	}
+	return &m.lock
 }
 
 // Child returns a child hook manager to this hook manager.
@@ -16,9 +32,16 @@ func (m *hookManager) Child() hookManager {
 
 // Add adds a new hook at the end of the processing chain.
 func (m *hookManager) Add(fn interface{}) {
+	lock := m.treeLock()
+	lock.Lock()
+	defer lock.Unlock()
+	m.add(fn)
+}
+
+func (m *hookManager) add(fn interface{}) {
 	m.hooks = append(m.hooks, fn)
 	if m.parent != nil {
-		m.parent.Add(fn)
+		m.parent.add(fn)
 	}
 }
 
@@ -31,6 +54,9 @@ func (m *hookManager) pushDestroyer(fnPtr *func()) {
 
 func (m *hookManager) PushDestroyer(fn func()) {
 	fnPtr := &fn
+	lock := m.treeLock()
+	lock.Lock()
+	defer lock.Unlock()
 	m.pushDestroyer(fnPtr)
 }
 
@@ -68,6 +94,9 @@ func (m *hookManager) removeDestroyer(fn *func()) {
 
 // Destroy removes all hooks that were added to this manager.
 func (m *hookManager) Destroy() {
+	lock := m.treeLock()
+	lock.Lock()
+	destroyHooks := m.destroyHooks
 	if m.parent != nil {
 		for _, hook := range m.hooks {
 			m.parent.remove(hook)
@@ -77,20 +106,23 @@ func (m *hookManager) Destroy() {
 			m.parent.parent.removeDestroyer(hook)
 		}
 	}
-
-	for _, fn := range m.destroyHooks {
-		(*fn)()
-	}
-
 	m.hooks = nil
 	m.destroyHooks = nil
+	lock.Unlock()
+
+	for _, fn := range destroyHooks {
+		(*fn)()
+	}
 }
 
 // Invoke will invoke this hook chain.  It starts at the most recently
 // registered hook and works it's way to the oldest hook.
 func (m *hookManager) Invoke(fn func(interface{}, func() interface{}) interface{}) interface{} {
+	lock := m.treeLock()
+	lock.Lock()
 	hookChain := make([]interface{}, len(m.hooks))
 	copy(hookChain, m.hooks)
+	lock.Unlock()
 
 	curHookIdx := len(hookChain)
 	var nextHook func() interface{}
