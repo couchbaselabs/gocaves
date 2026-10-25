@@ -76,6 +76,17 @@ func (m *CollectionManifest) GetByID(collectionID uint32) (string, string) {
 	return scope.Name, col.Name
 }
 
+// MaxTTL returns the maxTTL in seconds of the collection with the given ID,
+// 0 if it has none or does not exist.
+func (m *CollectionManifest) MaxTTL(collectionID uint32) uint32 {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	if col := m.Collections[collectionID]; col != nil {
+		return col.MaxTTL
+	}
+	return 0
+}
+
 // GetByName retrieves a collection uid by scope and collection name.
 func (m *CollectionManifest) GetByName(scope, collection string) (uint64, uint32, error) {
 	m.lock.Lock()

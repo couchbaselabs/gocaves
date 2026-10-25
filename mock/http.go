@@ -16,7 +16,7 @@ type HTTPRequest struct {
 	URL     *url.URL
 	Header  http.Header
 	Body    io.Reader
-	Form    url.Values
+	Form    url.Values // on the management ports, filled once the body is read
 	Context context.Context
 	Flusher http.Flusher
 }

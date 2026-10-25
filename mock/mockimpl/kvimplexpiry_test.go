@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/couchbase/gocbcore/v10/memd"
+	"github.com/couchbaselabs/gocaves/mock"
 )
 
 func (c *testKvConn) expiry(key string) time.Time {
@@ -194,4 +195,192 @@ func TestPreserveExpiryOnExpiredDocument(t *testing.T) {
 	}
 
 	c.mustSucceed(&memd.Packet{Command: memd.CmdGet, Vbucket: c.vbID, Key: []byte("doc")})
+}
+
+// TestPreserveExpirySetOnExpiredOrDeleted checks a SET that preserves the
+// expiry against Couchbase Server 7.0.5. VBucket::updateStoredValue copies
+// the expiry of the document kv_engine holds in memory: an expired document
+// keeps its past expiry and stays expired, and so does the deletion its
+// expiry stored when a read found it expired, until that deletion is
+// persisted. GET_META and REPLACE do not store the deletion. A persisted
+// deletion, as a new key, takes the request's expiry.
+func TestPreserveExpirySetOnExpiredOrDeleted(t *testing.T) {
+	c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeaturePreserveExpiry)
+	expiryExtras := func(expiry uint32) []byte {
+		extras := make([]byte, 8)
+		binary.BigEndian.PutUint32(extras[4:], expiry)
+		return extras
+	}
+	request := func(cmd memd.CmdCode, key string, extras []byte) *memd.Packet {
+		req := &memd.Packet{Command: cmd, Vbucket: c.vbID, Key: []byte(key), Extras: extras}
+		if cmd != memd.CmdGet {
+			req.Value = []byte(`{}`)
+		}
+		return req
+	}
+	set := func(key string, expiry uint32, preserve bool) {
+		req := request(memd.CmdSet, key, expiryExtras(expiry))
+		if preserve {
+			req.PreserveExpiryFrame = &memd.PreserveExpiryFrame{}
+		}
+		c.mustSucceed(req)
+	}
+	expectExpired := func(key string) {
+		t.Helper()
+		if resp := c.Do(request(memd.CmdGet, key, nil)); resp.Status != memd.StatusKeyNotFound {
+			t.Errorf("%s: expected the document to stay expired, got status 0x%02x", key, uint16(resp.Status))
+		}
+	}
+	expectRequestExpiry := func(key string) {
+		t.Helper()
+		if ttl := c.expiry(key).Sub(c.cluster.Chrono().Now()); ttl <= 99*time.Second || ttl > 100*time.Second {
+			t.Errorf("%s: expected the request's expiry in 100s, got %v", key, ttl)
+		}
+	}
+
+	reads := []struct {
+		key    string
+		req    *memd.Packet
+		stores bool
+	}{
+		{"get", request(memd.CmdGet, "get", nil), true},
+		{"gat", &memd.Packet{Command: memd.CmdGAT, Vbucket: c.vbID, Key: []byte("gat"), Extras: make([]byte, 4)}, true},
+		{"delete", &memd.Packet{Command: memd.CmdDelete, Vbucket: c.vbID, Key: []byte("delete")}, true},
+		{"get_meta", &memd.Packet{Command: memd.CmdGetMeta, Vbucket: c.vbID, Key: []byte("get_meta")}, false},
+		{"replace", request(memd.CmdReplace, "replace", make([]byte, 8)), false},
+	}
+	set("unread", 10, false)
+	set("read now", 10, false)
+	for _, read := range reads {
+		set(read.key, 10, false)
+	}
+	set("deleted", 0, false)
+	c.mustSucceed(&memd.Packet{Command: memd.CmdDelete, Vbucket: c.vbID, Key: []byte("deleted")})
+	c.cluster.Chrono().TimeTravel(20 * time.Second)
+
+	set("unread", 100, true)
+	expectExpired("unread")
+
+	c.Do(request(memd.CmdGet, "read now", nil))
+	set("read now", 100, true)
+	expectExpired("read now")
+
+	for _, read := range reads {
+		c.Do(read.req)
+	}
+	c.cluster.Chrono().TimeTravel(time.Second)
+	for _, read := range reads {
+		set(read.key, 100, true)
+		if read.stores {
+			expectRequestExpiry(read.key)
+		} else {
+			expectExpired(read.key)
+		}
+	}
+
+	set("deleted", 100, true)
+	expectRequestExpiry("deleted")
+
+	set("new", 100, true)
+	expectRequestExpiry("new")
+}
+
+// TestPreserveExpirySetOnHeldDeletion checks a SET that preserves the
+// expiry over a deletion against Couchbase Server 7.0.5: kv_engine holds
+// the deletion in memory with the expiry the document had, until a
+// couchbase bucket persists it and for as long as an ephemeral bucket
+// keeps it, and the SET copies that expiry. A persisted deletion reads
+// back with the time it was made as its expiry, and a read that brings it
+// back into memory holds it so.
+func TestPreserveExpirySetOnHeldDeletion(t *testing.T) {
+	c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeaturePreserveExpiry, memd.FeatureXattr)
+	eph, err := c.cluster.AddBucket(mock.NewBucketOptions{Name: "eph", Type: mock.BucketTypeEphemeral})
+	if err != nil {
+		t.Fatalf("failed to add bucket: %v", err)
+	}
+	set := func(vbID uint16, key string, expiry uint32, preserve bool) {
+		extras := make([]byte, 8)
+		binary.BigEndian.PutUint32(extras[4:], expiry)
+		req := &memd.Packet{Command: memd.CmdSet, Vbucket: vbID, Key: []byte(key), Value: []byte(`{}`), Extras: extras}
+		if preserve {
+			req.PreserveExpiryFrame = &memd.PreserveExpiryFrame{}
+		}
+		c.mustSucceed(req)
+	}
+	setAndDelete := func(vbID uint16, key string, expiry uint32) {
+		set(vbID, key, expiry, false)
+		c.mustSucceed(&memd.Packet{Command: memd.CmdDelete, Vbucket: vbID, Key: []byte(key)})
+	}
+	ttl := func(bucket, key string, vbID uint16) time.Duration {
+		t.Helper()
+		doc, err := c.cluster.GetBucket(bucket).Store().Get(0, uint(vbID), 0, []byte(key))
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", key, err)
+		}
+		if doc.Expiry.IsZero() {
+			return 0
+		}
+		return doc.Expiry.Sub(c.cluster.Chrono().Now()).Round(time.Second)
+	}
+
+	setAndDelete(c.vbID, "held", 40)
+	setAndDelete(c.vbID, "held without expiry", 0)
+	if got := ttl("default", "held", c.vbID); got != 40*time.Second {
+		t.Errorf("held: expected the deletion to keep the expiry in 40s, got %v", got)
+	}
+	set(c.vbID, "held", 100, true)
+	set(c.vbID, "held without expiry", 100, true)
+	if got := ttl("default", "held", c.vbID); got != 40*time.Second {
+		t.Errorf("held: expected the expiry in 40s, got %v", got)
+	}
+	if got := ttl("default", "held without expiry", c.vbID); got != 0 {
+		t.Errorf("held without expiry: expected no expiry, got %v", got)
+	}
+
+	setAndDelete(c.vbID, "persisted", 40)
+	c.cluster.Chrono().TimeTravel(time.Second)
+	if got := ttl("default", "persisted", c.vbID); got != -time.Second {
+		t.Errorf("persisted: expected the deletion to read back with its time, got %v", got)
+	}
+	set(c.vbID, "persisted", 100, true)
+	if got := ttl("default", "persisted", c.vbID); got != 100*time.Second {
+		t.Errorf("persisted: expected the request's expiry in 100s, got %v", got)
+	}
+
+	// A read that may see a deleted document, and GET_META, bring a
+	// persisted deletion back into memory with the time it was made as its
+	// expiry, so a preserving SET leaves the document expired; a GET does
+	// not.
+	lookupDeleted := &memd.Packet{Command: memd.CmdSubDocMultiLookup, Key: []byte("fetched by lookup"),
+		Extras: []byte{uint8(memd.SubdocDocFlagAccessDeleted)}, Value: []byte{uint8(memd.SubDocOpGet),
+			uint8(memd.SubdocFlagXattrPath), 0, byte(len("$document.exptime"))}}
+	lookupDeleted.Value = append(lookupDeleted.Value, "$document.exptime"...)
+	for key, read := range map[string]*memd.Packet{
+		"fetched by lookup":   lookupDeleted,
+		"fetched by GET_META": {Command: memd.CmdGetMeta, Key: []byte("fetched by GET_META"), Extras: []byte{2}},
+		"read by GET":         {Command: memd.CmdGet, Key: []byte("read by GET")},
+	} {
+		setAndDelete(c.vbID, key, 40)
+		c.cluster.Chrono().TimeTravel(time.Second)
+		read.Vbucket = c.vbID
+		c.Do(read)
+		set(c.vbID, key, 100, true)
+		resp := c.Do(&memd.Packet{Command: memd.CmdGet, Vbucket: c.vbID, Key: []byte(key)})
+		if key == "read by GET" {
+			if resp.Status != memd.StatusSuccess {
+				t.Errorf("%s: expected the document with the request's expiry, got status 0x%02x", key, uint16(resp.Status))
+			}
+		} else if resp.Status != memd.StatusKeyNotFound {
+			t.Errorf("%s: expected the document to stay expired, got status 0x%02x", key, uint16(resp.Status))
+		}
+	}
+
+	c.mustSucceed(&memd.Packet{Command: memd.CmdSelectBucket, Key: []byte("eph")})
+	vbID := vbucketOwnedAs(t, c, eph, 0)
+	setAndDelete(vbID, "ephemeral", 40)
+	c.cluster.Chrono().TimeTravel(time.Second)
+	set(vbID, "ephemeral", 100, true)
+	if got := ttl("eph", "ephemeral", vbID); got != 39*time.Second {
+		t.Errorf("ephemeral: expected the expiry the document had, in 39s, got %v", got)
+	}
 }

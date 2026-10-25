@@ -10,6 +10,7 @@ require (
 	github.com/go-bindata/go-bindata v3.1.2+incompatible
 	github.com/golang/snappy v1.0.0
 	github.com/google/uuid v1.6.0
+	github.com/rivo/uniseg v0.4.7
 	github.com/stretchr/testify v1.12.1
 )
 

@@ -373,6 +373,35 @@ func checkDurability(bucket mock.Bucket, source mock.KvClient, pak *memd.Packet,
 	return memd.StatusSuccess
 }
 
+// minDurabilityLevels are the levels of the bucket setting
+// durabilityMinLevel, none left out.
+var minDurabilityLevels = map[string]memd.DurabilityLevel{
+	"majority":                 memd.DurabilityLevelMajority,
+	"majorityAndPersistActive": memd.DurabilityLevelMajorityAndPersistOnMaster,
+	"persistToMajority":        memd.DurabilityLevelPersistToMajority,
+}
+
+// raiseDurability raises the durability level of a write to the bucket's
+// durabilityMinLevel, as kv_engine's EventuallyPersistentEngine::store,
+// store_if and remove do: a write without a level becomes a durable write
+// with the default timeout, and one with a lower level keeps its timeout.
+// It applies to every command that stores or removes a document, not to
+// TOUCH and GAT, which update the expiry without a store. The request is
+// changed in place, so the rest of its handling sees the raised level.
+func raiseDurability(bucketMinLevel string, pak *memd.Packet) {
+	minLevel, ok := minDurabilityLevels[bucketMinLevel]
+	if !ok || !durabilityCommands[pak.Command] || pak.Command == memd.CmdTouch || pak.Command == memd.CmdGAT {
+		return
+	}
+	if pak.DurabilityLevelFrame == nil {
+		pak.DurabilityLevelFrame = &memd.DurabilityLevelFrame{DurabilityLevel: minLevel}
+		return
+	}
+	if pak.DurabilityLevelFrame.DurabilityLevel < minLevel {
+		pak.DurabilityLevelFrame.DurabilityLevel = minLevel
+	}
+}
+
 // syncWrite describes the durable write a request from source makes, or is nil
 // for a request without a durability level. Its deadline is the durability
 // timeout, or kv_engine's default, from now on the bucket's mock clock, which

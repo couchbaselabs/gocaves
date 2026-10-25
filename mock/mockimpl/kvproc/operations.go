@@ -210,7 +210,7 @@ func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 		Value:        opts.Value,
 		Flags:        opts.Flags,
 		Datatype:     SetDatatypeJSONFromValue(opts.Datatype, opts.Value),
-		Expiry:       e.parseExpiry(opts.Expiry),
+		Expiry:       e.limitExpiry(opts.CollectionID, e.parseExpiry(opts.Expiry)),
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
@@ -250,7 +250,7 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 		Value:        opts.Value,
 		Flags:        opts.Flags,
 		Datatype:     SetDatatypeJSONFromValue(opts.Datatype, opts.Value),
-		Expiry:       e.parseExpiry(opts.Expiry),
+		Expiry:       e.limitExpiry(opts.CollectionID, e.parseExpiry(opts.Expiry)),
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
@@ -282,7 +282,13 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 			}
 
 			// Otherwise we simply update the value
-			if !opts.PreserveExpiry || idoc.IsDeleted {
+			// kv_engine's VBucket::updateStoredValue copies a preserved
+			// expiry back after bounding it, so the maxTTL leaves it, from
+			// the document it holds in memory, deleted or not: an expired
+			// document stays expired. A deletion kv_engine has persisted
+			// is no longer held, and the store takes the expiry of the
+			// request.
+			if !opts.PreserveExpiry || idoc.DeletionPersisted {
 				idoc.Expiry = doc.Expiry
 			}
 			idoc.IsDeleted = false
@@ -322,7 +328,7 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 		Value:        opts.Value,
 		Flags:        opts.Flags,
 		Datatype:     SetDatatypeJSONFromValue(opts.Datatype, opts.Value),
-		Expiry:       e.parseExpiry(opts.Expiry),
+		Expiry:       e.limitExpiry(opts.CollectionID, e.parseExpiry(opts.Expiry)),
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
@@ -345,6 +351,7 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 			idoc.Value = doc.Value
 			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
+			// As for SET, a preserved expiry is not bounded by the maxTTL.
 			if !opts.PreserveExpiry {
 				idoc.Expiry = doc.Expiry
 			}
@@ -385,9 +392,6 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 	if err := e.confirmIsMaster(opts.Vbucket); err != nil {
 		return nil, err
 	}
-	if e.durabilityErr != nil {
-		return nil, e.durabilityErr
-	}
 
 	lkpDoc := &mockdb.Document{
 		VbID:         opts.Vbucket,
@@ -398,16 +402,30 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 	newDoc, err := e.update(
 		lkpDoc.VbID, lkpDoc.CollectionID, lkpDoc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
+			// kv_engine's RemoveCommandContext reads the document, refuses
+			// it locked without a CAS, and checks the CAS of an unlocked one,
+			// before it asks the engine to remove it. For a locked document
+			// the CAS given stands in for the document's, and the engine
+			// checks the durability requirements before the lock.
 			if idoc == nil || idoc.IsDeleted {
 				return nil, ErrDocNotFound
 			}
 
-			if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
+			locked := e.docIsLocked(idoc)
+			if locked && opts.Cas == 0 {
 				return nil, ErrLocked
 			}
 
-			if opts.Cas != 0 && idoc.Cas != opts.Cas {
+			if !locked && opts.Cas != 0 && idoc.Cas != opts.Cas {
 				return nil, ErrCasMismatch
+			}
+
+			if e.durabilityErr != nil {
+				return nil, e.durabilityErr
+			}
+
+			if locked && idoc.Cas != opts.Cas {
+				return nil, ErrLocked
 			}
 
 			// TODO(brett19): Check if DELETE generates a new CAS or not.
@@ -478,7 +496,7 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 		Flags:        0,
 		// kv_engine stores a counter's value as JSON.
 		Datatype: uint8(memd.DatatypeFlagJSON),
-		Expiry:   e.parseExpiry(opts.Expiry),
+		Expiry:   e.limitExpiry(opts.CollectionID, e.parseExpiry(opts.Expiry)),
 		Cas:      mockdb.GenerateNewCas(e.HLC()),
 	}
 
@@ -556,7 +574,9 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 
 			// The expiry of the request applies only when the counter is
 			// created; kv_engine keeps the expiry and flags of an existing
-			// counter.
+			// counter, the maxTTL still bounding the expiry when it is
+			// stored.
+			idoc.Expiry = e.limitExpiry(idoc.CollectionID, idoc.Expiry)
 			idoc.Value = []byte(fmt.Sprintf("%d", val))
 			idoc.Datatype = doc.Datatype
 			idoc.LockExpiry = doc.LockExpiry
@@ -636,7 +656,9 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 				return nil, e.durabilityErr
 			}
 
-			// Otherwise we simply update the value
+			// kv_engine stores the result with the document's expiry, which
+			// the maxTTL bounds.
+			idoc.Expiry = e.limitExpiry(idoc.CollectionID, idoc.Expiry)
 			if isAppend {
 				idoc.Value = append(idoc.Value, doc.Value...)
 			} else {
@@ -691,7 +713,7 @@ func (e *Engine) Touch(opts TouchOptions) (*StoreResult, error) {
 		VbID:         opts.Vbucket,
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
-		Expiry:       e.parseExpiry(opts.Expiry),
+		Expiry:       e.limitExpiry(opts.CollectionID, e.parseExpiry(opts.Expiry)),
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
@@ -748,7 +770,7 @@ func (e *Engine) GetAndTouch(opts GetAndTouchOptions) (*GetResult, error) {
 		VbID:         opts.Vbucket,
 		CollectionID: opts.CollectionID,
 		Key:          opts.Key,
-		Expiry:       e.parseExpiry(opts.Expiry),
+		Expiry:       e.limitExpiry(opts.CollectionID, e.parseExpiry(opts.Expiry)),
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
@@ -1286,6 +1308,7 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 					idoc.IsDeleted = doc.IsDeleted
 				}
 
+				idoc.Expiry = e.limitExpiry(idoc.CollectionID, idoc.Expiry)
 				idoc.LockExpiry = newMetaDoc.LockExpiry
 				idoc.Cas = newMetaDoc.Cas
 				idoc.SeqNoMacro = SeqNoPlaceholder

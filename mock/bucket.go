@@ -1,6 +1,11 @@
 package mock
 
-import "github.com/couchbaselabs/gocaves/mock/mockdb"
+import (
+	"encoding/json"
+	"errors"
+
+	"github.com/couchbaselabs/gocaves/mock/mockdb"
+)
 
 // BucketType specifies the type of bucket
 type BucketType uint
@@ -65,16 +70,67 @@ type NewBucketOptions struct {
 	RamQuota            uint64
 	ReplicaIndexEnabled bool
 	CompressionMode     CompressionMode
+	// MaxTTL is the bucket's maxTTL in seconds; 0 sets none.
+	MaxTTL uint32
+	// Settings holds the settings the mock keeps and reports only. Zero
+	// fields take ns_server's defaults for the bucket type.
+	Settings BucketSettings
 }
 
-// UpdateBucketOptions allows you to specify options for updating a bucket
+// UpdateBucketOptions allows you to specify options for updating a bucket.
+// A nil field leaves the bucket's setting as it is; Settings replaces all
+// the settings it holds.
 type UpdateBucketOptions struct {
-	NumReplicas         uint
-	FlushEnabled        bool
-	RamQuota            uint64
-	ReplicaIndexEnabled bool
-	CompressionMode     CompressionMode
+	NumReplicas         *uint
+	FlushEnabled        *bool
+	RamQuota            *uint64
+	ReplicaIndexEnabled *bool
+	CompressionMode     *CompressionMode
+	MaxTTL              *uint32
+	Settings            *BucketSettings
 }
+
+// BucketSettings holds the bucket settings ns_server keeps and reports in
+// the bucket config, which the mock does not act on.
+type BucketSettings struct {
+	EvictionPolicy     string
+	StorageBackend     string
+	DurabilityMinLevel string
+	// ConflictResolutionType is seqno or lww; a lww bucket also has the
+	// drift thresholds, in milliseconds.
+	ConflictResolutionType string
+	DriftAheadThresholdMs  json.Number
+	DriftBehindThresholdMs json.Number
+	NumThreads             json.Number
+	// PurgeInterval is the metadata purge interval in days, empty if the
+	// bucket has none of its own.
+	PurgeInterval  json.Number
+	AutoCompaction *AutoCompactionSettings
+}
+
+// AutoCompactionSettings are the auto-compaction settings of a bucket. A
+// nil threshold is undefined.
+type AutoCompactionSettings struct {
+	ParallelDBAndViewCompaction     bool
+	DatabaseFragmentationPercentage *json.Number
+	DatabaseFragmentationSize       *json.Number
+	ViewFragmentationPercentage     *json.Number
+	ViewFragmentationSize           *json.Number
+	AllowedTimePeriod               *AllowedTimePeriod
+}
+
+// AllowedTimePeriod is the time of day auto-compaction may run in.
+type AllowedTimePeriod struct {
+	FromHour     json.Number
+	ToHour       json.Number
+	FromMinute   json.Number
+	ToMinute     json.Number
+	AbortOutside bool
+}
+
+// ErrBucketExists is returned when adding a bucket whose name, ignoring
+// case, another bucket has.
+var ErrBucketExists = errors.New("bucket already exists")
 
 // Bucket represents an instance of a bucket.
 type Bucket interface {
@@ -132,4 +188,10 @@ type Bucket interface {
 
 	// CompressionMode returns the compression mode used by this bucket.
 	CompressionMode() CompressionMode
+
+	// MaxTTL returns the bucket's maxTTL in seconds, 0 if it has none.
+	MaxTTL() uint32
+
+	// Settings returns the settings the bucket keeps and reports only.
+	Settings() BucketSettings
 }

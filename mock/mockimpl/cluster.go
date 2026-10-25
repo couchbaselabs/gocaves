@@ -26,6 +26,7 @@ type clusterInst struct {
 	chrono         *mocktime.Chrono
 	replicaLatency time.Duration
 	persistLatency time.Duration
+	memoryQuota    uint64
 	tlsConfig      *tls.Config
 	// configRev changes while requests read it.
 	configRev atomic.Uint64
@@ -38,6 +39,9 @@ type clusterInst struct {
 	bucketsLock sync.RWMutex
 	buckets     []*bucketInst
 	nodes       []*clusterNodeInst
+
+	// bucketChangeLock serialises ChangeBuckets.
+	bucketChangeLock sync.Mutex
 
 	auth *mockauth.Engine
 
@@ -68,6 +72,9 @@ func NewCluster(opts mock.NewClusterOptions) (mock.Cluster, error) {
 	if opts.PersistLatency == 0 {
 		opts.PersistLatency = 100 * time.Millisecond
 	}
+	if opts.MemoryQuota == 0 {
+		opts.MemoryQuota = 1024 * 1024 * 1024
+	}
 
 	// TODO(brett19): Improve cluster/node certificate setup.
 	// We Need to generate these dynamically, provide accessors so each node
@@ -97,6 +104,7 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 		numVbuckets:    opts.NumVbuckets,
 		chrono:         opts.Chrono,
 		replicaLatency: opts.ReplicaLatency,
+		memoryQuota:    opts.MemoryQuota,
 		persistLatency: opts.PersistLatency,
 		buckets:        nil,
 		nodes:          nil,
@@ -136,6 +144,10 @@ func (c *clusterInst) ID() string {
 	return c.id
 }
 
+func (c *clusterInst) MemoryQuota() uint64 {
+	return c.memoryQuota
+}
+
 func (c *clusterInst) Nodes() []mock.ClusterNode {
 	nodes := make([]mock.ClusterNode, len(c.nodes))
 	for nodeIdx, node := range c.nodes {
@@ -167,15 +179,24 @@ func (c *clusterInst) AddNode(opts mock.NewNodeOptions) (mock.ClusterNode, error
 
 // AddBucket will add a new bucket to a cluster.
 func (c *clusterInst) AddBucket(opts mock.NewBucketOptions) (mock.Bucket, error) {
+	c.bucketsLock.Lock()
+	for _, other := range c.buckets {
+		// ns_bucket:name_conflict ignores case.
+		if strings.EqualFold(other.Name(), opts.Name) {
+			c.bucketsLock.Unlock()
+			return nil, mock.ErrBucketExists
+		}
+	}
+
 	bucket, err := newBucket(c, opts)
 	if err != nil {
+		c.bucketsLock.Unlock()
 		return nil, err
 	}
 
 	// Do an initial rebalance for the nodes we currently have
 	bucket.UpdateVbMap(c.nodeUuids())
 
-	c.bucketsLock.Lock()
 	c.buckets = append(c.buckets, bucket)
 	c.bucketsLock.Unlock()
 
@@ -201,6 +222,13 @@ func (c *clusterInst) UpdateBucket(name string, opts mock.UpdateBucketOptions) e
 	c.updateConfig()
 
 	return nil
+}
+
+// ChangeBuckets runs fn once no other fn given to it runs.
+func (c *clusterInst) ChangeBuckets(fn func()) {
+	c.bucketChangeLock.Lock()
+	defer c.bucketChangeLock.Unlock()
+	fn()
 }
 
 // DeleteBucket will remove a bucket from a cluster.

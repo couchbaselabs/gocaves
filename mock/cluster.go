@@ -13,12 +13,19 @@ type NewClusterOptions struct {
 	InitialNode    NewNodeOptions
 	ReplicaLatency time.Duration
 	PersistLatency time.Duration
+	// MemoryQuota is the data service memory quota of each node in bytes,
+	// which the buckets' RAM quotas share; 0 sets 1 GiB.
+	MemoryQuota uint64
 }
 
 // Cluster represents an instance of a mock cluster
 type Cluster interface {
 	// ID returns the uuid of this cluster.
 	ID() string
+
+	// MemoryQuota returns the data service memory quota of each node in
+	// bytes.
+	MemoryQuota() uint64
 
 	// ConfigRev returns the current configuration revision for this cluster.
 	ConfigRev() uint
@@ -29,8 +36,17 @@ type Cluster interface {
 	// AddBucket will add a new bucket to a cluster.
 	AddBucket(opts NewBucketOptions) (Bucket, error)
 
+	// UpdateBucket updates the settings of a bucket of the cluster and
+	// publishes a new configuration.
+	UpdateBucket(name string, opts UpdateBucketOptions) error
+
 	// DeleteBucket will remove a bucket from a cluster.
 	DeleteBucket(name string) error
+
+	// ChangeBuckets runs fn, which validates and makes a change to the
+	// buckets, once no other fn given to it runs: ns_server makes bucket
+	// changes one at a time, each against the buckets the one before left.
+	ChangeBuckets(fn func())
 
 	// Nodes returns a list of all the nodes in this cluster.
 	Nodes() []ClusterNode

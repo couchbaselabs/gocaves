@@ -90,11 +90,18 @@ func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet, permission
 		}
 	}
 
+	raiseDurability(selectedBucket.Settings().DurabilityMinLevel, pak)
 	proc := kvproc.New(selectedBucket.Store(), vbOwnership)
 	if status := checkDurability(selectedBucket, source, pak, vbOwnership); status != memd.StatusSuccess {
 		proc.SetDurabilityError(durabilityError(status))
 	}
 	proc.SetSyncWrite(syncWrite(source, pak, selectedBucket))
+	proc.SetMaxTTL(func(collectionID uint) uint32 {
+		if maxTTL := selectedBucket.CollectionManifest().MaxTTL(uint32(collectionID)); maxTTL != 0 {
+			return maxTTL
+		}
+		return selectedBucket.MaxTTL()
+	})
 	return proc
 }
 

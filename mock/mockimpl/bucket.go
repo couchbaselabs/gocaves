@@ -13,13 +13,12 @@ import (
 
 // bucketInst represents an instance of a bucketInst
 type bucketInst struct {
-	id              string
-	cluster         *clusterInst
-	name            string
-	bucketType      mock.BucketType
-	numVbuckets     uint
-	store           *mockdb.Bucket
-	compressionMode mock.CompressionMode
+	id          string
+	cluster     *clusterInst
+	name        string
+	bucketType  mock.BucketType
+	numVbuckets uint
+	store       *mockdb.Bucket
 
 	// lock guards the fields below, which Update and UpdateVbMap change
 	// while requests read them.
@@ -29,6 +28,9 @@ type bucketInst struct {
 	flushEnabled        bool
 	ramQuota            uint64
 	replicaIndexEnabled bool
+	compressionMode     mock.CompressionMode
+	maxTTL              uint32
+	settings            mock.BucketSettings
 
 	// vbMap is an array for each vbucket, containing an array for
 	// each replica, containing the UUID of the node responsible.
@@ -79,7 +81,10 @@ func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, er
 		flushEnabled:        opts.FlushEnabled,
 		ramQuota:            opts.RamQuota,
 		compressionMode:     opts.CompressionMode,
+		maxTTL:              opts.MaxTTL,
+		settings:            opts.Settings,
 	}
+	bucket.applyDefaults()
 
 	// Initially set up the vbucket map with nothing in it.
 	bucket.UpdateVbMap(nil)
@@ -241,17 +246,92 @@ func (b *bucketInst) ReplicaIndexEnabled() bool {
 }
 
 func (b *bucketInst) CompressionMode() mock.CompressionMode {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
 	return b.compressionMode
+}
+
+// applyDefaults gives the settings left unset the values ns_server gives a
+// bucket of its type: 100 MiB, the smallest RAM quota of a couchbase or
+// ephemeral bucket, for a bucket created without one.
+func (b *bucketInst) applyDefaults() {
+	isMemcached := b.bucketType == mock.BucketTypeMemcached
+	isEphemeral := b.bucketType == mock.BucketTypeEphemeral
+	if b.ramQuota == 0 {
+		b.ramQuota = 100 * 1024 * 1024
+	}
+	if b.compressionMode == "" {
+		b.compressionMode = mock.CompressionModePassive
+		if isMemcached {
+			b.compressionMode = mock.CompressionModeOff
+		}
+	}
+	s := &b.settings
+	if s.EvictionPolicy == "" {
+		s.EvictionPolicy = "valueOnly"
+		if isEphemeral {
+			s.EvictionPolicy = "noEviction"
+		}
+	}
+	if s.StorageBackend == "" {
+		s.StorageBackend = "couchstore"
+		if isEphemeral || isMemcached {
+			s.StorageBackend = "undefined"
+		}
+	}
+	if s.DurabilityMinLevel == "" {
+		s.DurabilityMinLevel = "none"
+	}
+	if s.ConflictResolutionType == "" {
+		s.ConflictResolutionType = "seqno"
+	}
+	if s.NumThreads == "" {
+		s.NumThreads = "3"
+	}
+	if s.PurgeInterval == "" && isEphemeral {
+		// DEFAULT_EPHEMERAL_PURGE_INTERVAL_DAYS
+		s.PurgeInterval = "1"
+	}
+}
+
+func (b *bucketInst) Settings() mock.BucketSettings {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+	return b.settings
+}
+
+func (b *bucketInst) MaxTTL() uint32 {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+	return b.maxTTL
 }
 
 func (b *bucketInst) Update(opts mock.UpdateBucketOptions) error {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
-	b.ramQuota = opts.RamQuota
-	b.flushEnabled = opts.FlushEnabled
-	b.replicaIndexEnabled = opts.ReplicaIndexEnabled
-	b.numReplicas = opts.NumReplicas
+	if opts.RamQuota != nil {
+		b.ramQuota = *opts.RamQuota
+	}
+	if opts.FlushEnabled != nil {
+		b.flushEnabled = *opts.FlushEnabled
+	}
+	if opts.ReplicaIndexEnabled != nil {
+		b.replicaIndexEnabled = *opts.ReplicaIndexEnabled
+	}
+	if opts.NumReplicas != nil {
+		b.numReplicas = *opts.NumReplicas
+	}
+	if opts.CompressionMode != nil {
+		b.compressionMode = *opts.CompressionMode
+	}
+	if opts.MaxTTL != nil {
+		b.maxTTL = *opts.MaxTTL
+	}
+	if opts.Settings != nil {
+		b.settings = *opts.Settings
+	}
+	b.applyDefaults()
 
 	// TODO: When the store actually does something with num replicas we should probably update it here.
 

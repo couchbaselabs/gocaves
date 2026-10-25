@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
@@ -92,10 +91,6 @@ func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTT
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
-	// The bucket is looked up under the lock, so it is not dropped while
-	// the update runs.
-	x.collectionsLock.Lock()
-	defer x.collectionsLock.Unlock()
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
 		return collectionsNotFoundResponse()
@@ -103,34 +98,23 @@ func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTT
 	if bucket.BucketType() == mock.BucketTypeMemcached {
 		return collectionsTextResponse(400, "Not allowed on this type of bucket")
 	}
-
-	name := req.Form.Get("name")
-	if name == "" {
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body:       bytes.NewReader([]byte(`{"errors":{"name":"The value must be supplied"}`)),
-		}
+	// The body is read before the lock is taken, and the bucket looked up
+	// again under it, so it is not dropped while the update runs.
+	params := parsePost(req)
+	x.collectionsLock.Lock()
+	defer x.collectionsLock.Unlock()
+	if bucket = source.Node().Cluster().GetBucket(bucketName); bucket == nil {
+		return collectionsNotFoundResponse()
 	}
 
-	if strings.HasPrefix(name, "_") || strings.HasPrefix(name, "%") {
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body:       bytes.NewReader([]byte(`{"errors":{"name":"First character must not be _ or %"}`)),
-		}
+	v := newFormValidator(params)
+	maxTTL := v.validateMaxTTL()
+	v.validateScopeName()
+	v.unsupported()
+	if resp := v.response(req); resp != nil {
+		return resp
 	}
-
-	maxTTLStr := req.Form.Get("maxTTL")
-	var maxTTL int
-	if maxTTLStr != "" {
-		var err error
-		maxTTL, err = strconv.Atoi(maxTTLStr)
-		if err != nil {
-			return &mock.HTTPResponse{
-				StatusCode: 400,
-				Body:       bytes.NewReader([]byte(`{"errors":{"maxTTL":"The value must be an integer"}`)),
-			}
-		}
-	}
+	name, _ := paramValue(v.params, "name")
 	manifest := bucket.CollectionManifest()
 
 	_, _, err := manifest.GetByName(scope, name)
@@ -181,10 +165,6 @@ func (x *mgmtImpl) handleCreateScope(source mock.MgmtService, req *mock.HTTPRequ
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
-	// The bucket is looked up under the lock, so it is not dropped while
-	// the update runs.
-	x.collectionsLock.Lock()
-	defer x.collectionsLock.Unlock()
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
 		return collectionsNotFoundResponse()
@@ -192,21 +172,22 @@ func (x *mgmtImpl) handleCreateScope(source mock.MgmtService, req *mock.HTTPRequ
 	if bucket.BucketType() == mock.BucketTypeMemcached {
 		return collectionsTextResponse(400, "Not allowed on this type of bucket")
 	}
-
-	name := req.Form.Get("name")
-	if name == "" {
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body:       bytes.NewReader([]byte(`{"errors":{"name":"The value must be supplied"}`)),
-		}
+	// The body is read before the lock is taken, and the bucket looked up
+	// again under it, so it is not dropped while the update runs.
+	params := parsePost(req)
+	x.collectionsLock.Lock()
+	defer x.collectionsLock.Unlock()
+	if bucket = source.Node().Cluster().GetBucket(bucketName); bucket == nil {
+		return collectionsNotFoundResponse()
 	}
 
-	if strings.HasPrefix(name, "_") || strings.HasPrefix(name, "%") {
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body:       bytes.NewReader([]byte(`{"errors":{"name":"First character must not be _ or %"}`)),
-		}
+	v := newFormValidator(params)
+	v.validateScopeName()
+	v.unsupported()
+	if resp := v.response(req); resp != nil {
+		return resp
 	}
+	name, _ := paramValue(v.params, "name")
 
 	manifest := bucket.CollectionManifest()
 

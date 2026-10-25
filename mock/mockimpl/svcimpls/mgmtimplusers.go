@@ -28,6 +28,8 @@ func (x *mgmtImpl) handleUpsertUser(source mock.MgmtService, req *mock.HTTPReque
 	}
 	// domainName := pathParts[0]	// TODO(chvck): something with domains
 	username := pathParts[1]
+	// The form comes from the body, which ns_server reads here.
+	req.PeekBody()
 	var roles []string
 	if req.Form.Get("roles") != "" {
 		roles = strings.Split(req.Form.Get("roles"), ",")

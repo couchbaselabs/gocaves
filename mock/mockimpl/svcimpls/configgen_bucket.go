@@ -18,43 +18,88 @@ func GenBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	config["bucketType"] = b.BucketType().Name()
 
 	if b.BucketType() != mock.BucketTypeMemcached {
-		config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().Rev)
-		config["durabilityMinLevel"] = "none"
-
-		config["ddocs"] = map[string]interface{}{
-			"uri": fmt.Sprintf("/pools/default/%s/default/ddocs", b.Name()),
-		}
+		config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().UID())
 	}
-	config["evictionPolicy"] = "valueOnly"
-	config["storageBackend"] = "couchstore"
+	if b.BucketType() == mock.BucketTypeCouchbase {
+		config["ddocs"] = ddocsConfig(b)
+	}
+	settings := b.Settings()
+	config["evictionPolicy"] = settings.EvictionPolicy
+	config["storageBackend"] = settings.StorageBackend
+	config["durabilityMinLevel"] = settings.DurabilityMinLevel
 	config["saslPassword"] = "f5461fdf070ba44b7f1ca2f18bd7bb28"
 	config["compressionMode"] = string(b.CompressionMode())
-	config["replicaIndex"] = b.ReplicaIndexEnabled()
 	config["replicaNumber"] = b.NumReplicas()
-	config["threadsNumber"] = 1
+	config["threadsNumber"] = settings.NumThreads
 	config["authType"] = "sasl"
-	config["autoCompactionSettings"] = false
 	config["fragmentationPercentage"] = 50
-	config["conflictResolutionType"] = "seqno"
-	config["maxTTL"] = 0
+	config["conflictResolutionType"] = settings.ConflictResolutionType
+	if settings.ConflictResolutionType == "lww" {
+		config["driftAheadThresholdMs"] = settings.DriftAheadThresholdMs
+		config["driftBehindThresholdMs"] = settings.DriftBehindThresholdMs
+	}
+	config["maxTTL"] = b.MaxTTL()
+	// menelaus_web_buckets:build_bucket_info reports these by bucket type.
+	switch b.BucketType() {
+	case mock.BucketTypeCouchbase:
+		config["replicaIndex"] = b.ReplicaIndexEnabled()
+		config["autoCompactionSettings"] = false
+		if ac := settings.AutoCompaction; ac != nil {
+			config["autoCompactionSettings"] = autoCompactionSettingsJSON(ac)
+			// compaction_api:get_purge_interval(global) defaults to 3 days.
+			config["purgeInterval"] = json.Number("3")
+			if settings.PurgeInterval != "" {
+				config["purgeInterval"] = settings.PurgeInterval
+			}
+		}
+	case mock.BucketTypeEphemeral:
+		config["purgeInterval"] = settings.PurgeInterval
+	case mock.BucketTypeMemcached:
+		config["autoCompactionSettings"] = false
+	}
+	if b.BucketType() != mock.BucketTypeMemcached {
+		config["pitrEnabled"] = false
+		config["pitrGranularity"] = 600
+		config["pitrMaxHistoryAge"] = 86400
+	}
 
 	config["localRandomKeyUri"] = fmt.Sprintf("/pools/default/buckets/%s/localRandomKey", b.Name())
 	config["uri"] = fmt.Sprintf("/pools/default/buckets/%s?bucket_uuid=%s", b.Name(), b.ID())
 	config["streamingUri"] = fmt.Sprintf("/pools/default/bucketsStreaming/%s?bucket_uuid=%s", b.Name(), b.ID())
 
-	config["basicStats"] = map[string]interface{}{
-		"quotaPercentUsed":       40,
-		"opsPerSec":              0,
-		"diskFetches":            0,
-		"itemCount":              0,
-		"diskUsed":               4277712,
-		"dataUsed":               4249600,
-		"memUsed":                38148176,
-		"vbActiveNumNonResident": 0,
+	// menelaus_stats:basic_stats sums the usage of the bucket's nodes; a
+	// memcached bucket has no disk.
+	nodes := uint64(len(bucketServers(b)))
+	usage := nodeBucketUsage(b)
+	quota := b.RamQuota() * nodes
+	quotaPercentUsed := interface{}(0)
+	if quota > 0 && usage.mem > 0 {
+		quotaPercentUsed = float64(usage.mem*nodes) * 100 / float64(quota)
+	}
+	if b.BucketType() == mock.BucketTypeMemcached {
+		config["basicStats"] = map[string]interface{}{
+			"quotaPercentUsed": quotaPercentUsed,
+			"opsPerSec":        0,
+			"hitRatio":         0,
+			"itemCount":        0,
+			"memUsed":          usage.mem * nodes,
+		}
+	} else {
+		config["basicStats"] = map[string]interface{}{
+			"quotaPercentUsed":       quotaPercentUsed,
+			"opsPerSec":              0,
+			"diskFetches":            0,
+			"itemCount":              0,
+			"diskUsed":               usage.disk * nodes,
+			"dataUsed":               usage.data * nodes,
+			"memUsed":                usage.mem * nodes,
+			"vbActiveNumNonResident": 0,
+		}
 	}
 
+	// ns_bucket:ram_quota is the quota of all the bucket's nodes.
 	config["quota"] = map[string]interface{}{
-		"ram":    b.RamQuota(),
+		"ram":    quota,
 		"rawRAM": b.RamQuota(),
 	}
 
@@ -130,16 +175,14 @@ func GenTerseBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	config["uuid"] = b.ID()
 
 	if b.BucketType() != mock.BucketTypeMemcached {
-		config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().Rev)
+		config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().UID())
 	}
 
 	config["uri"] = fmt.Sprintf("/pools/default/buckets/%s?bucket_uuid=%s", b.Name(), b.ID())
 	config["streamingUri"] = fmt.Sprintf("/pools/default/bucketsStreaming/%s?bucket_uuid=%s", b.Name(), b.ID())
 
-	if b.BucketType() != mock.BucketTypeMemcached {
-		config["ddocs"] = map[string]interface{}{
-			"uri": fmt.Sprintf("/pools/default/%s/default/ddocs", b.Name()),
-		}
+	if b.BucketType() == mock.BucketTypeCouchbase {
+		config["ddocs"] = ddocsConfig(b)
 	}
 
 	config["clusterCapabilitiesVer"] = []int{1, 0}
@@ -203,4 +246,41 @@ func GenTerseBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 
 	configBytes, _ := json.Marshal(config)
 	return configBytes
+}
+
+// autoCompactionSettingsJSON is menelaus_web_autocompaction:
+// build_bucket_settings.
+func autoCompactionSettingsJSON(ac *mock.AutoCompactionSettings) map[string]interface{} {
+	threshold := func(percentage, size *json.Number) map[string]interface{} {
+		value := func(n *json.Number) interface{} {
+			if n == nil {
+				return "undefined"
+			}
+			return *n
+		}
+		return map[string]interface{}{"percentage": value(percentage), "size": value(size)}
+	}
+	settings := map[string]interface{}{
+		"parallelDBAndViewCompaction":    ac.ParallelDBAndViewCompaction,
+		"databaseFragmentationThreshold": threshold(ac.DatabaseFragmentationPercentage, ac.DatabaseFragmentationSize),
+		"viewFragmentationThreshold":     threshold(ac.ViewFragmentationPercentage, ac.ViewFragmentationSize),
+	}
+	if p := ac.AllowedTimePeriod; p != nil {
+		settings["allowedTimePeriod"] = map[string]interface{}{
+			"fromHour":     p.FromHour,
+			"toHour":       p.ToHour,
+			"fromMinute":   p.FromMinute,
+			"toMinute":     p.ToMinute,
+			"abortOutside": p.AbortOutside,
+		}
+	}
+	return settings
+}
+
+// ddocsConfig is the ddocs entry ns_server gives a bucket that can hold
+// design documents, a couchbase bucket.
+func ddocsConfig(b mock.Bucket) map[string]interface{} {
+	return map[string]interface{}{
+		"uri": "/pools/default/buckets/" + mochiwebQuotePlus(b.Name()) + "/ddocs",
+	}
 }

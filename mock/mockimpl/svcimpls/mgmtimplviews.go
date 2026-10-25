@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
-	"github.com/couchbaselabs/gocaves/mock/mockmr"
 )
 
 func (x *mgmtImpl) handleGetAllDesignDocuments(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
@@ -22,14 +21,16 @@ func (x *mgmtImpl) handleGetAllDesignDocuments(source mock.MgmtService, req *moc
 
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte(mockmr.ErrNotFound.Error())),
-		}
+		return bucketNotFoundResponse()
+	}
+
+	// Only a couchbase bucket has the views service.
+	if bucket.BucketType() != mock.BucketTypeCouchbase {
+		return jsonResponse(400, `{"error":"no_ddocs_service"}`)
 	}
 
 	ddocs := bucket.ViewIndexManager().GetAllDesignDocuments()
-	var jsonsRows []jsonGetAllDesignDocsRow
+	jsonsRows := []jsonGetAllDesignDocsRow{}
 	for _, ddoc := range ddocs {
 		doc := jsonGetAllDesignDocsDoc{
 			Meta: jsonGetAllDesignDocsMeta{
@@ -57,10 +58,7 @@ func (x *mgmtImpl) handleGetAllDesignDocuments(source mock.MgmtService, req *moc
 		}
 	}
 
-	return &mock.HTTPResponse{
-		StatusCode: 200,
-		Body:       bytes.NewReader(b),
-	}
+	return jsonResponse(200, string(b))
 }
 
 type jsonGetAllDesignDocsMeta struct {

@@ -15,6 +15,7 @@ type Engine struct {
 
 	durabilityErr error
 	syncWrite     *mockdb.SyncWrite
+	maxTTL        func(collectionID uint) uint32
 }
 
 // Store returns the bucket store the engine operates on.
@@ -24,9 +25,10 @@ func (e *Engine) Store() *mockdb.Bucket {
 
 // SetDurabilityError makes SET, ADD, REPLACE, DELETE, arithmetic, APPEND,
 // PREPEND and sub-document mutations fail with err at the point where
-// kv_engine checks the durability requirements of a write: SET, ADD, REPLACE
-// and DELETE first, once the vbucket is known to be active; the others just
-// before the store, after the document was read and checked.
+// kv_engine checks the durability requirements of a write: SET, ADD and
+// REPLACE first, once the vbucket is known to be active; DELETE once the
+// document is found and its lock and CAS checked; the others just before
+// the store, after the document was read and checked.
 func (e *Engine) SetDurabilityError(err error) {
 	e.durabilityErr = err
 }
@@ -35,6 +37,28 @@ func (e *Engine) SetDurabilityError(err error) {
 // tracked by the vbucket from the moment they get their sequence number.
 func (e *Engine) SetSyncWrite(w *mockdb.SyncWrite) {
 	e.syncWrite = w
+}
+
+// SetMaxTTL sets how the engine finds the maxTTL, in seconds, that applies
+// to a collection: the collection's own, or else the bucket's.
+func (e *Engine) SetMaxTTL(maxTTL func(collectionID uint) uint32) {
+	e.maxTTL = maxTTL
+}
+
+// limitExpiry caps the expiry of a document stored in a collection as
+// kv_engine's Collections::VB::Manifest::processExpiryTime does: a maxTTL
+// bounds the expiry to now plus maxTTL, and gives a document without one
+// that expiry.
+func (e *Engine) limitExpiry(collectionID uint, expiry time.Time) time.Time {
+	maxTTL := e.maxTTL(collectionID)
+	if maxTTL == 0 {
+		return expiry
+	}
+	upper := e.db.Chrono().Now().Add(time.Duration(maxTTL) * time.Second)
+	if expiry.IsZero() || expiry.After(upper) {
+		return upper
+	}
+	return expiry
 }
 
 // update and insert store a mutation as a durable write when SetSyncWrite
@@ -97,6 +121,7 @@ func New(db *mockdb.Bucket, vbOwnership []int) *Engine {
 	return &Engine{
 		db:          db,
 		vbOwnership: vbOwnership,
+		maxTTL:      func(uint) uint32 { return 0 },
 	}
 }
 

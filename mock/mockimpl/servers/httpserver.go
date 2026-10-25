@@ -1,6 +1,7 @@
 package servers
 
 import (
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/couchbaselabs/gocaves/mock"
 )
@@ -147,11 +150,36 @@ func (s *HTTPServer) Close() error {
 }
 
 func (s *HTTPServer) handleHTTP(w http.ResponseWriter, req *http.Request) {
-	if err := req.ParseForm(); err != nil {
-		// If the content type isn't form then ParseForm will not error, to get here something
-		// is wrong with the request.
-		w.WriteHeader(400)
-		return
+	// On ns_server's ports a handler reads the body when it needs it, as
+	// mochiweb_request:recv_body does, and gets the form from it. Other
+	// services read a form body whole, within net/http's limit.
+	contentType := req.Header.Get("Content-Type")
+	var body io.Reader = req.Body
+	form := url.Values{}
+	switch {
+	case s.mochiwebTargets:
+		body = &mochiwebBody{src: req.Body, contentType: contentType, form: form}
+		// ns_server answers a request whose handler exits as an unexpected
+		// error.
+		defer func() {
+			if r := recover(); r != nil {
+				if r != errBodyTooLarge {
+					panic(r)
+				}
+				w.Header().Set("Connection", "close")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(500)
+				_, _ = io.WriteString(w, `["Unexpected server error, request logged."]`)
+			}
+		}()
+	case strings.HasPrefix(contentType, "application/x-www-form-urlencoded"):
+		data, err := io.ReadAll(io.LimitReader(req.Body, maxFormBody+1))
+		if err != nil || len(data) > maxFormBody {
+			w.WriteHeader(400)
+			return
+		}
+		body = bytes.NewReader(data)
+		form = postForm(contentType, data)
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -165,8 +193,8 @@ func (s *HTTPServer) handleHTTP(w http.ResponseWriter, req *http.Request) {
 		Target:  req.RequestURI,
 		URL:     req.URL,
 		Header:  req.Header,
-		Body:    req.Body,
-		Form:    req.Form,
+		Body:    body,
+		Form:    form,
 		Context: req.Context(),
 		Flusher: flusher,
 	})
@@ -187,4 +215,52 @@ func (s *HTTPServer) handleHTTP(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		log.Printf("failed to write http response: %s", err)
 	}
+}
+
+// maxMochiwebBody is mochiweb_request's MAX_RECV_BODY, and maxFormBody the
+// form body net/http's ParseForm reads.
+const (
+	maxMochiwebBody = 20 << 20
+	maxFormBody     = 10 << 20
+)
+
+// errBodyTooLarge ends a handler that reads a body over maxMochiwebBody,
+// as mochiweb_request:recv_body exits the process serving the request.
+var errBodyTooLarge = errors.New("body too large")
+
+// mochiwebBody is the body of a request to an ns_server port. The first
+// read takes it whole, as recv_body does, and parses the form of the
+// request from it; a body over maxMochiwebBody ends the handler.
+type mochiwebBody struct {
+	src         io.Reader
+	contentType string
+	form        url.Values
+	r           io.Reader
+}
+
+func (b *mochiwebBody) Read(p []byte) (int, error) {
+	if b.r == nil {
+		data, err := io.ReadAll(io.LimitReader(b.src, maxMochiwebBody+1))
+		if err != nil {
+			return 0, err
+		}
+		if len(data) > maxMochiwebBody {
+			panic(errBodyTooLarge)
+		}
+		for key, values := range postForm(b.contentType, data) {
+			b.form[key] = values
+		}
+		b.r = bytes.NewReader(data)
+	}
+	return b.r.Read(p)
+}
+
+// postForm returns the parameters of a form body as
+// mochiweb_request:parse_post does, which leaves the query out.
+func postForm(contentType string, body []byte) url.Values {
+	form := url.Values{}
+	for _, param := range mock.ParsePost(contentType, body) {
+		form.Add(param.Key, param.Value)
+	}
+	return form
 }

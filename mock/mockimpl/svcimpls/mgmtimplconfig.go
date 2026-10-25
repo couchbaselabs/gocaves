@@ -2,11 +2,10 @@ package svcimpls
 
 import (
 	"bytes"
-	"errors"
+	"fmt"
 	"io"
 	"log"
-	"net/url"
-	"strconv"
+	"net/http"
 
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
@@ -40,10 +39,7 @@ func (x *mgmtImpl) handleGetBucketConfig(source mock.MgmtService, req *mock.HTTP
 
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte("Requested resource not found")),
-		}
+		return bucketNotFoundResponse()
 	}
 
 	bucketConfig := GenBucketConfig(bucket, source.Node())
@@ -65,10 +61,7 @@ func (x *mgmtImpl) handleGetTerseBucketConfig(source mock.MgmtService, req *mock
 
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte{}),
-		}
+		return bucketNotFoundResponse()
 	}
 
 	bucketConfig := GenTerseBucketConfig(bucket, source.Node())
@@ -98,10 +91,7 @@ func (x *mgmtImpl) handleGetTerseBucketStreamingConfig(source mock.MgmtService, 
 
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte{}),
-		}
+		return bucketNotFoundResponse()
 	}
 
 	bucketConfig := GenTerseBucketConfig(bucket, source.Node())
@@ -183,17 +173,11 @@ func (x *mgmtImpl) handleBucketFlush(source mock.MgmtService, req *mock.HTTPRequ
 
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte("Requested resource not found")),
-		}
+		return bucketNotFoundResponse()
 	}
 
 	if !bucket.FlushEnabled() {
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body:       bytes.NewReader([]byte(`{"_":"Flush is disabled for the bucket"}`)),
-		}
+		return jsonResponse(400, `{"_":"Flush is disabled for the bucket"}`)
 	}
 	bucket.Flush()
 
@@ -201,63 +185,6 @@ func (x *mgmtImpl) handleBucketFlush(source mock.MgmtService, req *mock.HTTPRequ
 		StatusCode: 200,
 		Body:       bytes.NewReader([]byte(``)),
 	}
-}
-
-func (x *mgmtImpl) parseBucketSettings(values url.Values) (mock.NewBucketOptions, error) {
-
-	flushEnabledStr := values.Get("flushEnabled")
-	ramQuotaMBStr := values.Get("ramQuotaMB")
-	replicaIndexStr := values.Get("replicaIndex")
-	replicaNumberStr := values.Get("replicaNumber")
-	compressionModeStr := values.Get("compressionMode")
-
-	var replicaNumber int
-	if replicaNumberStr != "" {
-		var err error
-		replicaNumber, err = strconv.Atoi(replicaNumberStr)
-		if err != nil {
-			return mock.NewBucketOptions{}, errors.New(`{"errors":{"replicaNumber":"The value must be an integer"}`)
-		}
-	}
-
-	var flushEnabled bool
-	if flushEnabledStr != "" {
-		var err error
-		flushEnabled, err = strconv.ParseBool(flushEnabledStr)
-		if err != nil {
-			return mock.NewBucketOptions{}, errors.New(`{"errors":{"flushEnabled":"flushenabled can only be 1 or 0"}`)
-		}
-	}
-
-	if ramQuotaMBStr == "" {
-		return mock.NewBucketOptions{}, errors.New(`{"errors":{"ramQuota":"The RAM Quota must be specified and must be a positive integer."}`)
-	}
-	ramQuotaMB, err := strconv.ParseUint(ramQuotaMBStr, 10, 0)
-	if err != nil {
-		return mock.NewBucketOptions{}, errors.New(`{"errors":{"ramQuota":"The RAM Quota must be specified and must be a positive integer."}`)
-	}
-
-	var replicaIndexEnabled bool
-	if replicaIndexStr != "" {
-		var err error
-		replicaIndexEnabled, err = strconv.ParseBool(replicaIndexStr)
-		if err != nil {
-			return mock.NewBucketOptions{}, errors.New(`{"errors":{"replicaIndex":"replicaIndex can only be 1 or 0"}`)
-		}
-	}
-
-	// TODO: validate compression mode
-	if compressionModeStr == "" {
-		compressionModeStr = "passive"
-	}
-
-	return mock.NewBucketOptions{
-		NumReplicas:         uint(replicaNumber),
-		FlushEnabled:        flushEnabled,
-		RamQuota:            ramQuotaMB * 1024 * 1024,
-		ReplicaIndexEnabled: replicaIndexEnabled,
-		CompressionMode:     mock.CompressionMode(compressionModeStr),
-	}, nil
 }
 
 func (x *mgmtImpl) handleAddBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
@@ -268,30 +195,69 @@ func (x *mgmtImpl) handleAddBucketConfig(source mock.MgmtService, req *mock.HTTP
 		}
 	}
 
-	bucketType := req.Form.Get("bucketType")
-	name := req.Form.Get("name")
-	settings, err := x.parseBucketSettings(req.Form)
-	if err != nil {
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body:       bytes.NewReader([]byte(err.Error())),
-		}
+	// The body is read before the bucket changes are serialised.
+	cluster := source.Node().Cluster()
+	params := parsePost(req)
+	var resp *mock.HTTPResponse
+	cluster.ChangeBuckets(func() {
+		resp = addBucket(cluster, req, params)
+	})
+	return resp
+}
+
+func addBucket(cluster mock.Cluster, req *mock.HTTPRequest, params []formParam) *mock.HTTPResponse {
+	if len(cluster.GetAllBuckets()) >= maxBucketsCount {
+		// ns_bucket:get_max_buckets
+		return jsonResponse(400, fmt.Sprintf(`{"_":"Cannot create more than %d buckets"}`, maxBucketsCount))
 	}
 
-	settings.Name = name
-	settings.Type = mock.BucketTypeFromString(bucketType)
+	res := parseBucketParams(params, nil, cluster)
+	if resp := bucketParamsResponse(req, res, nil, cluster); resp != nil {
+		return resp
+	}
 
-	_, err = source.Node().Cluster().AddBucket(settings)
-	if err != nil {
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body:       bytes.NewReader([]byte(`{"errors":{"": ""}`)),
-		}
+	name, _ := paramValue(params, "name")
+	_, err := cluster.AddBucket(mock.NewBucketOptions{
+		Name:                name,
+		Type:                res.bucketType,
+		NumReplicas:         res.numReplicas,
+		FlushEnabled:        res.flushEnabled,
+		RamQuota:            res.ramQuota,
+		ReplicaIndexEnabled: res.replicaIndexEnabled,
+		CompressionMode:     res.compressionMode,
+		MaxTTL:              res.maxTTL,
+		Settings:            res.settings,
+	})
+	switch {
+	case err == mock.ErrBucketExists:
+		// do_bucket_create answers a create that lost a race with another.
+		return jsonResponse(400, `{"name":"Bucket with given name already exists"}`)
+	case err != nil:
+		return serverErrorResponse()
 	}
 
 	return &mock.HTTPResponse{
 		StatusCode: 202,
-		Body:       bytes.NewReader([]byte(`{"":""}`)),
+		Header:     http.Header{"Location": {"/pools/default/buckets/" + mochiwebQuotePlus(name)}},
+		Body:       bytes.NewReader([]byte{}),
+	}
+}
+
+// bucketNotFoundResponse answers a request for a missing bucket as
+// menelaus_util:reply_not_found does.
+func bucketNotFoundResponse() *mock.HTTPResponse {
+	return &mock.HTTPResponse{
+		StatusCode: 404,
+		Header:     http.Header{"Content-Type": {"text/plain"}},
+		Body:       bytes.NewReader([]byte("Requested resource not found.\r\n")),
+	}
+}
+
+func jsonResponse(statusCode int, body string) *mock.HTTPResponse {
+	return &mock.HTTPResponse{
+		StatusCode: statusCode,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       bytes.NewReader([]byte(body)),
 	}
 }
 
@@ -306,39 +272,49 @@ func (x *mgmtImpl) handleUpdateBucketConfig(source mock.MgmtService, req *mock.H
 		}
 	}
 
-	bucket := source.Node().Cluster().GetBucket(bucketName)
+	// The body is read before the bucket changes are serialised, and the
+	// bucket looked up again then.
+	cluster := source.Node().Cluster()
+	if cluster.GetBucket(bucketName) == nil {
+		return bucketNotFoundResponse()
+	}
+	params := parsePost(req)
+	var resp *mock.HTTPResponse
+	cluster.ChangeBuckets(func() {
+		resp = updateBucket(cluster, bucketName, req, params)
+	})
+	return resp
+}
+
+func updateBucket(cluster mock.Cluster, bucketName string, req *mock.HTTPRequest, params []formParam) *mock.HTTPResponse {
+	bucket := cluster.GetBucket(bucketName)
 	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte("Requested resource not found")),
-		}
+		return bucketNotFoundResponse()
 	}
 
-	// The server just ignores bucket type if it's set.
-	settings, err := x.parseBucketSettings(req.Form)
-	if err != nil {
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body:       bytes.NewReader([]byte(err.Error())),
-		}
+	res := parseBucketParams(params, bucket, cluster)
+	if resp := bucketParamsResponse(req, res, bucket, cluster); resp != nil {
+		return resp
 	}
 
-	if err := bucket.Update(mock.UpdateBucketOptions{
-		NumReplicas:         settings.NumReplicas,
-		FlushEnabled:        settings.FlushEnabled,
-		RamQuota:            settings.RamQuota,
-		ReplicaIndexEnabled: settings.ReplicaIndexEnabled,
-		CompressionMode:     settings.CompressionMode,
+	// ns_server stores the new settings in the bucket config, which gets a
+	// new revision.
+	if err := cluster.UpdateBucket(bucketName, mock.UpdateBucketOptions{
+		NumReplicas:         &res.numReplicas,
+		FlushEnabled:        &res.flushEnabled,
+		RamQuota:            &res.ramQuota,
+		ReplicaIndexEnabled: &res.replicaIndexEnabled,
+		CompressionMode:     &res.compressionMode,
+		MaxTTL:              &res.maxTTL,
+		Settings:            &res.settings,
 	}); err != nil {
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body:       bytes.NewReader([]byte(`{"errors":{"": ""}`)),
-		}
+		// The bucket was dropped since it was looked up.
+		return bucketNotFoundResponse()
 	}
 
 	return &mock.HTTPResponse{
 		StatusCode: 200,
-		Body:       bytes.NewReader([]byte(`{"":""}`)),
+		Body:       bytes.NewReader([]byte{}),
 	}
 }
 
@@ -356,24 +332,18 @@ func (x *mgmtImpl) handleDropBucketConfig(source mock.MgmtService, req *mock.HTT
 	// A collections update holds the lock while it changes the bucket.
 	x.collectionsLock.Lock()
 	defer x.collectionsLock.Unlock()
-	bucket := source.Node().Cluster().GetBucket(bucketName)
-	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte("Requested resource not found")),
-		}
-	}
-
-	if err := source.Node().Cluster().DeleteBucket(bucketName); err != nil {
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body:       bytes.NewReader([]byte(`{"errors":{"": ""}`)),
-		}
+	cluster := source.Node().Cluster()
+	var err error
+	cluster.ChangeBuckets(func() {
+		err = cluster.DeleteBucket(bucketName)
+	})
+	if err != nil {
+		return bucketNotFoundResponse()
 	}
 
 	return &mock.HTTPResponse{
 		StatusCode: 200,
-		Body:       bytes.NewReader([]byte(`{"":""}`)),
+		Body:       bytes.NewReader([]byte{}),
 	}
 }
 

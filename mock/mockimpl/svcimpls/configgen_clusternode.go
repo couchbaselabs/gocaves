@@ -115,10 +115,11 @@ func GenClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBucke
 		"allocstall":           0,
 	}
 
+	usage := nodeUsage(n.Cluster(), n)
 	config["interestingStats"] = map[string]interface{}{
 		"cmd_get":                      0,
-		"couch_docs_actual_disk_size":  4277712,
-		"couch_docs_data_size":         4249600,
+		"couch_docs_actual_disk_size":  usage.disk,
+		"couch_docs_data_size":         usage.data,
 		"couch_spatial_data_size":      0,
 		"couch_spatial_disk_size":      0,
 		"couch_views_actual_disk_size": 0,
@@ -127,7 +128,7 @@ func GenClusterNodeConfig(n mock.ClusterNode, reqNode mock.ClusterNode, forBucke
 		"curr_items_tot":               0,
 		"ep_bg_fetched":                0,
 		"get_hits":                     0,
-		"mem_used":                     38148176,
+		"mem_used":                     usage.mem,
 		"ops":                          0,
 		"vb_active_num_non_resident":   0,
 		"vb_replica_curr_items":        0,

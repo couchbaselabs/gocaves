@@ -25,6 +25,13 @@ func GenClusterConfig(c mock.Cluster, reqNode mock.ClusterNode) []byte {
 		"terseStreamingBucketsBase": "/pools/default/bs/",
 	}
 
+	totals := getClusterStorageTotals(c)
+	config["memoryQuota"] = c.MemoryQuota() / mib
+	config["storageTotals"] = map[string]interface{}{
+		"ram": totals.ram,
+		"hdd": totals.hdd,
+	}
+
 	configBytes, _ := json.Marshal(config)
 	return configBytes
 }

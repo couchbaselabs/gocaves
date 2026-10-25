@@ -35,6 +35,11 @@ type Document struct {
 	ModifiedTime time.Time
 	RevID        uint64
 
+	// DeletionPersisted is set on a deletion an EP bucket has persisted and
+	// no longer holds in memory, which no read has fetched back. It is not
+	// stored.
+	DeletionPersisted bool
+
 	// InMemory, when set on the document a functor returns, makes the
 	// update change only its CAS and lock, in memory, without a mutation,
 	// as kv_engine's lock, unlock and a touch that keeps the expiry do. A
@@ -378,6 +383,7 @@ func (s *Vbucket) findDocAtLocked(repIdx, collectionID uint, key []byte, now tim
 		// it in memory, without one.
 		if s.deletionOnDiskLocked(stored, now) {
 			foundDoc.Expiry = foundDoc.ModifiedTime
+			foundDoc.DeletionPersisted = s.restored[inMemoryKey{collectionID, string(key)}] != stored.SeqNo
 		}
 		foundDoc.CasIsHLC = s.casIsHLCLocked(foundDoc, now)
 
@@ -448,6 +454,7 @@ func (s *Vbucket) pushDocMutationLocked(doc *Document) *Document {
 	// prepare does not until it commits.
 	if doc.SyncWrite == nil {
 		delete(s.inMemory, inMemoryKey{newDoc.CollectionID, string(newDoc.Key)})
+		delete(s.restored, inMemoryKey{newDoc.CollectionID, string(newDoc.Key)})
 	}
 	// kv_engine expands the macro in place of padding of the same size, so
 	// the xattr keeps its position.
