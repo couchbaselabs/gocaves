@@ -1048,12 +1048,8 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		// kv_engine creates a document from a JSON template whose root it
 		// takes from the path of the first sub-document spec, xattr or not
 		// (subdocument_context.cc@v7.0.5); one created deleted gets none.
-		xattrUpdateOnly := true
 		rootChosen := opts.CreateAsDeleted
 		for _, op := range opts.Ops {
-			if !op.IsXattrPath {
-				xattrUpdateOnly = false
-			}
 			if !rootChosen && subdocOpIsSubJSON(op) {
 				rootChosen = true
 				mdoc.Value = subdocRootTemplate(op)
@@ -1096,9 +1092,11 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 
 		// Check for cas mismatch before we do any work. We'll effectively be doing this check again during the update
 		// too so if anyone performs a mutation during that time then we'll catch it there too.
-		// kv_engine compares the CAS only with a document it read: one it
-		// creates is stored with a zero CAS (subdocument.cc, in_cas).
-		if !locked && opts.Cas != 0 && (visible || doc == nil) && doc.Cas != opts.Cas && !(doc.IsDeleted && !xattrUpdateOnly) {
+		// kv_engine compares the CAS only with a document it read, live or
+		// deleted, whatever the specs (get_document_for_searching). One it
+		// creates is stored with Add semantics and CAS 0 (subdoc_update), so
+		// the CAS of the request is ignored.
+		if !locked && opts.Cas != 0 && visible && doc.Cas != opts.Cas {
 			return nil, ErrCasMismatch
 		}
 
