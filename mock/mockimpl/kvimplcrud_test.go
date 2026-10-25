@@ -161,10 +161,9 @@ func TestSubdocMutationOfLockedDocument(t *testing.T) {
 	}
 }
 
-// kv_engine compares the CAS of a counter request with the CAS a read
-// reports, which for a locked document is 0xffffffffffffffff, before it
-// parses the value.
-func TestCounterCasCheckedAsKvEngine(t *testing.T) {
+// kv_engine's arithmetic_validator refuses a counter request with a CAS
+// before it reads the document, locked or not.
+func TestCounterRefusesCas(t *testing.T) {
 	c := newTestKvConn(t, memd.FeatureXerror)
 
 	extras := make([]byte, 20)
@@ -176,24 +175,21 @@ func TestCounterCasCheckedAsKvEngine(t *testing.T) {
 	}
 
 	textCas := c.mustSucceed(&memd.Packet{Command: memd.CmdSet, Vbucket: c.vbID, Key: []byte("text"), Value: []byte(`"text"`), Extras: make([]byte, 8)}).Cas
-	if status := increment("text", textCas+1); status != memd.StatusKeyExists {
-		t.Errorf("INCREMENT of a value that is not a number with another CAS: expected status 0x%02x, got 0x%02x", uint16(memd.StatusKeyExists), uint16(status))
-	}
-
 	c.mustSucceed(&memd.Packet{Command: memd.CmdSet, Vbucket: c.vbID, Key: []byte("counter"), Value: []byte("1"), Extras: make([]byte, 8)})
 	lockTime := make([]byte, 4)
 	binary.BigEndian.PutUint32(lockTime, 30)
 	lockCas := c.mustSucceed(&memd.Packet{Command: memd.CmdGetLocked, Vbucket: c.vbID, Key: []byte("counter"), Extras: lockTime}).Cas
 	for _, test := range []struct {
-		name   string
-		cas    uint64
-		status memd.StatusCode
+		name string
+		key  string
+		cas  uint64
 	}{
-		{name: "the CAS that locked it", cas: lockCas, status: memd.StatusKeyExists},
-		{name: "the CAS of a locked read", cas: 0xffffffffffffffff, status: memd.StatusLocked},
+		{name: "a value that is not a number, with its CAS", key: "text", cas: textCas},
+		{name: "a locked counter, with the CAS that locked it", key: "counter", cas: lockCas},
+		{name: "a locked counter, with the CAS of a locked read", key: "counter", cas: 0xffffffffffffffff},
 	} {
-		if status := increment("counter", test.cas); status != test.status {
-			t.Errorf("INCREMENT of a locked counter with %s: expected status 0x%02x, got 0x%02x", test.name, uint16(test.status), uint16(status))
+		if status := increment(test.key, test.cas); status != memd.StatusInvalidArgs {
+			t.Errorf("INCREMENT of %s: expected status 0x%02x, got 0x%02x", test.name, uint16(memd.StatusInvalidArgs), uint16(status))
 		}
 	}
 }

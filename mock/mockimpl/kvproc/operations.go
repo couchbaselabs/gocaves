@@ -2,6 +2,7 @@ package kvproc
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -66,11 +67,10 @@ type GetMetaOptions struct {
 type GetMetaResult struct {
 	Cas       uint64
 	Datatype  uint8
-	Value     []byte
 	Flags     uint32
 	IsDeleted bool
 	ExpTime   time.Time
-	SeqNo     uint64
+	RevID     uint64
 }
 
 // GetMeta performs a GET_META operation.
@@ -79,7 +79,7 @@ func (e *Engine) GetMeta(opts GetMetaOptions) (*GetMetaResult, error) {
 		return nil, err
 	}
 
-	doc, err := e.db.Get(0, opts.Vbucket, opts.CollectionID, opts.Key)
+	doc, err := e.db.GetMeta(opts.Vbucket, opts.CollectionID, opts.Key)
 	if err == mockdb.ErrDocNotFound {
 		return nil, ErrDocNotFound
 	} else if err != nil {
@@ -91,14 +91,19 @@ func (e *Engine) GetMeta(opts GetMetaOptions) (*GetMetaResult, error) {
 		doc.Cas = lockedCas
 	}
 
+	// kv_engine reports the datatype as stored, with the xattr bit.
+	datatype := doc.Datatype
+	if len(doc.Xattrs) > 0 {
+		datatype |= uint8(memd.DatatypeFlagXattrs)
+	}
+
 	return &GetMetaResult{
 		Cas:       doc.Cas,
-		Datatype:  doc.Datatype,
-		Value:     doc.Value,
+		Datatype:  datatype,
 		Flags:     doc.Flags,
 		IsDeleted: doc.IsDeleted,
 		ExpTime:   doc.Expiry,
-		SeqNo:     doc.SeqNo,
+		RevID:     doc.RevID,
 	}, nil
 }
 
@@ -116,18 +121,20 @@ type GetRandomResult struct {
 	Key      []byte
 }
 
-// GetRandom performs a GET_RANDOM operation.
+// GetRandom performs a GET_RANDOM operation. kv_engine looks in the vbuckets
+// active on the node, from a random one (KVBucket::getRandomKey).
 func (e *Engine) GetRandom(opts GetRandomOptions) (*GetRandomResult, error) {
-	doc, err := e.db.GetRandom(0, opts.CollectionID)
-	if err == mockdb.ErrDocNotFound {
-		return nil, ErrDocNotFound
-	} else if err != nil {
-		return nil, err
+	var doc *mockdb.Document
+	numVbuckets := len(e.vbOwnership)
+	start := rand.Intn(numVbuckets)
+	for i := 0; i < numVbuckets && doc == nil; i++ {
+		vbIdx := (start + i) % numVbuckets
+		if e.vbOwnership[vbIdx] == 0 {
+			doc = e.db.GetVbucket(uint(vbIdx)).GetRandom(0, opts.CollectionID)
+		}
 	}
-
-	if e.docIsLocked(doc) {
-		// If the doc is locked, we return -1 as the CAS instead.
-		doc.Cas = lockedCas
+	if doc == nil {
+		return nil, ErrDocNotFound
 	}
 
 	return &GetRandomResult{
@@ -247,7 +254,7 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
 
-	newDoc, err := e.update(
+	newDoc, err := e.overwrite(
 		doc.VbID, doc.CollectionID, doc.Key,
 		func(idoc *mockdb.Document) (*mockdb.Document, error) {
 			if opts.Cas != 0 {
@@ -405,8 +412,6 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 
 			// TODO(brett19): Check if DELETE generates a new CAS or not.
 
-			// Otherwise we simply update the value
-			idoc.Expiry = e.db.Chrono().Now()
 			idoc.IsDeleted = true
 			idoc.LockExpiry = time.Time{}
 			idoc.Cas = mockdb.GenerateNewCas(e.HLC())
@@ -417,6 +422,16 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 				if !strings.HasPrefix(key, "_") {
 					idoc.RemoveXattr(key)
 				}
+			}
+			// kv_engine stores a deletion that keeps system xattrs with no
+			// flags and no expiry (RemoveCommandContext::allocateDeletedItem,
+			// MB-25273); any other it removes, keeping them
+			// (StoredValue::deleteImpl).
+			if len(idoc.Xattrs) > 0 {
+				idoc.Flags = 0
+				idoc.Expiry = time.Time{}
+			} else {
+				idoc.SoftDelete = true
 			}
 			return idoc, nil
 		})
@@ -692,6 +707,12 @@ func (e *Engine) Touch(opts TouchOptions) (*StoreResult, error) {
 			}
 
 			// Otherwise we simply update the value
+			// kv_engine stores a mutation only when the expiry changes
+			// (VBucket::processGetAndUpdateTtl).
+			if idoc.Expiry.Unix() == doc.Expiry.Unix() && idoc.Expiry.IsZero() == doc.Expiry.IsZero() {
+				idoc.InMemory = true
+				return idoc, nil
+			}
 			idoc.Expiry = doc.Expiry
 			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
@@ -743,6 +764,12 @@ func (e *Engine) GetAndTouch(opts GetAndTouchOptions) (*GetResult, error) {
 			}
 
 			// Otherwise we simply update the value
+			// kv_engine stores a mutation only when the expiry changes
+			// (VBucket::processGetAndUpdateTtl).
+			if idoc.Expiry.Unix() == doc.Expiry.Unix() && idoc.Expiry.IsZero() == doc.Expiry.IsZero() {
+				idoc.InMemory = true
+				return idoc, nil
+			}
 			idoc.Expiry = doc.Expiry
 			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
@@ -775,9 +802,11 @@ func (e *Engine) GetLocked(opts GetLockedOptions) (*GetResult, error) {
 		return nil, err
 	}
 
-	if opts.LockTime == 0 {
-		// TODO(brett19): Confirm this default lock time is correct.
-		opts.LockTime = 30
+	// kv_engine locks for getl_default_timeout, 15 seconds, when the request
+	// gives no time or one above getl_max_timeout, 30 seconds
+	// (EventuallyPersistentEngine::getLockedInner).
+	if opts.LockTime == 0 || opts.LockTime > 30 {
+		opts.LockTime = 15
 	}
 
 	lockDura := time.Duration(opts.LockTime) * time.Second
@@ -799,8 +828,11 @@ func (e *Engine) GetLocked(opts GetLockedOptions) (*GetResult, error) {
 				return nil, ErrLocked
 			}
 
+			// kv_engine locks a document in memory with a new CAS, without
+			// a mutation (VBucket::getLocked).
 			idoc.LockExpiry = lockExpiryTime
 			idoc.Cas = mockdb.GenerateNewCas(e.HLC())
+			idoc.InMemory = true
 			return idoc, nil
 		})
 	if err != nil {
@@ -853,8 +885,9 @@ func (e *Engine) Unlock(opts UnlockOptions) (*StoreResult, error) {
 
 			// Otherwise we simply mark it as no longer locked.
 			idoc.LockExpiry = time.Time{}
-			// We intentionally do not update the CAS here as locking has
-			// already changed it and nobody can see it until unlock anyways.
+			// kv_engine unlocks it in memory and keeps the CAS the lock
+			// gave it (KVBucket::unlockKey).
+			idoc.InMemory = true
 			return idoc, nil
 		})
 	if err != nil {
@@ -886,11 +919,13 @@ type SubDocResult struct {
 
 // MultiLookupOptions specifies options for an SD_MULTILOOKUP operation.
 type MultiLookupOptions struct {
-	Vbucket       uint
-	CollectionID  uint
-	Key           []byte
-	Ops           []*SubDocOp
-	AccessDeleted bool
+	Vbucket        uint
+	CollectionID   uint
+	Key            []byte
+	Ops            []*SubDocOp
+	AccessDeleted  bool
+	ReviveDocument bool
+	Cas            uint64
 }
 
 // MultiLookupResult contains the results of a SD_MULTILOOKUP operation.
@@ -906,6 +941,10 @@ func (e *Engine) MultiLookup(opts MultiLookupOptions) (*MultiLookupResult, error
 		return nil, err
 	}
 
+	// A read of deleted documents fetches a persisted deletion from disk.
+	if opts.AccessDeleted {
+		e.db.RestoreDeleted(opts.Vbucket, opts.CollectionID, opts.Key)
+	}
 	doc, err := e.db.Get(0, opts.Vbucket, opts.CollectionID, opts.Key)
 	if err == mockdb.ErrDocNotFound || (doc.IsDeleted && !opts.AccessDeleted) {
 		return nil, ErrDocNotFound
@@ -913,17 +952,38 @@ func (e *Engine) MultiLookup(opts MultiLookupOptions) (*MultiLookupResult, error
 		return nil, err
 	}
 
+	// A locked document is read only with a CAS other than the one a GET
+	// reports for it, which is not compared; otherwise a CAS must match
+	// (SubdocCmdContext::get_document_for_searching).
 	if e.docIsLocked(doc) {
-		return nil, ErrLocked
+		if opts.Cas == 0 || opts.Cas == lockedCas {
+			return nil, ErrLocked
+		}
+	} else if opts.Cas != 0 && opts.Cas != doc.Cas {
+		return nil, ErrCasMismatch
 	}
 
-	sdRes, err := e.executeSdOps(doc, doc, opts.Ops, true)
+	if opts.ReviveDocument && !doc.IsDeleted {
+		return nil, ErrSdCanOnlyReviveDeletedDocuments
+	}
+
+	// The specs see the CAS a read reports, which for a locked document is
+	// lockedCas (SubdocCmdContext::get_document_for_searching).
+	if e.docIsLocked(doc) {
+		doc.Cas = lockedCas
+	}
+	sdRes, err := e.executeSdOps(doc, doc, opts.Ops, true, false)
 	if err != nil {
 		return nil, err
 	}
 
+	// The response carries the CAS of the request, or the one read.
+	cas := doc.Cas
+	if opts.Cas != 0 {
+		cas = opts.Cas
+	}
 	return &MultiLookupResult{
-		Cas:       doc.Cas,
+		Cas:       cas,
 		Ops:       sdRes,
 		IsDeleted: doc.IsDeleted,
 	}, nil
@@ -939,6 +999,7 @@ type MultiMutateOptions struct {
 	CreateAsDeleted bool
 	CreateIfMissing bool
 	CreateOnly      bool
+	ReviveDocument  bool
 	Expiry          uint32
 	PreserveExpiry  bool
 	Cas             uint64
@@ -950,6 +1011,9 @@ type MultiMutateResult struct {
 	Ops    []*SubDocResult
 	VbUUID uint64
 	SeqNo  uint64
+	// IsDeleted reports that the specs ran on a deleted document, which
+	// kv_engine answers with SubdocSuccessDeleted.
+	IsDeleted bool
 }
 
 // MultiMutate performs an SD_MULTIMUTATE operation.
@@ -988,9 +1052,6 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		rootChosen := opts.CreateAsDeleted
 		for _, op := range opts.Ops {
 			if !op.IsXattrPath {
-				if opts.CreateAsDeleted {
-					return nil, ErrInvalidArgument
-				}
 				xattrUpdateOnly = false
 			}
 			if !rootChosen && subdocOpIsSubJSON(op) {
@@ -1002,6 +1063,9 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			mdoc.Datatype = uint8(memd.DatatypeFlagJSON)
 		}
 
+		if opts.AccessDeleted {
+			e.db.RestoreDeleted(mdoc.VbID, mdoc.CollectionID, mdoc.Key)
+		}
 		doc, err := e.db.Get(0, mdoc.VbID, mdoc.CollectionID, mdoc.Key)
 		if err == mockdb.ErrDocNotFound {
 			if !opts.CreateIfMissing && !opts.CreateOnly {
@@ -1011,12 +1075,14 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			return nil, err
 		}
 		// The update below is valid only for the document as read here; doc
-		// itself is revived below for a create.
+		// itself is replaced below for a create.
 		readDeleted := doc != nil && doc.IsDeleted
+		// kv_engine reads with DocStateFilter::Alive without AccessDeleted.
+		visible := doc != nil && (!doc.IsDeleted || opts.AccessDeleted)
 
 		// kv_engine refuses an Add of an existing document before it looks at
-		// the CAS or the lock.
-		if opts.CreateOnly && doc != nil && !doc.IsDeleted {
+		// the CAS or the lock. With AccessDeleted a deleted document exists.
+		if opts.CreateOnly && visible {
 			return nil, ErrDocExists
 		}
 
@@ -1030,34 +1096,38 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 
 		// Check for cas mismatch before we do any work. We'll effectively be doing this check again during the update
 		// too so if anyone performs a mutation during that time then we'll catch it there too.
-		// If doc is deleted, and we're only updating the tombstoned xattr then no cas mismatch is performed, so we can
-		// continue
-		if !locked && opts.Cas != 0 && doc.Cas != opts.Cas && !(doc.IsDeleted && !xattrUpdateOnly) {
+		// kv_engine compares the CAS only with a document it read: one it
+		// creates is stored with a zero CAS (subdocument.cc, in_cas).
+		if !locked && opts.Cas != 0 && (visible || doc == nil) && doc.Cas != opts.Cas && !(doc.IsDeleted && !xattrUpdateOnly) {
 			return nil, ErrCasMismatch
 		}
 
-		if opts.CreateIfMissing || opts.CreateOnly {
+		// For Mkdoc or Add, kv_engine creates a document it does not see
+		// afresh, a deleted or expired one too: from the template, with no
+		// xattrs or flags, and deleted with CreateAsDeleted.
+		created := !visible
+		if created {
+			if !opts.CreateIfMissing && !opts.CreateOnly {
+				return nil, ErrDocNotFound
+			}
 			if doc == nil {
 				doc = mdoc
-			} else if doc.IsDeleted && !opts.AccessDeleted {
-				// A deleted document the request cannot see is replaced by a
-				// new one, from the template, without its xattrs or flags.
-				doc.IsDeleted = false
-				doc.Expiry = time.Time{}
+			} else {
 				doc.Value = mdoc.Value
 				doc.Datatype = mdoc.Datatype
-				doc.Flags = 0
-				doc.Xattrs = make(map[string][]byte)
+				doc.Xattrs = mdoc.Xattrs
 				doc.XattrOrder = nil
+				doc.Flags = 0
+				doc.IsDeleted = mdoc.IsDeleted
+				doc.Expiry = time.Time{}
 			}
 		}
 
-		if doc == nil {
-			return nil, ErrDocNotFound
-		}
-
-		if doc.IsDeleted && !opts.AccessDeleted {
-			return nil, ErrDocNotFound
+		// The response reports the state of the document the specs ran on,
+		// not the state a DeleteDoc spec stores.
+		deleted := doc.IsDeleted
+		if opts.ReviveDocument && !deleted {
+			return nil, ErrSdCanOnlyReviveDeletedDocuments
 		}
 
 		afterMultiMutateRead()
@@ -1072,7 +1142,7 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		if locked {
 			doc.Cas = lockedCas
 		}
-		sdRes, err := e.executeSdOps(doc, newMetaDoc, opts.Ops, false)
+		sdRes, err := e.executeSdOps(doc, newMetaDoc, opts.Ops, false, created)
 		doc.Cas = readCas
 		if err != nil {
 			return nil, err
@@ -1085,35 +1155,107 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			}
 		}
 
+		deleteDoc := false
+		for _, op := range opts.Ops {
+			if op.Op != memd.SubDocOpDeleteDoc {
+				continue
+			}
+			deleteDoc = true
+			// kv_engine keeps only the system xattrs of a document a spec
+			// deletes (do_xattr_delete_phase).
+			for key := range doc.Xattrs {
+				if !strings.HasPrefix(key, "_") {
+					doc.RemoveXattr(key)
+				}
+			}
+		}
+
+		// A document a spec deletes with no system xattrs left is removed,
+		// as DELETE removes one, before kv_engine looks at ReviveDocument
+		// (subdoc_update).
+		remove := deleteDoc && len(doc.Xattrs) == 0
+		if !remove {
+			// kv_engine stores a revived document live unless a spec deletes
+			// it, and answers as for a live one.
+			if opts.ReviveDocument {
+				doc.IsDeleted = deleteDoc
+				deleted = false
+			}
+			// A ReplaceBodyWithXattr spec can give a deleted document a body.
+			if doc.IsDeleted && len(doc.Value) > 0 {
+				return nil, ErrSdDeletedDocumentCantHaveValue
+			}
+		}
+
 		// kv_engine checks durability when it stores, after the specs.
 		if e.durabilityErr != nil {
 			return nil, e.durabilityErr
 		}
 
+		// kv_engine stores a document it creates or revives with Add
+		// semantics and a zero CAS (subdoc_update). When the Add fails, a
+		// request with Mkdoc retries, unless it carries a CAS, and any other
+		// answers not_stored.
+		addFailed := func() error {
+			switch {
+			case !opts.CreateIfMissing:
+				return ErrNotStored
+			case opts.Cas != 0:
+				return ErrDocExists
+			default:
+				return ErrCasMismatch
+			}
+		}
+
 		newDoc, err := e.updateAfterRead(
 			doc.VbID, doc.CollectionID, doc.Key,
 			func(idoc *mockdb.Document) (*mockdb.Document, error) {
-				if idoc == nil {
-					// Check if our source document existed or not
-					if doc.Cas != 0 {
-						// IsDeleted will be handled below as part of cas check.
+				// The specs ran on the committed document; kv_engine refuses
+				// the store of a key with a durable write in progress before
+				// its lock check.
+				if idoc != nil && idoc.SyncWriteInProgress {
+					return nil, mockdb.ErrSyncWriteInProgress
+				}
+				if remove {
+					// bucket_remove with the CAS read: a deleted document is
+					// not found, and the removal keeps the flags and the
+					// expiry.
+					if idoc == nil || idoc.IsDeleted {
 						return nil, ErrDocNotFound
-					}
-
-					idoc = doc
-				} else {
-					// The specs ran on the committed document; kv_engine refuses
-					// the store of a key with a durable write in progress before
-					// its lock check.
-					if idoc.SyncWriteInProgress {
-						return nil, mockdb.ErrSyncWriteInProgress
 					}
 					if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
 						return nil, ErrLocked
 					}
-					// The CAS of a request for a document locked when it was read is
-					// checked here. If the lock has since gone, the retry reads the
-					// document unlocked and reports the mismatch.
+					if idoc.Cas != doc.Cas {
+						return nil, ErrCasMismatch
+					}
+					idoc.Value = nil
+					idoc.Xattrs = doc.Xattrs
+					idoc.XattrOrder = doc.XattrOrder
+					idoc.Datatype = 0
+					idoc.IsDeleted = true
+					idoc.SoftDelete = true
+					idoc.LockExpiry = time.Time{}
+					idoc.Cas = newMetaDoc.Cas
+					return idoc, nil
+				}
+				if created || opts.ReviveDocument {
+					// An Add stores a live document over a deleted one only,
+					// and a deleted one over none (VBucket::processAdd).
+					if idoc != nil && (!idoc.IsDeleted || doc.IsDeleted) {
+						return nil, addFailed()
+					}
+				} else {
+					if idoc == nil {
+						return nil, ErrDocNotFound
+					}
+					if e.docIsLocked(idoc) && idoc.Cas != opts.Cas {
+						return nil, ErrLocked
+					}
+					// The CAS of a request for a document locked when it was
+					// read is checked here. If the lock has since gone, the
+					// retry reads the document unlocked and reports the
+					// mismatch.
 					if locked && idoc.Cas != opts.Cas {
 						return nil, ErrCasMismatch
 					}
@@ -1123,26 +1265,44 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 					if idoc.Cas != doc.Cas || idoc.IsDeleted != readDeleted {
 						return nil, ErrCasMismatch
 					}
+				}
 
+				if idoc == nil {
+					idoc = doc
+				} else {
 					// A mutation takes the expiry of the request, and a request
-					// without one clears it. PreserveExpiry keeps the expiry of a
-					// live document; a deleted or expired one has none to keep.
-					if !opts.PreserveExpiry || idoc.IsDeleted {
+					// without one clears it. PreserveExpiry keeps the expiry of
+					// the document read, deleted or expired as well, even when
+					// it has passed; a created document takes the request's
+					// (subdoc_executor, fetchedItem).
+					if !opts.PreserveExpiry || created {
 						idoc.Expiry = mdoc.Expiry
+					} else {
+						idoc.Expiry = doc.Expiry
 					}
 					idoc.Value = doc.Value
 					idoc.Flags = doc.Flags
 					idoc.Xattrs = doc.Xattrs
 					idoc.XattrOrder = doc.XattrOrder
+					idoc.Datatype = doc.Datatype
 					idoc.IsDeleted = doc.IsDeleted
 				}
 
 				idoc.LockExpiry = newMetaDoc.LockExpiry
 				idoc.Cas = newMetaDoc.Cas
-				// The body specs left the datatype of the body they ran on.
-				idoc.Datatype = doc.Datatype
+				idoc.SeqNoMacro = SeqNoPlaceholder
 				return idoc, nil
 			})
+		// The Add of a deleted document an EP bucket does not hold in memory
+		// fetches the key from disk, which brings back a persisted deletion
+		// even when the Add then fails (VBucket::processAdd,
+		// AddTmpAndBgFetch). A durable write in progress refuses the store
+		// before that (VBucket::add). It is restored here, after the store,
+		// as the store holds the vbucket; the Add fails over any deletion,
+		// so the order changes nothing.
+		if created && mdoc.IsDeleted && err != mockdb.ErrSyncWriteInProgress {
+			e.db.RestoreDeleted(mdoc.VbID, mdoc.CollectionID, mdoc.Key)
+		}
 		if err == ErrCasMismatch {
 			continue
 		} else if err == mockdb.ErrValueTooBig {
@@ -1152,10 +1312,11 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 		}
 
 		return &MultiMutateResult{
-			Cas:    newDoc.Cas,
-			Ops:    sdRes,
-			VbUUID: newDoc.VbUUID,
-			SeqNo:  newDoc.SeqNo,
+			Cas:       newDoc.Cas,
+			Ops:       sdRes,
+			VbUUID:    newDoc.VbUUID,
+			SeqNo:     newDoc.SeqNo,
+			IsDeleted: deleted,
 		}, nil
 	}
 
@@ -1173,6 +1334,10 @@ type ObserveSeqNoResult struct {
 	VbUUID       uint64
 	CurrentSeqNo uint64
 	PersistSeqNo uint64
+	// FailedOver reports that the request named an earlier history of the
+	// vbucket, which ended at LastSeqNo.
+	FailedOver bool
+	LastSeqNo  uint64
 }
 
 // ObserveSeqNo performs an OBSERVE_SEQNO operation.
@@ -1182,11 +1347,22 @@ func (e *Engine) ObserveSeqNo(opts ObserveSeqNoOptions) (*ObserveSeqNoResult, er
 		return nil, ErrNotMyVbucket
 	}
 
-	metaState := e.db.GetVbucket(opts.Vbucket).CurrentMetaState(uint(repIdx))
-
-	return &ObserveSeqNoResult{
+	vbucket := e.db.GetVbucket(opts.Vbucket)
+	metaState := vbucket.CurrentMetaState(uint(repIdx))
+	res := &ObserveSeqNoResult{
 		VbUUID:       metaState.VbUUID,
 		CurrentSeqNo: metaState.CurrentSeqNo,
 		PersistSeqNo: metaState.PersistSeqNo,
-	}, nil
+	}
+
+	// kv_engine answers an unknown vbucket UUID with no_such_key
+	// (EventuallyPersistentEngine::observe_seqno).
+	if opts.VbUUID != metaState.VbUUID {
+		lastSeqNo, ok := vbucket.LastSeqNoForUUID(opts.VbUUID)
+		if !ok {
+			return nil, ErrDocNotFound
+		}
+		res.FailedOver, res.LastSeqNo = true, lastSeqNo
+	}
+	return res, nil
 }

@@ -3,6 +3,7 @@ package svcimpls
 import (
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/couchbase/gocbcore/v10/memd"
@@ -36,19 +37,26 @@ var durabilityCommands = map[memd.CmdCode]bool{
 }
 
 // requestHeader is what kv_engine's request validator for a command requires
-// of the request header, as it passes it to verify_header.
+// of the request header, as it passes it to verify_header. The zero value
+// requires a key and takes any value and CAS.
 type requestHeader struct {
-	extras    int
+	extras int
+	// anyExtras leaves the extras to the command's validator.
 	anyExtras bool
-	noValue   bool
-	noCas     bool
-	datatypes memd.DatatypeFlag
+	// collectionExtras requires 4 bytes of extras from a connection with
+	// collections, and none otherwise.
+	collectionExtras bool
+	anyKey           bool
+	noKey            bool
+	noValue          bool
+	noCas            bool
+	casSet           bool
+	datatypes        memd.DatatypeFlag
 }
 
-// checkedCommandHeaders are the header requirements of the commands whose
-// headers are checked before their frames: the durable commands and
-// SUBDOC_MULTI_LOOKUP. Each requires a key. The sub-document commands check
-// their extras after the frames.
+// checkedCommandHeaders are the header requirements of the commands gocaves
+// serves, from their validators in daemon/mcbp_validators.cc@v7.0.5. The
+// sub-document commands check their extras in their own validators.
 var checkedCommandHeaders = map[memd.CmdCode]requestHeader{
 	memd.CmdSet:       {extras: 8, datatypes: memd.DatatypeFlagJSON | memd.DatatypeFlagCompressed},
 	memd.CmdReplace:   {extras: 8, datatypes: memd.DatatypeFlagJSON | memd.DatatypeFlagCompressed},
@@ -60,6 +68,25 @@ var checkedCommandHeaders = map[memd.CmdCode]requestHeader{
 	memd.CmdDecrement: {extras: 20, noValue: true, noCas: true},
 	memd.CmdTouch:     {extras: 4, noValue: true, noCas: true},
 	memd.CmdGAT:       {extras: 4, noValue: true, noCas: true},
+
+	memd.CmdGet:                    {noValue: true, noCas: true},
+	memd.CmdGetReplica:             {noValue: true, noCas: true},
+	memd.CmdGetLocked:              {anyExtras: true, noValue: true, noCas: true},
+	memd.CmdGetMeta:                {anyExtras: true, noValue: true, noCas: true},
+	memd.CmdUnlockKey:              {noValue: true, casSet: true},
+	memd.CmdGetRandom:              {collectionExtras: true, noKey: true, noValue: true, noCas: true},
+	memd.CmdObserveSeqNo:           {noKey: true},
+	memd.CmdStat:                   {anyKey: true, noCas: true, datatypes: memd.DatatypeFlagJSON},
+	memd.CmdHello:                  {anyKey: true, noCas: true},
+	memd.CmdSASLListMechs:          {noKey: true, noValue: true, noCas: true},
+	memd.CmdSASLAuth:               {noCas: true},
+	memd.CmdSASLStep:               {noCas: true},
+	memd.CmdSelectBucket:           {anyKey: true, noValue: true},
+	memd.CmdNoop:                   {noKey: true, noValue: true, noCas: true},
+	memd.CmdGetClusterConfig:       {noKey: true, noValue: true, noCas: true},
+	memd.CmdGetErrorMap:            {noKey: true, noCas: true},
+	memd.CmdCollectionsGetManifest: {noKey: true, noValue: true, noCas: true},
+	memd.CmdCollectionsGetID:       {anyKey: true, noCas: true},
 
 	memd.CmdSubDocDictAdd:              {anyExtras: true},
 	memd.CmdSubDocDictSet:              {anyExtras: true},
@@ -78,37 +105,47 @@ var checkedCommandHeaders = map[memd.CmdCode]requestHeader{
 // knownDatatypes are the datatype bits kv_engine defines.
 const knownDatatypes = memd.DatatypeFlagJSON | memd.DatatypeFlagCompressed | memd.DatatypeFlagXattrs
 
-// checkHeader checks the header of a request to a command of
-// checkedCommandHeaders as verify_header does before the frames are parsed,
-// and returns the status and error context kv_engine sends when it refuses
-// it, or success. The datatypes the connection enabled, a compressed value
-// and the xattr blob are not checked. The key is checked as sent, with any
-// collection ID memd decoded from it.
+// checkHeader checks the header of a request as verify_header does, before
+// the frames are parsed and a compressed value is inflated, and returns the
+// status and error context kv_engine sends when it refuses it, or success. A
+// command outside checkedCommandHeaders has only its datatype checked, as
+// raw bytes. The xattr blob is not checked. The key is checked as sent, with
+// any collection ID memd decoded from it.
 func checkHeader(source mock.KvClient, pak *memd.Packet) (memd.StatusCode, string) {
-	header, ok := checkedCommandHeaders[pak.Command]
-	if !ok {
-		return memd.StatusSuccess, ""
-	}
 	datatype := memd.DatatypeFlag(pak.Datatype)
 	if datatype&^knownDatatypes != 0 {
 		return memd.StatusInvalidArgs, "Request datatype invalid"
 	}
-	if !header.anyExtras && len(pak.Extras) != header.extras {
-		if header.extras == 0 {
+	header, ok := checkedCommandHeaders[pak.Command]
+	if !ok {
+		return checkDatatype(source, datatype, 0)
+	}
+	extras := header.extras
+	if header.collectionExtras && source.HasFeature(memd.FeatureCollections) {
+		extras = 4
+	}
+	if !header.anyExtras && len(pak.Extras) != extras {
+		if extras == 0 {
 			return memd.StatusInvalidArgs, "Request must not include extras"
 		}
-		return memd.StatusInvalidArgs, fmt.Sprintf("Request must include extras of length %d", header.extras)
+		return memd.StatusInvalidArgs, fmt.Sprintf("Request must include extras of length %d", extras)
 	}
 	keyLen := wireKeyLength(pak)
-	if keyLen == 0 {
-		return memd.StatusInvalidArgs, "Request must include key"
-	}
-	maxKeyLen := keyMaxLength
-	if source.HasFeature(memd.FeatureCollections) {
-		maxKeyLen = maxCollectionsKeyLen
-	}
-	if keyLen > maxKeyLen {
-		return memd.StatusInvalidArgs, fmt.Sprintf("Key length exceeds %d", maxKeyLen)
+	if header.noKey {
+		if keyLen != 0 {
+			return memd.StatusInvalidArgs, "Request must not include key"
+		}
+	} else {
+		if keyLen == 0 && !header.anyKey {
+			return memd.StatusInvalidArgs, "Request must include key"
+		}
+		maxKeyLen := keyMaxLength
+		if source.HasFeature(memd.FeatureCollections) {
+			maxKeyLen = maxCollectionsKeyLen
+		}
+		if keyLen > maxKeyLen {
+			return memd.StatusInvalidArgs, fmt.Sprintf("Key length exceeds %d", maxKeyLen)
+		}
 	}
 	if header.noValue && len(pak.Value) > 0 {
 		return memd.StatusInvalidArgs, "Request must not include value"
@@ -116,8 +153,43 @@ func checkHeader(source mock.KvClient, pak *memd.Packet) (memd.StatusCode, strin
 	if header.noCas && pak.Cas != 0 {
 		return memd.StatusInvalidArgs, "Request CAS must not be set"
 	}
-	if datatype&^header.datatypes != 0 {
+	if header.casSet && pak.Cas == 0 {
+		return memd.StatusInvalidArgs, "Request CAS must be set"
+	}
+	if status, context := checkDatatype(source, datatype, header.datatypes); status != memd.StatusSuccess {
+		return status, context
+	}
+	if datatype&memd.DatatypeFlagCompressed != 0 {
+		if _, ok := servers.InflateValue(pak.Value); !ok {
+			return memd.StatusInvalidArgs, "Failed to inflate payload"
+		}
+	}
+	return memd.StatusSuccess, ""
+}
+
+// checkDatatype refuses a request datatype with bits its command does not
+// take, or that the connection did not enable with HELLO, as verify_header
+// does.
+func checkDatatype(source mock.KvClient, datatype, allowed memd.DatatypeFlag) (memd.StatusCode, string) {
+	if datatype&^allowed != 0 {
 		return memd.StatusInvalidArgs, "Request datatype invalid"
+	}
+	var disabled []string
+	for _, bit := range []struct {
+		flag    memd.DatatypeFlag
+		feature memd.HelloFeature
+		name    string
+	}{
+		{memd.DatatypeFlagCompressed, memd.FeatureSnappy, "snappy"},
+		{memd.DatatypeFlagJSON, memd.FeatureJSON, "json"},
+		{memd.DatatypeFlagXattrs, memd.FeatureXattr, "xattr"},
+	} {
+		if datatype&bit.flag != 0 && !source.HasFeature(bit.feature) {
+			disabled = append(disabled, bit.name)
+		}
+	}
+	if disabled != nil {
+		return memd.StatusInvalidArgs, "Datatype (" + strings.Join(disabled, ",") + ") not enabled for the connection"
 	}
 	return memd.StatusSuccess, ""
 }

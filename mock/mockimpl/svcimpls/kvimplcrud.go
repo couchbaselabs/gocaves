@@ -47,12 +47,21 @@ func (x *kvImplCrud) Register(h *hookHelper) {
 }
 
 func (x *kvImplCrud) writeStatusReply(source mock.KvClient, pak *memd.Packet, status memd.StatusCode, start time.Time) {
-	writePacketToSource(source, &memd.Packet{
+	resp := &memd.Packet{
 		Magic:   memd.CmdMagicRes,
 		Command: pak.Command,
 		Opaque:  pak.Opaque,
 		Status:  status,
-	}, start)
+	}
+	// kv_engine answers not_my_vbucket with the bucket's cluster
+	// configuration, as it does not dedupe the maps it sends by default
+	// (Cookie::sendNotMyVBucket, dedupe_nmvb_maps).
+	if bucket := source.SelectedBucket(); status == memd.StatusNotMyVBucket && bucket != nil &&
+		bucket.BucketType() != mock.BucketTypeMemcached {
+		resp.Value = GenTerseBucketConfig(bucket, source.Source().Node())
+		resp.Datatype = uint8(memd.DatatypeFlagJSON)
+	}
+	writePacketToSource(source, resp, start)
 }
 
 // makeProc either writes a reply to the network, or returns a non-nil Engine to use.
@@ -104,6 +113,10 @@ func (x *kvImplCrud) writeUnknownCollectionReply(source mock.KvClient, pak *memd
 		Value:    []byte(value),
 	}, start)
 }
+
+// statusSubDocDeletedDocumentCantHaveValue is kv_engine's
+// SubdocDeletedDocumentCantHaveValue, which memd does not define.
+const statusSubDocDeletedDocumentCantHaveValue = memd.StatusCode(0xd7)
 
 func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 	// TODO(brett19): Implement special handling for various errors on specific versions.
@@ -173,6 +186,10 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 		return memd.StatusInvalidArgs
 	case kvproc.ErrUnknownXattrMacro:
 		return memd.StatusSubDocXattrUnknownMacro
+	case kvproc.ErrSdCanOnlyReviveDeletedDocuments:
+		return memd.StatusSubDocCanOnlyReviveDeletedDocuments
+	case kvproc.ErrSdDeletedDocumentCantHaveValue:
+		return statusSubDocDeletedDocumentCantHaveValue
 	case mock.ErrScopeNotFound:
 		return memd.StatusScopeUnknown
 	case mock.ErrCollectionNotFound:
@@ -290,17 +307,6 @@ func (x *kvImplCrud) handleGetRequest(source mock.KvClient, pak *memd.Packet, st
 
 func (x *kvImplCrud) handleGetMetaRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
 	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead, start); proc != nil {
-		if len(pak.Extras) != 1 {
-			x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
-			return
-		}
-
-		getFlags := pak.Extras[0]
-		if getFlags != 2 {
-			x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
-			return
-		}
-
 		resp, err := proc.GetMeta(kvproc.GetMetaOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
@@ -311,38 +317,38 @@ func (x *kvImplCrud) handleGetMetaRequest(source mock.KvClient, pak *memd.Packet
 			return
 		}
 
-		extrasBuf := make([]byte, 21)
+		// kv_engine's GetMetaCommandContext sends the deleted flag, flags,
+		// expiry and revision, and the datatype only for version 2.
+		extrasBuf := make([]byte, 20, 21)
 		if resp.IsDeleted {
 			binary.BigEndian.PutUint32(extrasBuf[0:], 1)
-		} else {
-			binary.BigEndian.PutUint32(extrasBuf[0:], 0)
 		}
 		binary.BigEndian.PutUint32(extrasBuf[4:], resp.Flags)
-		binary.BigEndian.PutUint32(extrasBuf[8:], uint32(resp.ExpTime.Unix()))
-		binary.BigEndian.PutUint64(extrasBuf[12:], resp.SeqNo)
-		extrasBuf[20] = resp.Datatype
+		if !resp.ExpTime.IsZero() {
+			binary.BigEndian.PutUint32(extrasBuf[8:], uint32(resp.ExpTime.Unix()))
+		}
+		binary.BigEndian.PutUint64(extrasBuf[12:], resp.RevID)
+		if len(pak.Extras) == 1 && pak.Extras[0] == 2 {
+			extrasBuf = append(extrasBuf, resp.Datatype)
+		}
 
 		writePacketToSource(source, &memd.Packet{
-			Magic:    memd.CmdMagicRes,
-			Command:  pak.Command,
-			Opaque:   pak.Opaque,
-			Status:   memd.StatusSuccess,
-			Cas:      resp.Cas,
-			Datatype: 0,
-			Value:    resp.Value,
-			Extras:   extrasBuf,
+			Magic:   memd.CmdMagicRes,
+			Command: pak.Command,
+			Opaque:  pak.Opaque,
+			Status:  memd.StatusSuccess,
+			Cas:     resp.Cas,
+			Extras:  extrasBuf,
 		}, start)
 	}
 }
 
 func (x *kvImplCrud) handleGetRandomRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
 	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead, start); proc != nil {
+		// The request validator has checked the extras.
 		var collectionID uint32
 		if len(pak.Extras) == 4 {
 			collectionID = binary.BigEndian.Uint32(pak.Extras)
-		} else if len(pak.Extras) != 0 {
-			x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
-			return
 		}
 
 		resp, err := proc.GetRandom(kvproc.GetRandomOptions{
@@ -789,12 +795,11 @@ func (x *kvImplCrud) handleGATRequest(source mock.KvClient, pak *memd.Packet, st
 
 func (x *kvImplCrud) handleGetLockedRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
 	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead, start); proc != nil {
-		if len(pak.Extras) != 4 {
-			x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
-			return
+		// The request validator allows no extras or a 4-byte lock time.
+		var lockTime uint32
+		if len(pak.Extras) == 4 {
+			lockTime = binary.BigEndian.Uint32(pak.Extras[0:])
 		}
-
-		lockTime := binary.BigEndian.Uint32(pak.Extras[0:])
 
 		resp, err := proc.GetLocked(kvproc.GetLockedOptions{
 			Vbucket:      uint(pak.Vbucket),
@@ -830,7 +835,7 @@ func (x *kvImplCrud) handleUnlockRequest(source mock.KvClient, pak *memd.Packet,
 			return
 		}
 
-		resp, err := proc.Unlock(kvproc.UnlockOptions{
+		_, err := proc.Unlock(kvproc.UnlockOptions{
 			Vbucket:      uint(pak.Vbucket),
 			CollectionID: uint(pak.CollectionID),
 			Key:          pak.Key,
@@ -841,16 +846,9 @@ func (x *kvImplCrud) handleUnlockRequest(source mock.KvClient, pak *memd.Packet,
 			return
 		}
 
-		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
-
-		writePacketToSource(source, &memd.Packet{
-			Magic:   memd.CmdMagicRes,
-			Command: pak.Command,
-			Opaque:  pak.Opaque,
-			Status:  memd.StatusSuccess,
-			Cas:     resp.Cas,
-			Extras:  extrasBuf,
-		}, start)
+		// kv_engine answers an unlock with neither a CAS nor a mutation
+		// (UnlockCommandContext), as it stores none.
+		x.writeStatusReply(source, pak, memd.StatusSuccess, start)
 	}
 }
 
@@ -879,11 +877,13 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 		}
 
 		resp, err := proc.MultiLookup(kvproc.MultiLookupOptions{
-			Vbucket:       uint(pak.Vbucket),
-			CollectionID:  uint(pak.CollectionID),
-			Key:           pak.Key,
-			AccessDeleted: docFlags&memd.SubdocDocFlagAccessDeleted != 0,
-			Ops:           ops,
+			Vbucket:        uint(pak.Vbucket),
+			CollectionID:   uint(pak.CollectionID),
+			Key:            pak.Key,
+			AccessDeleted:  docFlags&memd.SubdocDocFlagAccessDeleted != 0,
+			ReviveDocument: docFlags&memd.SubdocDocFlagReviveDocument != 0,
+			Ops:            ops,
+			Cas:            pak.Cas,
 		})
 		if err != nil {
 			x.writeProcErr(source, pak, err, start)
@@ -957,11 +957,6 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 		opData := pak.Value
 		for len(opData) > 0 {
 			opCode := memd.SubDocOpType(opData[0])
-			if opCode == memd.SubDocOpReplaceBodyWithXattr {
-				log.Printf("unsupported op type")
-				x.writeProcErr(source, pak, kvproc.ErrInternal, start)
-				return
-			}
 			opFlags := memd.SubdocFlag(opData[1])
 			pathLen := int(binary.BigEndian.Uint16(opData[2:]))
 			valueLen := int(binary.BigEndian.Uint32(opData[4:]))
@@ -984,6 +979,7 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 			CreateAsDeleted: docFlags&memd.SubdocDocFlagCreateAsDeleted != 0,
 			CreateIfMissing: docFlags&memd.SubdocDocFlagMkDoc != 0,
 			CreateOnly:      docFlags&memd.SubdocDocFlagAddDoc != 0,
+			ReviveDocument:  docFlags&memd.SubdocDocFlagReviveDocument != 0,
 			Ops:             ops,
 			Expiry:          expiry,
 			PreserveExpiry:  pak.PreserveExpiryFrame != nil,
@@ -992,6 +988,10 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 		if err != nil {
 			if e, ok := err.(kvproc.SubdocMutateError); ok {
 				x.writeSubdocMutateErr(source, pak, start, e.Index, e.Err)
+				return
+			}
+			if err == kvproc.ErrSdDeletedDocumentCantHaveValue {
+				writeErrorContextReply(source, pak, statusSubDocDeletedDocumentCantHaveValue, "A deleted document can't have a value", start)
 				return
 			}
 			x.writeProcErr(source, pak, err, start)
@@ -1027,11 +1027,16 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 
 		extrasBuf := mutationExtras(source, resp.VbUUID, resp.SeqNo)
 
+		status := memd.StatusSuccess
+		if resp.IsDeleted {
+			status = memd.StatusSubDocSuccessDeleted
+		}
+
 		x.writeMutationReply(source, proc.Store(), pak, resp.VbUUID, resp.SeqNo, &memd.Packet{
 			Magic:   memd.CmdMagicRes,
 			Command: pak.Command,
 			Opaque:  pak.Opaque,
-			Status:  memd.StatusSuccess,
+			Status:  status,
 			Cas:     resp.Cas,
 			Value:   valueBytes,
 			Extras:  extrasBuf,
@@ -1058,11 +1063,6 @@ func (x *kvImplCrud) writeSubdocMutateErr(source mock.KvClient, pak *memd.Packet
 
 func (x *kvImplCrud) handleObserveSeqNo(source mock.KvClient, pak *memd.Packet, start time.Time) {
 	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead, start); proc != nil {
-		if len(pak.Value) != 8 {
-			x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
-			return
-		}
-
 		vbUUID := binary.BigEndian.Uint64(pak.Value)
 
 		resp, err := proc.ObserveSeqNo(kvproc.ObserveSeqNoOptions{
@@ -1074,13 +1074,16 @@ func (x *kvImplCrud) handleObserveSeqNo(source mock.KvClient, pak *memd.Packet, 
 			return
 		}
 
-		// No support for failover variant yet...
-		valueBuf := make([]byte, 27)
-		valueBuf[0] = 0
+		valueBuf := make([]byte, 27, 43)
 		binary.BigEndian.PutUint16(valueBuf[1:], pak.Vbucket)
 		binary.BigEndian.PutUint64(valueBuf[3:], resp.VbUUID)
 		binary.BigEndian.PutUint64(valueBuf[11:], resp.PersistSeqNo)
 		binary.BigEndian.PutUint64(valueBuf[19:], resp.CurrentSeqNo)
+		if resp.FailedOver {
+			valueBuf[0] = 1
+			valueBuf = binary.BigEndian.AppendUint64(valueBuf, vbUUID)
+			valueBuf = binary.BigEndian.AppendUint64(valueBuf, resp.LastSeqNo)
+		}
 
 		writePacketToSource(source, &memd.Packet{
 			Magic:   memd.CmdMagicRes,

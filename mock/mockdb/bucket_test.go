@@ -119,6 +119,12 @@ func TestGetRandom(t *testing.T) {
 		t.Fatalf("cas was not assigned correctly")
 	}
 
+	// kv_engine finds a document only once its vbucket has persisted it.
+	if _, err := bucket.GetRandom(0, 0); !errors.Is(err, ErrDocNotFound) {
+		t.Fatalf("expected doc not found before persistence, was: %v", err)
+	}
+	chrono.TimeTravel(100 * time.Millisecond)
+
 	getDoc, err := bucket.GetRandom(0, 0)
 	if err != nil {
 		t.Fatalf("failed to get document: %v", err)
@@ -155,9 +161,14 @@ func TestGetRandomExpired(t *testing.T) {
 		t.Fatalf("cas was not assigned correctly")
 	}
 
-	_, err = bucket.GetRandom(0, 0)
-	if !errors.Is(err, ErrDocNotFound) {
-		t.Fatalf("expected doc not found, was: %s", err)
+	// kv_engine returns an expired document, without expiring it.
+	chrono.TimeTravel(100 * time.Millisecond)
+	doc, err := bucket.GetRandom(0, 0)
+	if err != nil {
+		t.Fatalf("expected the expired document, was: %s", err)
+	}
+	if doc.Cas != insDoc.Cas || string(doc.Value) != "hello world" {
+		t.Fatalf("expected the document as stored, got CAS %x value %q", doc.Cas, doc.Value)
 	}
 }
 

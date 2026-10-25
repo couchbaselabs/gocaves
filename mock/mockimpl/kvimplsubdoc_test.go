@@ -33,9 +33,7 @@ func TestMultiMutationReportsIndexOfFailedSpec(t *testing.T) {
 			index: 1,
 		},
 		{
-			// gocaves executes the xattr spec after the body specs, so the
-			// failing spec is second in execution order but third in the
-			// request.
+			// The index counts the xattr spec, which runs first.
 			name: "xattr first",
 			specs: []subdocSpec{
 				{Op: memd.SubDocOpDictSet, Flags: memd.SubdocFlagXattrPath | memd.SubdocFlagMkDirP, Path: "meta.x", Value: "1"},

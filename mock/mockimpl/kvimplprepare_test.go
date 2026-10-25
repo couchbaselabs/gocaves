@@ -138,7 +138,7 @@ func TestPendingDurableWriteOverLockedDocument(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("failed to write the durable SET: %v", err)
 	}
-	waitForSeqNo(t, c, 3)
+	waitForSeqNo(t, c, 2)
 
 	increment := make([]byte, 20)
 	binary.BigEndian.PutUint64(increment, 1)

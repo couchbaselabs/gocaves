@@ -59,6 +59,7 @@ func newBucket(parent *clusterInst, opts mock.NewBucketOptions) (*bucketInst, er
 		NumVbuckets:    vbuckets,
 		ReplicaLatency: parent.replicaLatency,
 		PersistLatency: parent.persistLatency,
+		Ephemeral:      opts.Type == mock.BucketTypeEphemeral,
 	})
 	if err != nil {
 		return nil, err

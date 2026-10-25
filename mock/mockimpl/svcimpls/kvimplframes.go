@@ -30,8 +30,7 @@ func (x *kvImplFrames) Register(h *hookHelper) {
 
 // validateRequest returns the status and error context kv_engine's request
 // validator refuses a request with, or success. kv_engine answers an unknown
-// command, and checks the request header, before it parses the frames. The
-// header is checked only for a request with frames.
+// command, and checks the request header, before it parses the frames.
 func (h *hookHelper) validateRequest(source mock.KvClient, pak *memd.Packet) (memd.StatusCode, string) {
 	if pak.Magic != memd.CmdMagicReq {
 		return memd.StatusSuccess, ""
@@ -39,13 +38,65 @@ func (h *hookHelper) validateRequest(source mock.KvClient, pak *memd.Packet) (me
 	if !h.kvCommands[pak.Command] {
 		return memd.StatusUnknownCommand, ""
 	}
-	if !hasFrames(pak) {
-		return memd.StatusSuccess, ""
-	}
 	if status, context := checkHeader(source, pak); status != memd.StatusSuccess {
 		return status, context
 	}
-	return checkFrames(pak)
+	if hasFrames(pak) {
+		if status, context := checkFrames(pak); status != memd.StatusSuccess {
+			return status, context
+		}
+	}
+	return checkCommand(source, pak)
+}
+
+// checkCommand applies the checks a command's validator in
+// daemon/mcbp_validators.cc@v7.0.5 makes after verify_header, for the
+// commands whose handlers do not.
+func checkCommand(source mock.KvClient, pak *memd.Packet) (memd.StatusCode, string) {
+	switch pak.Command {
+	case memd.CmdGetLocked:
+		if context := checkDocumentKey(source, pak); context != "" {
+			return memd.StatusInvalidArgs, context
+		}
+		if len(pak.Extras) != 0 && len(pak.Extras) != 4 {
+			return memd.StatusInvalidArgs, "Request extras must be of length 0 or 4"
+		}
+	case memd.CmdGetMeta:
+		if len(pak.Extras) > 1 {
+			return memd.StatusInvalidArgs, "Request extras must be of length 0 or 1"
+		}
+		if context := checkDocumentKey(source, pak); context != "" {
+			return memd.StatusInvalidArgs, context
+		}
+		if len(pak.Extras) == 1 && pak.Extras[0] > 2 {
+			return memd.StatusInvalidArgs, "Request extras invalid"
+		}
+	case memd.CmdHello:
+		if len(pak.Value)%2 != 0 {
+			return memd.StatusInvalidArgs, "Request value must be of even length"
+		}
+	case memd.CmdStat:
+		if len(pak.Value) > 0 {
+			if pak.Datatype&uint8(memd.DatatypeFlagJSON) == 0 {
+				return memd.StatusInvalidArgs, "Datatype must be JSON"
+			}
+			if !json.Valid(pak.Value) {
+				return memd.StatusInvalidArgs, "value is not valid JSON"
+			}
+		}
+	case memd.CmdGetErrorMap:
+		if pak.Vbucket != 0 {
+			return memd.StatusInvalidArgs, "Request vbucket id must be 0"
+		}
+		if len(pak.Value) != 2 {
+			return memd.StatusInvalidArgs, "Request value must be of length 2"
+		}
+	case memd.CmdObserveSeqNo:
+		if len(pak.Value) != 8 {
+			return memd.StatusInvalidArgs, "Request value must be of length 8"
+		}
+	}
+	return memd.StatusSuccess, ""
 }
 
 // hasFrames reports whether a request carries frames. The reader lists every

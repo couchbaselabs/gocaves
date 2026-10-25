@@ -31,6 +31,9 @@ var (
 	ErrSdDeltaInvalid      = errors.New("subdocument counter delta invalid")
 	ErrSdNumRange          = errors.New("subdocument number out of range")
 	ErrUnknownXattrMacro   = errors.New("unknown xattr macro")
+
+	ErrSdCanOnlyReviveDeletedDocuments = errors.New("only a deleted document can be revived")
+	ErrSdDeletedDocumentCantHaveValue  = errors.New("a deleted document can't have a value")
 )
 
 // SubdocMutateError is the failure of one spec of a multi-mutation, which

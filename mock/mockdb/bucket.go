@@ -21,6 +21,8 @@ type NewBucketOptions struct {
 	NumVbuckets    uint
 	ReplicaLatency time.Duration
 	PersistLatency time.Duration
+	// Ephemeral is set for a bucket that keeps its documents in memory only.
+	Ephemeral bool
 }
 
 // NewBucket will create a new Bucket store.
@@ -35,6 +37,7 @@ func NewBucket(opts NewBucketOptions) (*Bucket, error) {
 			Chrono:         opts.Chrono,
 			ReplicaLatency: opts.ReplicaLatency,
 			PersistLatency: opts.PersistLatency,
+			Ephemeral:      opts.Ephemeral,
 		})
 		if err != nil {
 			return nil, err
@@ -120,7 +123,32 @@ func (b *Bucket) Insert(doc *Document) (*Document, error) {
 // A key with a durable write in progress is refused with
 // ErrSyncWriteInProgress before fn runs.
 func (b *Bucket) Update(vbID, collectionID uint, key []byte, fn UpdateFunc) (*Document, error) {
-	return b.update(vbID, collectionID, key, fn, pendingFirst)
+	return b.update(vbID, collectionID, key, fn, pendingFirst, true)
+}
+
+// Overwrite is Update for SET, which replaces a document that expired
+// without storing its deletion first, as VBucket::set does.
+func (b *Bucket) Overwrite(vbID, collectionID uint, key []byte, fn UpdateFunc) (*Document, error) {
+	return b.update(vbID, collectionID, key, fn, pendingFirst, false)
+}
+
+// GetMeta returns a document as GET_META reads it.
+func (b *Bucket) GetMeta(vbIdx, collectionID uint, key []byte) (*Document, error) {
+	vbucket := b.GetVbucket(vbIdx)
+	if vbucket == nil {
+		return nil, errors.New("invalid vbucket")
+	}
+
+	return vbucket.GetMeta(collectionID, key)
+}
+
+// RestoreDeleted brings back to memory a deletion of the key that an EP bucket
+// has persisted, as kv_engine does when a read of deleted documents fetches
+// it from disk.
+func (b *Bucket) RestoreDeleted(vbIdx, collectionID uint, key []byte) {
+	if vbucket := b.GetVbucket(vbIdx); vbucket != nil {
+		vbucket.RestoreDeleted(collectionID, key)
+	}
 }
 
 // UpdateIfFound is Update for a request that kv_engine refuses for a missing
@@ -128,7 +156,7 @@ func (b *Bucket) Update(vbID, collectionID uint, key []byte, fn UpdateFunc) (*Do
 // VBucket::replace does: fn runs on a missing document, and a key with a
 // durable write in progress and a committed document is refused before it.
 func (b *Bucket) UpdateIfFound(vbID, collectionID uint, key []byte, fn UpdateFunc) (*Document, error) {
-	return b.update(vbID, collectionID, key, fn, pendingIfFound)
+	return b.update(vbID, collectionID, key, fn, pendingIfFound, false)
 }
 
 // UpdateAfterRead is Update for a request kv_engine serves by reading the
@@ -136,16 +164,16 @@ func (b *Bucket) UpdateIfFound(vbID, collectionID uint, key []byte, fn UpdateFun
 // document, and a key with a durable write in progress is refused only when
 // fn returns a document to store.
 func (b *Bucket) UpdateAfterRead(vbID, collectionID uint, key []byte, fn UpdateFunc) (*Document, error) {
-	return b.update(vbID, collectionID, key, fn, pendingAtStore)
+	return b.update(vbID, collectionID, key, fn, pendingAtStore, true)
 }
 
-func (b *Bucket) update(vbID, collectionID uint, key []byte, fn UpdateFunc, check pendingCheck) (*Document, error) {
+func (b *Bucket) update(vbID, collectionID uint, key []byte, fn UpdateFunc, check pendingCheck, expire bool) (*Document, error) {
 	vbucket := b.GetVbucket(vbID)
 	if vbucket == nil {
 		return nil, errors.New("invalid vbucket")
 	}
 
-	doc, err := vbucket.update(collectionID, key, fn, check)
+	doc, err := vbucket.update(collectionID, key, fn, check, expire)
 	if err != nil {
 		return nil, err
 	}

@@ -44,6 +44,13 @@ func (e *Engine) update(vbID, collectionID uint, key []byte,
 	return e.db.Update(vbID, collectionID, key, e.durable(fn))
 }
 
+// overwrite is update for SET, which replaces a document that expired
+// without storing its deletion first.
+func (e *Engine) overwrite(vbID, collectionID uint, key []byte,
+	fn func(*mockdb.Document) (*mockdb.Document, error)) (*mockdb.Document, error) {
+	return e.db.Overwrite(vbID, collectionID, key, e.durable(fn))
+}
+
 // updateAfterRead is update for a request kv_engine serves by reading the
 // committed document and then storing a new one: a durable write in progress
 // on the key refuses it only when it would store.

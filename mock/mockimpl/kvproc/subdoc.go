@@ -2,11 +2,15 @@ package kvproc
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"hash/crc32"
 
@@ -18,53 +22,61 @@ var (
 	crc32cMacro = []byte("\"${Mutation.value_crc32c}\"")
 	seqnoMacro  = []byte("\"${Mutation.seqno}\"")
 	casMacro    = []byte("\"${Mutation.CAS}\"")
+
+	// crc32cPlaceholder holds the place of ${Mutation.value_crc32c} until the
+	// body is final. kv_engine pads macros with random bytes alike.
+	crc32cPlaceholder = macroPlaceholder("${Mutation.value_crc32c}")
+	// SeqNoPlaceholder holds the place of ${Mutation.seqno}, which the store
+	// replaces once the mutation has its sequence number.
+	SeqNoPlaceholder = macroPlaceholder("${Mutation.seqno}")
 )
 
-type subdocOpList struct {
-	ops     []*SubDocOp
-	indexes []int
+func macroPlaceholder(macro string) []byte {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return []byte(`"` + macro + hex.EncodeToString(b) + `"`)
 }
 
-func subdocReorder(ops []*SubDocOp) *subdocOpList {
-	var xAttrOps []*SubDocOp
-	var xAttrIndexes []int
-	var sops []*SubDocOp
-	var opIndexes []int
-	for i, op := range ops {
-		if op.IsXattrPath {
-			xAttrOps = append(xAttrOps, op)
-			xAttrIndexes = append(xAttrIndexes, i)
-		} else {
-			sops = append(sops, op)
-			opIndexes = append(opIndexes, i)
-		}
-	}
-
-	return &subdocOpList{
-		ops:     append(sops, xAttrOps...),
-		indexes: append(opIndexes, xAttrIndexes...),
-	}
-}
-
-func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp, continueOnOpError bool) ([]*SubDocResult, error) {
+// executeSdOps runs the specs on doc. created says doc is one the request
+// creates.
+func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp, continueOnOpError, created bool) ([]*SubDocResult, error) {
 	opReses := make([]*SubDocResult, len(ops))
+	expandedMacros := false
 
-	reorderedOps := subdocReorder(ops)
+	// $document describes the document as read, before any spec runs
+	// (SubdocCmdContext::get_document_vattr). For a document the request
+	// creates, kv_engine has read nothing: its item_info is empty and
+	// reports a deleted document of raw bytes.
+	read := *doc
+	read.Value = bytes.Clone(doc.Value)
+	read.Xattrs = maps.Clone(doc.Xattrs)
+	read.XattrOrder = slices.Clone(doc.XattrOrder)
+	if created {
+		read = mockdb.Document{Value: read.Value, IsDeleted: true}
+	}
 
+	// kv_engine runs the xattr specs, then the body specs; the validator
+	// keeps the xattr specs first, so that is the order of the request.
 	var xattrs xattrPhase
 	// kv_engine runs a body spec only on a document whose datatype is JSON.
 	// The specs keep the datatype of the document they read, except that a
-	// whole-document set decides it again from the text it stores
-	// (subdocument.cc@v7.0.5).
-	for opIdx, op := range reorderedOps.ops {
+	// whole-document spec decides it again from the text it leaves
+	// (operate_single_doc).
+	for opIdx, op := range ops {
 		var opDoc *mockdb.Document
 		if op.IsXattrPath {
+			// A macro is expanded into a copy, so a retry expands it again.
+			if op.ExpandMacros {
+				expanded := *op
+				op = &expanded
+				expandedMacros = true
+			}
 			var err error
-			opDoc, err = e.createXattrDoc(doc, newMeta, op, &xattrs)
+			opDoc, err = e.createXattrDoc(doc, &read, newMeta, op, &xattrs)
 			if err != nil && !continueOnOpError {
-				return nil, SubdocMutateError{Index: reorderedOps.indexes[opIdx], Err: err}
+				return nil, SubdocMutateError{Index: opIdx, Err: err}
 			} else if err != nil {
-				opReses[reorderedOps.indexes[opIdx]] = &SubDocResult{
+				opReses[opIdx] = &SubDocResult{
 					Value: nil,
 					Err:   err,
 				}
@@ -140,6 +152,10 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp, co
 			executor = SubDocDeleteFullDocExecutor{
 				baseSubDocExecutor: base,
 			}
+		case memd.SubDocOpReplaceBodyWithXattr:
+			executor = SubDocGetExecutor{
+				baseSubDocExecutor: base,
+			}
 		}
 
 		if executor == nil {
@@ -152,27 +168,49 @@ func (e *Engine) executeSdOps(doc, newMeta *mockdb.Document, ops []*SubDocOp, co
 		}
 
 		if !continueOnOpError && opRes.Err != nil {
-			return nil, SubdocMutateError{Index: reorderedOps.indexes[opIdx], Err: opRes.Err}
+			return nil, SubdocMutateError{Index: opIdx, Err: opRes.Err}
 		}
 
 		if opRes == nil {
 			return nil, ErrInternal
 		}
 
-		if op.Op == memd.SubDocOpSetDoc && opRes.Err == nil {
+		switch {
+		case (op.Op == memd.SubDocOpSetDoc || op.Op == memd.SubDocOpDeleteDoc) && opRes.Err == nil:
 			doc.Datatype = SetDatatypeJSONFromValue(doc.Datatype, doc.Value)
+		case op.Op == memd.SubDocOpReplaceBodyWithXattr && opRes.Err == nil:
+			// The value of the xattr path becomes the body, which is JSON
+			// unless empty, and the spec returns nothing
+			// (subdoc_operate_attributes_and_body).
+			doc.Value = opRes.Value
+			if len(doc.Value) > 0 {
+				doc.Datatype |= uint8(memd.DatatypeFlagJSON)
+			} else {
+				doc.Datatype &^= uint8(memd.DatatypeFlagJSON)
+			}
+			opRes.Value = nil
 		}
 
 		if op.IsXattrPath && opRes.Err == nil && subdocOpIsMutation(op) {
 			xattrs.modified = true
 		}
 
-		opReses[reorderedOps.indexes[opIdx]] = opRes
+		opReses[opIdx] = opRes
 	}
 
 	if xattrs.modified {
 		if err := xattrs.store(doc); err != nil {
 			return nil, err
+		}
+	}
+
+	// kv_engine expands ${Mutation.value_crc32c} once the body is final
+	// (SubdocCmdContext::pre_link_document), in place of padding of the
+	// same size, so the xattr keeps its position.
+	if expandedMacros {
+		crc := []byte(fmt.Sprintf(`"0x%08x"`, crc32.Checksum(doc.Value, crc32.MakeTable(crc32.Castagnoli))))
+		for key, value := range doc.Xattrs {
+			doc.Xattrs[key] = bytes.ReplaceAll(value, crc32cPlaceholder, crc)
 		}
 	}
 
@@ -235,10 +273,10 @@ func createXtocDoc(doc *mockdb.Document) (*mockdb.Document, error) {
 	return &mockdb.Document{Value: value}, nil
 }
 
-func (e *Engine) createXattrDoc(doc, metaDoc *mockdb.Document, op *SubDocOp, xattrs *xattrPhase) (*mockdb.Document, error) {
+func (e *Engine) createXattrDoc(doc, read, metaDoc *mockdb.Document, op *SubDocOp, xattrs *xattrPhase) (*mockdb.Document, error) {
 	if op.ExpandMacros {
 		var err error
-		op.Value, err = e.createMacroValue(op.Value, doc, metaDoc)
+		op.Value, err = e.createMacroValue(op.Value, read, metaDoc)
 		if err != nil {
 			return nil, err
 		}
@@ -247,7 +285,7 @@ func (e *Engine) createXattrDoc(doc, metaDoc *mockdb.Document, op *SubDocOp, xat
 	key := xattrKey(op.Path)
 	switch key {
 	case "$document":
-		return e.createVattrDoc(doc), nil
+		return e.createVattrDoc(read), nil
 	case "$vbucket":
 		return e.createVbucketDoc(), nil
 	case "$XTOC":
@@ -268,11 +306,6 @@ func (e *Engine) createXattrDoc(doc, metaDoc *mockdb.Document, op *SubDocOp, xat
 	return xattrs.doc, nil
 }
 
-const (
-	// DeleteCrc32c CRC-32 checksum represents the body hash of "Deleted" document.
-	DeleteCrc32c = "0x00000000"
-)
-
 func (e *Engine) createMacroValue(opValue []byte, doc, metaDoc *mockdb.Document) ([]byte, error) {
 	var val []byte
 	if bytes.Equal(opValue, casMacro) {
@@ -280,43 +313,86 @@ func (e *Engine) createMacroValue(opValue []byte, doc, metaDoc *mockdb.Document)
 		binary.LittleEndian.PutUint64(binaryEncodedCas, metaDoc.Cas)
 		val = []byte(fmt.Sprintf("\"0x%v\"", hex.EncodeToString(binaryEncodedCas)))
 	} else if bytes.Equal(opValue, crc32cMacro) {
-		if doc.IsDeleted {
-			val = []byte(fmt.Sprintf("\"%s\"", DeleteCrc32c))
-		} else {
-			table := crc32.MakeTable(crc32.Castagnoli)
-			val = []byte(fmt.Sprintf("\"0x%x\"", crc32.Checksum(doc.Value, table)))
-		}
+		val = crc32cPlaceholder
 	} else if bytes.Equal(opValue, seqnoMacro) {
-		return nil, ErrUnknownXattrMacro
-	} else if bytes.HasPrefix(opValue, []byte(`"${$document`)) && bytes.HasSuffix(opValue, []byte(`}"`)) {
-		vattr := e.createVattrDoc(doc)
-		if bytes.Equal(opValue, []byte(`"${$document}"`)) {
-			// All of the vattrs!
-			val = vattr.Value
-		} else {
-			key := bytes.TrimPrefix(opValue, []byte(`"${$document.`))
-			key = bytes.TrimSuffix(key, []byte(`}"`))
-			var vattrMap map[string]json.RawMessage
-			err := json.Unmarshal(vattr.Value, &vattrMap)
-			if err != nil {
-				return nil, err
-			}
-			err = json.Unmarshal(vattrMap["$document"], &vattrMap)
-			if err != nil {
-				return nil, err
-			}
-
-			var ok bool
-			val, ok = vattrMap[string(key)]
-			if !ok {
-				return nil, ErrSdUnknownVattrMacro
-			}
+		val = SeqNoPlaceholder
+	} else if bytes.HasPrefix(opValue, []byte(`"${$document`)) {
+		var ok bool
+		if val, ok = documentMacro(string(opValue), doc); !ok {
+			return nil, ErrSdUnknownVattrMacro
 		}
 	} else {
 		return nil, ErrUnknownXattrMacro
 	}
 
 	return val, nil
+}
+
+// documentMacro expands a ${$document} macro from doc, the document as read,
+// as kv_engine's expand_virtual_document_macro
+// (daemon/subdocument_context.cc@v7.0.5) does, and reports whether it is
+// one.
+func documentMacro(macro string, doc *mockdb.Document) ([]byte, bool) {
+	var v string
+	switch macro {
+	case `"${$document}"`:
+		return documentVattr(doc), true
+	case `"${$document.CAS}"`:
+		v = fmt.Sprintf(`"0x%016x"`, doc.Cas)
+	case `"${$document.vbucket_uuid}"`:
+		v = fmt.Sprintf(`"0x%016x"`, doc.VbUUID)
+	case `"${$document.seqno}"`:
+		v = fmt.Sprintf(`"0x%016x"`, doc.SeqNo)
+	case `"${$document.revid}"`:
+		v = fmt.Sprintf(`"%d"`, doc.RevID)
+	case `"${$document.exptime}"`:
+		v = strconv.FormatInt(documentExptime(doc), 10)
+	case `"${$document.flags}"`:
+		v = strconv.FormatUint(uint64(doc.Flags), 10)
+	case `"${$document.value_bytes}"`:
+		v = strconv.Itoa(len(doc.Value))
+	case `"${$document.datatype}"`:
+		v = "[" + strings.Join(datatypeToString(doc.Datatype, len(doc.Xattrs) > 0), ",") + "]"
+	case `"${$document.deleted}"`:
+		v = strconv.FormatBool(doc.IsDeleted)
+	case `"${$document.last_modified}"`:
+		if !doc.CasIsHLC {
+			return nil, false
+		}
+		v = strconv.FormatInt(int64(doc.Cas)/int64(time.Second), 10)
+	default:
+		return nil, false
+	}
+	return []byte(v), true
+}
+
+func documentExptime(doc *mockdb.Document) int64 {
+	if doc.Expiry.IsZero() {
+		return 0
+	}
+	return doc.Expiry.Unix()
+}
+
+// documentVattr returns the fields of the $document virtual attribute, as
+// kv_engine's get_document_vattr builds them, in its key order.
+func documentVattr(doc *mockdb.Document) []byte {
+	v := []byte{'{'}
+	v = append(v, fmt.Sprintf("\"CAS\":\"0x%016x\",", doc.Cas)...)
+	v = append(v, fmt.Sprintf("\"datatype\":[%s],", strings.Join(datatypeToString(doc.Datatype, len(doc.Xattrs) > 0), ","))...)
+	v = append(v, fmt.Sprintf("\"deleted\":%t,", doc.IsDeleted)...)
+	v = append(v, fmt.Sprintf("\"exptime\":%d,", documentExptime(doc))...)
+	v = append(v, fmt.Sprintf("\"flags\":%d,", doc.Flags)...)
+	// last_modified is the CAS in seconds, when it is a hybrid logical
+	// clock.
+	if doc.CasIsHLC {
+		v = append(v, fmt.Sprintf("\"last_modified\":\"%d\",", int64(doc.Cas)/int64(time.Second))...)
+	}
+	v = append(v, fmt.Sprintf("\"revid\":\"%d\",", doc.RevID)...)
+	v = append(v, fmt.Sprintf("\"seqno\":\"0x%016x\",", doc.SeqNo)...)
+	v = append(v, fmt.Sprintf("\"value_bytes\":%d,", len(doc.Value))...)
+	v = append(v, fmt.Sprintf("\"value_crc32c\":\"0x%08x\",", crc32.Checksum(doc.Value, crc32.MakeTable(crc32.Castagnoli)))...)
+	v = append(v, fmt.Sprintf("\"vbucket_uuid\":\"0x%016x\"", doc.VbUUID)...)
+	return append(v, '}')
 }
 
 func (e *Engine) createVbucketDoc() *mockdb.Document {
@@ -328,52 +404,28 @@ func (e *Engine) createVbucketDoc() *mockdb.Document {
 }
 
 func (e *Engine) createVattrDoc(doc *mockdb.Document) *mockdb.Document {
-	// TODO: revid
-	table := crc32.MakeTable(crc32.Castagnoli)
-
-	expiry := int64(0)
-	if !doc.Expiry.IsZero() {
-		expiry = doc.Expiry.Unix()
-	}
-
-	v := []byte{'{'}
-	v = append(v, "\"$document\":"...)
-	v = append(v, '{')
-	v = append(v, fmt.Sprintf("\"exptime\":%d,", expiry)...)
-	v = append(v, fmt.Sprintf("\"CAS\":\"0x%016x\",", doc.Cas)...)
-	v = append(v, fmt.Sprintf("\"datatype\":%s,", datatypeToString(doc.Datatype))...)
-	v = append(v, fmt.Sprintf("\"deleted\":%t,", doc.IsDeleted)...)
-	v = append(v, fmt.Sprintf("\"flags\":%d,", doc.Flags)...)
-	v = append(v, fmt.Sprintf("\"last_modified\":\"%d\",", doc.ModifiedTime.Unix())...)
-	v = append(v, fmt.Sprintf("\"seqno\":\"0x%016x\",", doc.SeqNo)...)
-	v = append(v, fmt.Sprintf("\"value_bytes\":%d,", len(doc.Value))...)
-	v = append(v, fmt.Sprintf("\"vbucket_uuid\":\"0x%016x\",", doc.VbUUID)...)
-	v = append(v, fmt.Sprintf("\"value_crc32c\":\"0x%x\",", crc32.Checksum(doc.Value, table))...)
-	v = append(v, fmt.Sprintf("\"revid\":\"%d\"", doc.RevID)...)
-	v = append(v, '}')
-	v = append(v, '}')
-
-	return &mockdb.Document{
-		Value: v,
-	}
+	v := []byte(`{"$document":`)
+	v = append(v, documentVattr(doc)...)
+	return &mockdb.Document{Value: append(v, '}')}
 }
 
-func datatypeToString(datatype uint8) []string {
-	if datatype == 0x00 {
-		return []string{"\"raw\""}
-	}
-
+// datatypeToString lists the datatype of a document as kv_engine's
+// mcbp::datatype::to_string does. mockdb keeps the xattrs apart from the
+// body, so their datatype bit is not in datatype.
+func datatypeToString(datatype uint8, hasXattrs bool) []string {
 	var typ []string
-	if datatype&0x01 == 1 {
-		typ = append(typ, "\"json\"")
-	}
-	if datatype&0x02 == 1 {
+	if datatype&uint8(memd.DatatypeFlagCompressed) != 0 {
 		typ = append(typ, "\"snappy\"")
 	}
-	if datatype&0x04 == 1 {
+	if datatype&uint8(memd.DatatypeFlagJSON) != 0 {
+		typ = append(typ, "\"json\"")
+	}
+	if hasXattrs {
 		typ = append(typ, "\"xattr\"")
 	}
-
+	if typ == nil {
+		return []string{"\"raw\""}
+	}
 	return typ
 }
 
@@ -676,6 +728,7 @@ type SubDocDeleteFullDocExecutor struct {
 // Execute performs the subdocument operation.
 func (e SubDocDeleteFullDocExecutor) Execute(_ *SubDocOp) (*SubDocResult, error) {
 	e.doc.IsDeleted = true
+	e.doc.Value = nil
 
 	return &SubDocResult{
 		Value: nil,

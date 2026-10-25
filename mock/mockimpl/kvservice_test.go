@@ -9,11 +9,12 @@ import (
 
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
 	"github.com/golang/snappy"
 )
 
 func TestCompressedValueIsInflated(t *testing.T) {
-	c := newTestKvConn(t, memd.FeatureSnappy)
+	c := newTestKvConn(t, memd.FeatureSnappy, memd.FeatureJSON)
 
 	doc := `{"counter":1,"padding":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`
 	c.mustSucceed(&memd.Packet{
@@ -39,7 +40,7 @@ func TestCompressedValueIsInflated(t *testing.T) {
 }
 
 func TestHooksSeeCompressedRequest(t *testing.T) {
-	c := newTestKvConn(t, memd.FeatureSnappy)
+	c := newTestKvConn(t, memd.FeatureSnappy, memd.FeatureJSON)
 
 	// Hooks such as KvExpect.Wait keep the packet after next returns.
 	seen := make(chan memd.Packet, 2)
@@ -129,8 +130,6 @@ func TestCompressedValueTooLargeToInflate(t *testing.T) {
 }
 
 func TestInflateRefusesOversizedHeaderBeforeAllocating(t *testing.T) {
-	cli := &kvClient{features: []memd.HelloFeature{memd.FeatureSnappy}}
-
 	// A snappy block opens with its inflated length as a varint. This one
 	// claims 64 MiB and carries nothing.
 	value := make([]byte, binary.MaxVarintLen64)
@@ -138,13 +137,13 @@ func TestInflateRefusesOversizedHeaderBeforeAllocating(t *testing.T) {
 
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	_, ok := inflateRequestValue(cli, value)
+	_, ok := servers.InflateValue(value)
 	runtime.ReadMemStats(&after)
 
 	if ok {
 		t.Fatalf("inflated a value whose header exceeds the limit")
 	}
-	if allocated := after.TotalAlloc - before.TotalAlloc; allocated >= maxInflatedSize {
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated >= servers.MaxInflatedSize {
 		t.Errorf("allocated %d bytes for a value that was refused", allocated)
 	}
 }

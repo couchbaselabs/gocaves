@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"cmp"
 	"errors"
+	"fmt"
 	"math/rand"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +35,28 @@ type Document struct {
 	ModifiedTime time.Time
 	RevID        uint64
 
+	// InMemory, when set on the document a functor returns, makes the
+	// update change only its CAS and lock, in memory, without a mutation,
+	// as kv_engine's lock, unlock and a touch that keeps the expiry do. A
+	// replica does not see the change, and the next mutation of the key
+	// replaces it. It is not stored.
+	InMemory bool
+
+	// CasIsHLC reports, on a document read, that kv_engine counts its CAS as
+	// a hybrid logical clock. It is not stored.
+	CasIsHLC bool
+
+	// SoftDelete, set on a deleted document handed to a mutation, makes the
+	// mutation a deletion as DELETE stores one (VBucket::processSoftDelete),
+	// whose revision the vbucket counts among those of deleted documents.
+	// It is not stored.
+	SoftDelete bool
+
+	// SeqNoMacro, when set on a document handed to a mutation, is replaced
+	// in its xattrs by the sequence number the mutation gets, in the form
+	// kv_engine expands ${Mutation.seqno} to. It is not stored.
+	SeqNoMacro []byte
+
 	// SyncWriteInProgress is set on the committed document an update hands its
 	// functor when the key has a durable write in progress, so a request that
 	// reads before it stores can tell where kv_engine refuses it.
@@ -53,6 +77,10 @@ type Document struct {
 	prepare     bool
 	syncEnd     time.Time
 	syncAborted bool
+
+	// deletedRevID is the revision a deletion leaves as the highest of the
+	// deleted documents of its vbucket, or 0 for any other mutation.
+	deletedRevID uint64
 }
 
 // visibleAt reports whether doc, as stored, can be read at mock time at.
@@ -146,6 +174,7 @@ type Vbucket struct {
 	maxSeqNo       uint64
 	replicaLatency time.Duration
 	persistLatency time.Duration
+	ephemeral      bool
 	revData        []VbRevData
 	// syncWrites are the durable writes of the current history whose
 	// responses are still to be sent, in sequence-number order.
@@ -158,12 +187,33 @@ type Vbucket struct {
 	// before their responses were sent. They keep the responses to a
 	// client in sequence-number order.
 	discardedSyncWrites []SyncWrite
+	// restored holds, by key, the sequence number of a deletion an EP bucket
+	// has persisted and dropped from memory that a read brought back
+	// (GET_META, or a read of deleted documents).
+	restored map[inMemoryKey]uint64
+	// inMemory holds, by key, the CAS and lock of the committed mutation of
+	// a key as kv_engine changes them in memory only, without a mutation:
+	// a lock, an unlock, or a touch that keeps the expiry.
+	inMemory map[inMemoryKey]inMemoryState
+}
+
+type inMemoryKey struct {
+	collectionID uint
+	key          string
+}
+
+type inMemoryState struct {
+	// seqNo is the mutation the state applies to.
+	seqNo      uint64
+	cas        uint64
+	lockExpiry time.Time
 }
 
 type newVbucketOptions struct {
 	Chrono         *mocktime.Chrono
 	ReplicaLatency time.Duration
 	PersistLatency time.Duration
+	Ephemeral      bool
 }
 
 func newVbucket(opts newVbucketOptions) (*Vbucket, error) {
@@ -178,6 +228,7 @@ func newVbucket(opts newVbucketOptions) (*Vbucket, error) {
 		chrono:         opts.Chrono,
 		replicaLatency: opts.ReplicaLatency,
 		persistLatency: opts.PersistLatency,
+		ephemeral:      opts.Ephemeral,
 		revData:        revData,
 	}, nil
 }
@@ -197,21 +248,60 @@ func (s *Vbucket) currentUUIDLocked() uint64 {
 }
 
 func (s *Vbucket) hasDocExpired(doc *Document) bool {
-	// TODO(brett19): Need to emit a delete mutation when a document expires.
 	return !doc.Expiry.IsZero() && !s.chrono.Now().Before(doc.Expiry)
 }
 
-func (s *Vbucket) findDocLocked(repIdx, collectionID uint, key []byte) *Document {
-	return s.findDocAtLocked(repIdx, collectionID, key, s.chrono.Now())
+// expiredDocument returns doc as kv_engine leaves a document that expires:
+// deleted, with no body and only its system xattrs (document_pre_expiry).
+func expiredDocument(doc *Document) *Document {
+	doc = copyDocument(doc)
+	doc.IsDeleted = true
+	doc.Value = []byte{}
+	doc.Datatype = 0
+	for key := range doc.Xattrs {
+		if !strings.HasPrefix(key, "_") {
+			doc.RemoveXattr(key)
+		}
+	}
+	return doc
 }
 
-// findDocAtLocked is findDocLocked at mock time now.
-func (s *Vbucket) findDocAtLocked(repIdx, collectionID uint, key []byte, now time.Time) *Document {
+// expireLocked stores the deletion of doc, a live document of the active copy
+// that expired, as kv_engine does when it reads one: a mutation with a new
+// CAS and sequence number (VBucket::processExpiredItem). It returns the
+// deleted document.
+func (s *Vbucket) expireLocked(doc *Document) *Document {
+	doc = expiredDocument(doc)
+	doc.Cas = GenerateNewCas(s.chrono.Now())
+	doc.LockExpiry = time.Time{}
+	doc = s.pushDocMutationLocked(doc)
+	// kv_engine counts one more than the expired document's revision
+	// among those of deleted documents.
+	s.documents[len(s.documents)-1].deletedRevID = doc.RevID + 1
+	return doc
+}
+
+// casIsHLCLocked reports whether kv_engine marks the CAS of doc as a hybrid
+// logical clock: once an EP bucket's vbucket has persisted a mutation, its
+// HLC epoch is the lowest sequence number of that flush, and every later
+// mutation's CAS counts (EPBucket::flushVBucket, Item::toItemInfo). An
+// ephemeral bucket counts every CAS.
+func (s *Vbucket) casIsHLCLocked(doc *Document, now time.Time) bool {
+	if s.ephemeral {
+		return true
+	}
+	if len(s.documents) == 0 {
+		return false
+	}
+	first := s.documents[0]
+	return !first.ModifiedTime.Add(s.persistLatency).After(now) && doc.SeqNo >= first.SeqNo
+}
+
+// latestLocked returns the stored mutation of a key a copy sees at mock
+// time now.
+func (s *Vbucket) latestLocked(repIdx, collectionID uint, key []byte, now time.Time) *Document {
 	// TODO(brett19): Maybe someday we can improve the performance of this by
 	// scanning from end-to-start instead of start-to-end...
-
-	// This scans from the start of the array to the end, looking for the last
-	// document with the contents we want in it.
 
 	// Calculate when replica becomes visible
 	repLatency := time.Duration(repIdx) * s.replicaLatency
@@ -230,15 +320,66 @@ func (s *Vbucket) findDocAtLocked(repIdx, collectionID uint, key []byte, now tim
 			foundDoc = doc
 		}
 	}
+	return foundDoc
+}
 
+// applyInMemoryLocked gives doc, a copy of stored, the CAS and lock the
+// active copy holds for it in memory. An entry for an earlier mutation of
+// the key is dropped.
+func (s *Vbucket) applyInMemoryLocked(repIdx uint, doc, stored *Document) {
+	if repIdx != 0 {
+		return
+	}
+	k := inMemoryKey{stored.CollectionID, string(stored.Key)}
+	state, ok := s.inMemory[k]
+	if !ok {
+		return
+	}
+	if state.seqNo != stored.SeqNo {
+		delete(s.inMemory, k)
+		return
+	}
+	doc.Cas, doc.LockExpiry = state.cas, state.lockExpiry
+}
+
+func (s *Vbucket) findDocLocked(repIdx, collectionID uint, key []byte) *Document {
+	return s.findDocAtLocked(repIdx, collectionID, key, s.chrono.Now(), true)
+}
+
+// findDocAtLocked is findDocLocked at mock time now. With expire, a live
+// document of the active copy that expired is deleted by a mutation, as
+// kv_engine's reads through fetchValidValue and fetchValueForWrite do;
+// otherwise it is only reported deleted, as GET_META and the stores that
+// replace an expired document see it.
+func (s *Vbucket) findDocAtLocked(repIdx, collectionID uint, key []byte, now time.Time, expire bool) *Document {
+	foundDoc := s.latestLocked(repIdx, collectionID, key, now)
 	if foundDoc != nil {
+		stored := foundDoc
 		// Need to COW this.
 		foundDoc = copyDocument(foundDoc)
+		s.applyInMemoryLocked(repIdx, foundDoc, stored)
 
-		// We cheat and convert an expired document directly to being deleted.
-		if !foundDoc.Expiry.IsZero() && !now.Before(foundDoc.Expiry) {
-			foundDoc.IsDeleted = true
+		// kv_engine expires a live document of the active copy when it reads
+		// it, and not a deleted one (VBucket::fetchValidValue). A replica
+		// does not see an expired document; the deletion reaches it from the
+		// active copy. Nor is a document expired under a durable write in
+		// progress.
+		if !foundDoc.IsDeleted && !foundDoc.Expiry.IsZero() && !now.Before(foundDoc.Expiry) {
+			if expire && repIdx == 0 && !s.syncWriteInProgressLocked(collectionID, key, now) {
+				foundDoc = s.expireLocked(foundDoc)
+			} else {
+				foundDoc.IsDeleted = true
+			}
 		}
+
+		// An EP bucket drops a deletion from memory once it is persisted, and
+		// reads it back from disk with the time of the deletion as its
+		// expiry, as VBucket::queueDirty stored it. An ephemeral bucket keeps
+		// it in memory, without one.
+		if s.deletionOnDiskLocked(stored, now) {
+			foundDoc.Expiry = foundDoc.ModifiedTime
+		}
+		foundDoc.CasIsHLC = s.casIsHLCLocked(foundDoc, now)
 
 		// We also cheat and clean this up here...
 		if !now.Before(foundDoc.LockExpiry) {
@@ -249,6 +390,49 @@ func (s *Vbucket) findDocAtLocked(repIdx, collectionID uint, key []byte, now tim
 	return foundDoc
 }
 
+// RestoreDeleted brings back to memory a deletion of the key that an EP bucket
+// has persisted, as kv_engine does when a read of deleted documents fetches
+// it from disk.
+func (s *Vbucket) RestoreDeleted(collectionID uint, key []byte) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.restoreLocked(collectionID, key, s.chrono.Now())
+}
+
+// deletionOnDiskLocked reports whether stored is a deletion an EP bucket has
+// persisted.
+func (s *Vbucket) deletionOnDiskLocked(stored *Document, now time.Time) bool {
+	return !s.ephemeral && stored.IsDeleted && !stored.ModifiedTime.Add(s.persistLatency).After(now)
+}
+
+// restoreLocked brings back to memory a deletion of the key that an EP
+// bucket has persisted, as kv_engine does when it fetches it from disk.
+func (s *Vbucket) restoreLocked(collectionID uint, key []byte, now time.Time) {
+	stored := s.latestLocked(0, collectionID, key, now)
+	if stored == nil || !s.deletionOnDiskLocked(stored, now) {
+		return
+	}
+	if s.restored == nil {
+		s.restored = make(map[inMemoryKey]uint64)
+	}
+	s.restored[inMemoryKey{collectionID, string(key)}] = stored.SeqNo
+}
+
+// maxDeletedRevIDLocked returns the highest revision kv_engine counts among
+// the deleted documents of the vbucket: that of a deletion DELETE stores,
+// committed, and one more than that of an expired document
+// (HashTable::updateMaxDeletedRevSeqno).
+func (s *Vbucket) maxDeletedRevIDLocked(now time.Time) uint64 {
+	var maxRevID uint64
+	for _, doc := range s.documents {
+		if doc.deletedRevID > maxRevID && doc.visibleAt(now) {
+			maxRevID = doc.deletedRevID
+		}
+	}
+	return maxRevID
+}
+
 // pushDocMutationLocked adds a document mutation to the vbucket.
 // NOTE: This must never be called on a replica vbucket.
 func (s *Vbucket) pushDocMutationLocked(doc *Document) *Document {
@@ -257,6 +441,22 @@ func (s *Vbucket) pushDocMutationLocked(doc *Document) *Document {
 	newDoc.SeqNo = s.nextSeqNoLocked()
 	newDoc.ModifiedTime = s.chrono.Now()
 	newDoc.RevID++
+	if doc.SoftDelete {
+		newDoc.deletedRevID = newDoc.RevID
+	}
+	// A committed mutation supersedes what memory held for the key; a
+	// prepare does not until it commits.
+	if doc.SyncWrite == nil {
+		delete(s.inMemory, inMemoryKey{newDoc.CollectionID, string(newDoc.Key)})
+	}
+	// kv_engine expands the macro in place of padding of the same size, so
+	// the xattr keeps its position.
+	if doc.SeqNoMacro != nil {
+		seqNo := []byte(fmt.Sprintf(`"0x%016x"`, newDoc.SeqNo))
+		for key, value := range newDoc.Xattrs {
+			newDoc.Xattrs[key] = bytes.ReplaceAll(value, doc.SeqNoMacro, seqNo)
+		}
+	}
 
 	s.documents = append(s.documents, newDoc)
 
@@ -271,6 +471,22 @@ func (s *Vbucket) pushDocMutationLocked(doc *Document) *Document {
 	}
 
 	return copyDocument(newDoc)
+}
+
+// LastSeqNoForUUID returns the last sequence number of an earlier history
+// of the vbucket, the one with vbUUID: where the history after it starts. It
+// reports false for the latest history and for a UUID the vbucket never had,
+// as kv_engine's FailoverTable::getLastSeqnoForUUID does.
+func (s *Vbucket) LastSeqNoForUUID(vbUUID uint64) (uint64, bool) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	for i := 0; i+1 < len(s.revData); i++ {
+		if s.revData[i].VbUUID == vbUUID {
+			return s.revData[i+1].SeqNo, true
+		}
+	}
+	return 0, false
 }
 
 // VbMetaState holds some information about the meta-state of a vbucket.
@@ -438,7 +654,8 @@ func (s *Vbucket) GetAll(repIdx, collectionID uint) ([]*Document, error) {
 	repLatency := time.Duration(repIdx) * s.replicaLatency
 	repVisibleTime := s.chrono.Now().Add(-repLatency)
 
-	var docs []*Document
+	var visible []*Document
+	latest := make(map[string]*Document)
 	for _, doc := range s.documents {
 		if repIdx > 0 && !doc.ModifiedTime.Before(repVisibleTime) {
 			continue
@@ -450,9 +667,20 @@ func (s *Vbucket) GetAll(repIdx, collectionID uint) ([]*Document, error) {
 		if doc.CollectionID != collectionID {
 			continue
 		}
-		// We cheat and convert an expired document directly to being deleted.
-		if s.hasDocExpired(doc) {
-			doc.IsDeleted = true
+		visible = append(visible, doc)
+		latest[string(doc.Key)] = doc
+	}
+
+	var docs []*Document
+	for _, doc := range visible {
+		stored := doc
+		if !doc.IsDeleted && s.hasDocExpired(doc) {
+			doc = expiredDocument(doc)
+		} else {
+			doc = copyDocument(doc)
+		}
+		if latest[string(stored.Key)] == stored {
+			s.applyInMemoryLocked(repIdx, doc, stored)
 		}
 
 		// We also cheat and clean this up here...
@@ -479,6 +707,23 @@ func (s *Vbucket) Get(repIdx, collectionID uint, key []byte) (*Document, error) 
 	return foundDoc, nil
 }
 
+// GetMeta returns a document of the active copy by key as kv_engine's
+// VBucket::getMetaData reads it: an expired document is reported deleted,
+// as it was stored, and its deletion is not stored.
+func (s *Vbucket) GetMeta(collectionID uint, key []byte) (*Document, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	now := s.chrono.Now()
+	s.restoreLocked(collectionID, key, now)
+	foundDoc := s.findDocAtLocked(0, collectionID, key, now, false)
+	if foundDoc == nil {
+		return nil, ErrDocNotFound
+	}
+
+	return foundDoc, nil
+}
+
 // GetRandom returns a random, not deleted or expired, document in the vbucket
 func (s *Vbucket) GetRandom(repIdx, collectionID uint) *Document {
 	s.lock.Lock()
@@ -488,46 +733,71 @@ func (s *Vbucket) GetRandom(repIdx, collectionID uint) *Document {
 		return nil
 	}
 
-	// Calculate when replica becomes visible
-	repLatency := time.Duration(repIdx) * s.replicaLatency
-	repVisibleTime := s.chrono.Now().Add(-repLatency)
-
-	var foundDoc *Document
-	numDocs := len(s.documents)
-	startDocIdx := rand.Intn(numDocs)
-	for i := 0; i < numDocs; i++ {
-		curr := uint((startDocIdx + i) % numDocs)
-		doc := s.documents[curr]
-
-		if !doc.ModifiedTime.Before(repVisibleTime) || !doc.visibleAt(repVisibleTime) {
+	// The document is reported as the active copy holds it in memory, an
+	// expired one too: kv_engine skips only deleted, temporary, non-resident
+	// and pending values (HashTable::getRandomKeyFromSlot).
+	now := s.chrono.Now()
+	if !s.hasItemsLocked(collectionID, now) {
+		return nil
+	}
+	repVisibleTime := now.Add(-time.Duration(repIdx) * s.replicaLatency)
+	latest := make(map[string]*Document)
+	var keys []string
+	for _, doc := range s.documents {
+		if doc.CollectionID != collectionID || !doc.visibleAt(repVisibleTime) {
 			continue
 		}
-
-		if doc.CollectionID == collectionID {
-			foundDoc = doc
+		if repIdx > 0 && !doc.ModifiedTime.Before(repVisibleTime) {
+			continue
 		}
-
-		if foundDoc != nil {
-			// Need to COW this.
-			foundDoc = copyDocument(foundDoc)
-
-			if s.hasDocExpired(foundDoc) {
-				foundDoc = nil
-				continue
-			}
-
-			// We also cheat and clean this up here...
-			if !s.chrono.Now().Before(foundDoc.LockExpiry) {
-				foundDoc.LockExpiry = time.Time{}
-			}
+		if _, ok := latest[string(doc.Key)]; !ok {
+			keys = append(keys, string(doc.Key))
 		}
-
-		if foundDoc != nil {
-			break
+		latest[string(doc.Key)] = doc
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	start := rand.Intn(len(keys))
+	for i := range keys {
+		stored := latest[keys[(start+i)%len(keys)]]
+		if stored.IsDeleted {
+			continue
 		}
+		foundDoc := copyDocument(stored)
+		s.applyInMemoryLocked(repIdx, foundDoc, stored)
+		if !now.Before(foundDoc.LockExpiry) {
+			foundDoc.LockExpiry = time.Time{}
+		}
+		return foundDoc
 	}
 
-	return foundDoc
+	return nil
+}
+
+// hasItemsLocked reports whether the item count of a collection kv_engine
+// checks before it looks for a random document is not 0
+// (KVBucket::getRandomKey). An EP bucket counts the committed documents it has
+// persisted live (FlushAccounting::StatisticsUpdate::insert); an ephemeral one
+// counts them as it stores them.
+func (s *Vbucket) hasItemsLocked(collectionID uint, now time.Time) bool {
+	counted := now
+	if !s.ephemeral {
+		counted = now.Add(-s.persistLatency)
+	}
+	latest := make(map[string]*Document)
+	for _, doc := range s.documents {
+		if doc.CollectionID != collectionID || doc.ModifiedTime.After(counted) || !doc.visibleAt(counted) {
+			continue
+		}
+		latest[string(doc.Key)] = doc
+	}
+	for _, doc := range latest {
+		if !doc.IsDeleted {
+			return true
+		}
+	}
+	return false
 }
 
 // GetAllWithin returns a list of all the mutations that have occurred
@@ -572,7 +842,7 @@ func (s *Vbucket) insert(doc *Document) (*Document, error) {
 		}
 
 		return doc, nil
-	}, pendingFirst)
+	}, pendingFirst, false)
 }
 
 // UpdateFunc represents a function which can modify the state of a document.
@@ -609,7 +879,12 @@ const (
 // A key with a durable write in progress cannot be written; check says when
 // that is found out.
 // NOTE: This must never be called on a replica vbucket.
-func (s *Vbucket) update(collectionID uint, key []byte, fn UpdateFunc, check pendingCheck) (*Document, error) {
+//
+// With expire, a document that expired is deleted by a mutation before fn
+// sees it, as the kv_engine reads that precede the store do. Without, fn
+// sees it deleted and the store replaces it, as VBucket::set, add and
+// replace do.
+func (s *Vbucket) update(collectionID uint, key []byte, fn UpdateFunc, check pendingCheck, expire bool) (*Document, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -617,7 +892,7 @@ func (s *Vbucket) update(collectionID uint, key []byte, fn UpdateFunc, check pen
 	// One instant for both, so a prepare that commits meanwhile is either
 	// in progress or the document read.
 	now := s.chrono.Now()
-	foundDoc := s.findDocAtLocked(0, collectionID, key, now)
+	foundDoc := s.findDocAtLocked(0, collectionID, key, now, expire)
 
 	inProgress := s.syncWriteInProgressLocked(collectionID, key, now)
 	if foundDoc != nil {
@@ -644,6 +919,31 @@ func (s *Vbucket) update(collectionID uint, key []byte, fn UpdateFunc, check pen
 	// If no error was returned and no document was returned, ignore the write.
 	if newDoc == nil {
 		return nil, errors.New("functor did not return a document")
+	}
+	if newDoc.InMemory {
+		k := inMemoryKey{collectionID, string(key)}
+		stored := s.latestLocked(0, collectionID, key, now)
+		if newDoc.Cas == stored.Cas && newDoc.LockExpiry.IsZero() {
+			delete(s.inMemory, k)
+		} else {
+			if s.inMemory == nil {
+				s.inMemory = make(map[inMemoryKey]inMemoryState)
+			}
+			s.inMemory[k] = inMemoryState{stored.SeqNo, newDoc.Cas, newDoc.LockExpiry}
+		}
+		return s.findDocAtLocked(0, collectionID, key, now, false), nil
+	}
+
+	// The revision continues from the document the store replaces, deleted
+	// or not, while kv_engine holds it in memory. A new key starts after the
+	// highest revision of the deleted documents of the vbucket
+	// (VBucket::updateRevSeqNoOfNewStoredValue), as does a key whose
+	// persisted deletion an EP bucket has dropped from memory.
+	stored := s.latestLocked(0, collectionID, key, now)
+	if foundDoc != nil && !(s.deletionOnDiskLocked(stored, now) && s.restored[inMemoryKey{collectionID, string(key)}] != stored.SeqNo) {
+		newDoc.RevID = foundDoc.RevID
+	} else {
+		newDoc.RevID = s.maxDeletedRevIDLocked(now)
 	}
 
 	return s.pushDocMutationLocked(newDoc), nil
@@ -722,6 +1022,8 @@ func (s *Vbucket) rollbackLocked(snap *vbucketSnapshot) {
 	}
 
 	s.documents = newMutations
+	s.inMemory = nil
+	s.restored = nil
 	s.maxSeqNo = snap.SeqNo
 	s.discardSyncWritesLocked()
 
@@ -741,6 +1043,8 @@ func (s *Vbucket) Flush() {
 	defer s.lock.Unlock()
 
 	s.documents = make([]*Document, 0)
+	s.inMemory = nil
+	s.restored = nil
 	s.discardSyncWritesLocked()
 	s.revData = []VbRevData{
 		{
