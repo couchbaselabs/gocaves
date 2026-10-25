@@ -1,6 +1,7 @@
 package svcimpls
 
 import (
+	"bytes"
 	"encoding/json"
 	"log"
 	"time"
@@ -72,10 +73,15 @@ func writeErrorContextReply(source mock.KvClient, pak *memd.Packet, status memd.
 		} `json:"error"`
 	}
 	body.Error.Context = context
-	value, err := json.Marshal(body)
-	if err != nil {
+	// kv_engine does not escape '<', '>' and '&' in the context.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	var value []byte
+	if err := enc.Encode(body); err != nil {
 		log.Printf("failed to encode error context: %s", err)
-		value = nil
+	} else {
+		value = bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 	}
 	writePacketToSource(source, &memd.Packet{
 		Magic:    memd.CmdMagicRes,

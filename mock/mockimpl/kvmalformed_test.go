@@ -182,7 +182,7 @@ func TestFramingExtrasEndingInsideFrame(t *testing.T) {
 		{name: "after a durability frame", frames: []byte{0x11, 0x01, 0x05}, context: "The requested command does not support durability requirements"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestKvConn(t, memd.FeatureAltRequests)
+			c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureJSON)
 			writeRawRequest(t, c, memd.CmdNoop, 1, test.frames, nil, nil, nil)
 			status := test.status
 			if status == memd.StatusSuccess {

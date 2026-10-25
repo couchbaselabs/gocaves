@@ -147,6 +147,16 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 		return memd.StatusSubDocNotJSON
 	case kvproc.ErrSdPathInvalid:
 		return memd.StatusSubDocPathInvalid
+	case kvproc.ErrSdPathTooBig:
+		return memd.StatusSubDocPathTooBig
+	case kvproc.ErrSdDocTooDeep:
+		return memd.StatusSubDocDocTooDeep
+	case kvproc.ErrSdValueTooDeep:
+		return memd.StatusSubDocValueTooDeep
+	case kvproc.ErrSdUnknownVattr:
+		return memd.StatusSubDocXattrUnknownVAttr
+	case kvproc.ErrSdUnknownVattrMacro:
+		return statusXattrUnknownVattrMacro
 	case kvproc.ErrSdPathMismatch:
 		return memd.StatusSubDocPathMismatch
 	case kvproc.ErrSdPathNotFound:
@@ -159,24 +169,14 @@ func (x *kvImplCrud) translateProcErr(err error) memd.StatusCode {
 		return memd.StatusSubDocBadDelta
 	case kvproc.ErrSdNumRange:
 		return memd.StatusSubDocBadRange
-	case kvproc.ErrSdBadCombo:
-		return memd.StatusSubDocBadCombo
 	case kvproc.ErrInvalidArgument:
 		return memd.StatusInvalidArgs
-	case kvproc.ErrSdInvalidXattr:
-		return memd.StatusCode(0x87)
-	case kvproc.ErrSdCannotModifyVattr:
-		return memd.StatusSubDocXattrCannotModifyVAttr
-	case kvproc.ErrSdInvalidFlagCombo:
-		return memd.StatusSubDocXattrInvalidFlagCombo
 	case kvproc.ErrUnknownXattrMacro:
 		return memd.StatusSubDocXattrUnknownMacro
 	case mock.ErrScopeNotFound:
 		return memd.StatusScopeUnknown
 	case mock.ErrCollectionNotFound:
 		return memd.StatusCollectionUnknown
-	case kvproc.ErrSdXattrInvalidKeyCombo:
-		return memd.StatusSubDocXattrInvalidKeyCombo
 	}
 
 	log.Printf("Recieved unexpected crud proc error: %s", err)
@@ -855,55 +855,27 @@ func (x *kvImplCrud) handleUnlockRequest(source mock.KvClient, pak *memd.Packet,
 }
 
 func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
+	if status, context := checkSubdocMulti(source, pak, false); status != memd.StatusSuccess {
+		writeErrorContextReply(source, pak, status, context, start)
+		return
+	}
 	if proc := x.makeProc(source, pak, mockauth.PermissionDataRead, start); proc != nil {
 		var docFlags memd.SubdocDocFlag
 		if len(pak.Extras) >= 1 {
 			docFlags = memd.SubdocDocFlag(pak.Extras[0])
 		}
 
+		// checkSubdocMulti has checked that the specs are well formed.
 		ops := make([]*kvproc.SubDocOp, 0)
 		opData := pak.Value
-		for byteIdx := 0; byteIdx < len(opData); byteIdx++ {
-			opCode := memd.SubDocOpType(opData[byteIdx])
-
-			switch opCode {
-			case memd.SubDocOpGet:
-				fallthrough
-			case memd.SubDocOpExists:
-				fallthrough
-			case memd.SubDocOpGetCount:
-				fallthrough
-			case memd.SubDocOpGetDoc:
-				if byteIdx+4 > len(opData) {
-					log.Printf("not enough bytes 1")
-					x.writeProcErr(source, pak, kvproc.ErrInternal, start)
-					return
-				}
-
-				opFlags := memd.SubdocFlag(opData[byteIdx+1])
-				pathLen := int(binary.BigEndian.Uint16(opData[byteIdx+2:]))
-				if byteIdx+4+pathLen > len(opData) {
-					log.Printf("not enough bytes 2 - %d - %d", byteIdx, pathLen)
-					x.writeProcErr(source, pak, kvproc.ErrInternal, start)
-					return
-				}
-
-				path := string(opData[byteIdx+4 : byteIdx+4+pathLen])
-
-				ops = append(ops, &kvproc.SubDocOp{
-					Op:          opCode,
-					Path:        path,
-					Value:       nil,
-					IsXattrPath: opFlags&memd.SubdocFlagXattrPath != 0,
-				})
-
-				byteIdx += 4 + pathLen - 1
-
-			default:
-				log.Printf("unsupported op type")
-				x.writeProcErr(source, pak, kvproc.ErrNotSupported, start)
-				return
-			}
+		for len(opData) > 0 {
+			pathLen := int(binary.BigEndian.Uint16(opData[2:]))
+			ops = append(ops, &kvproc.SubDocOp{
+				Op:          memd.SubDocOpType(opData[0]),
+				Path:        string(opData[4 : 4+pathLen]),
+				IsXattrPath: memd.SubdocFlag(opData[1])&memd.SubdocFlagXattrPath != 0,
+			})
+			opData = opData[4+pathLen:]
 		}
 
 		resp, err := proc.MultiLookup(kvproc.MultiLookupOptions{
@@ -960,6 +932,10 @@ func (x *kvImplCrud) handleMultiLookupRequest(source mock.KvClient, pak *memd.Pa
 }
 
 func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
+	if status, context := checkSubdocMulti(source, pak, true); status != memd.StatusSuccess {
+		writeErrorContextReply(source, pak, status, context, start)
+		return
+	}
 	if proc := x.makeProc(source, pak, mockauth.PermissionDataWrite, start); proc != nil {
 		// The extras are an optional 4-byte expiry followed by optional
 		// 1-byte document flags.
@@ -974,135 +950,30 @@ func (x *kvImplCrud) handleMultiMutateRequest(source mock.KvClient, pak *memd.Pa
 		case 5:
 			expiry = binary.BigEndian.Uint32(pak.Extras[0:])
 			docFlags = memd.SubdocDocFlag(pak.Extras[4])
-		default:
-			x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
-			return
 		}
 
-		mkDoc := docFlags&memd.SubdocDocFlagMkDoc != 0
-
+		// checkSubdocMulti has checked that the specs are well formed.
 		ops := make([]*kvproc.SubDocOp, 0)
 		opData := pak.Value
-		for byteIdx := 0; byteIdx < len(opData); byteIdx++ {
-			opCode := memd.SubDocOpType(opData[byteIdx])
-
-			var makeSubDocOp = func() error {
-				if byteIdx+8 > len(opData) {
-					log.Printf("not enough bytes 11")
-					return kvproc.ErrInternal
-				}
-
-				opFlags := memd.SubdocFlag(opData[byteIdx+1])
-				pathLen := int(binary.BigEndian.Uint16(opData[byteIdx+2:]))
-				valueLen := int(binary.BigEndian.Uint32(opData[byteIdx+4:]))
-				if byteIdx+8+pathLen+valueLen > len(opData) {
-					log.Printf("not enough bytes 12 - %d - %d", byteIdx, pathLen)
-					return kvproc.ErrInternal
-				}
-
-				path := string(opData[byteIdx+8 : byteIdx+8+pathLen])
-				value := opData[byteIdx+8+pathLen : byteIdx+8+pathLen+valueLen]
-
-				ops = append(ops, &kvproc.SubDocOp{
-					Op:           opCode,
-					Path:         path,
-					Value:        value,
-					CreatePath:   opFlags&memd.SubdocFlagMkDirP != 0,
-					IsXattrPath:  opFlags&memd.SubdocFlagXattrPath != 0,
-					ExpandMacros: opFlags&memd.SubdocFlagExpandMacros != 0,
-				})
-
-				byteIdx += 8 + pathLen + valueLen - 1
-
-				return nil
-			}
-
-			switch opCode {
-			case memd.SubDocOpDictAdd:
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			case memd.SubDocOpDictSet:
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			case memd.SubDocOpDelete:
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			case memd.SubDocOpReplace:
-				if mkDoc {
-					x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
-					return
-				}
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			case memd.SubDocOpArrayPushLast:
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			case memd.SubDocOpArrayPushFirst:
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			case memd.SubDocOpArrayInsert:
-				if mkDoc {
-					x.writeStatusReply(source, pak, memd.StatusInvalidArgs, start)
-					return
-				}
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			case memd.SubDocOpArrayAddUnique:
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			case memd.SubDocOpCounter:
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			case memd.SubDocOpSetDoc:
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			case memd.SubDocOpAddDoc:
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			case memd.SubDocOpDeleteDoc:
-				err := makeSubDocOp()
-				if err != nil {
-					x.writeProcErr(source, pak, err, start)
-					return
-				}
-			default:
+		for len(opData) > 0 {
+			opCode := memd.SubDocOpType(opData[0])
+			if opCode == memd.SubDocOpReplaceBodyWithXattr {
 				log.Printf("unsupported op type")
 				x.writeProcErr(source, pak, kvproc.ErrInternal, start)
 				return
 			}
+			opFlags := memd.SubdocFlag(opData[1])
+			pathLen := int(binary.BigEndian.Uint16(opData[2:]))
+			valueLen := int(binary.BigEndian.Uint32(opData[4:]))
+			ops = append(ops, &kvproc.SubDocOp{
+				Op:           opCode,
+				Path:         string(opData[8 : 8+pathLen]),
+				Value:        opData[8+pathLen : 8+pathLen+valueLen],
+				CreatePath:   opFlags&memd.SubdocFlagMkDirP != 0,
+				IsXattrPath:  opFlags&memd.SubdocFlagXattrPath != 0,
+				ExpandMacros: opFlags&memd.SubdocFlagExpandMacros != 0,
+			})
+			opData = opData[8+pathLen+valueLen:]
 		}
 
 		resp, err := proc.MultiMutate(kvproc.MultiMutateOptions{

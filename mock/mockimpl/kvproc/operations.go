@@ -202,7 +202,7 @@ func (e *Engine) Add(opts StoreOptions) (*StoreResult, error) {
 		Key:          opts.Key,
 		Value:        opts.Value,
 		Flags:        opts.Flags,
-		Datatype:     opts.Datatype,
+		Datatype:     SetDatatypeJSONFromValue(opts.Datatype, opts.Value),
 		Expiry:       e.parseExpiry(opts.Expiry),
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
@@ -242,7 +242,7 @@ func (e *Engine) Set(opts StoreOptions) (*StoreResult, error) {
 		Key:          opts.Key,
 		Value:        opts.Value,
 		Flags:        opts.Flags,
-		Datatype:     opts.Datatype,
+		Datatype:     SetDatatypeJSONFromValue(opts.Datatype, opts.Value),
 		Expiry:       e.parseExpiry(opts.Expiry),
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
@@ -314,7 +314,7 @@ func (e *Engine) Replace(opts StoreOptions) (*StoreResult, error) {
 		Key:          opts.Key,
 		Value:        opts.Value,
 		Flags:        opts.Flags,
-		Datatype:     opts.Datatype,
+		Datatype:     SetDatatypeJSONFromValue(opts.Datatype, opts.Value),
 		Expiry:       e.parseExpiry(opts.Expiry),
 		Cas:          mockdb.GenerateNewCas(e.HLC()),
 	}
@@ -411,10 +411,11 @@ func (e *Engine) Delete(opts DeleteOptions) (*DeleteResult, error) {
 			idoc.LockExpiry = time.Time{}
 			idoc.Cas = mockdb.GenerateNewCas(e.HLC())
 			idoc.Value = []byte{}
+			idoc.Datatype &^= uint8(memd.DatatypeFlagJSON)
 			// We need to keep the system xattrs, i.e. those which start with an _.
 			for key := range idoc.Xattrs {
 				if !strings.HasPrefix(key, "_") {
-					delete(idoc.Xattrs, key)
+					idoc.RemoveXattr(key)
 				}
 			}
 			return idoc, nil
@@ -460,9 +461,10 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 		Key:          opts.Key,
 		Value:        []byte(fmt.Sprintf("%d", opts.Initial)),
 		Flags:        0,
-		Datatype:     0,
-		Expiry:       e.parseExpiry(opts.Expiry),
-		Cas:          mockdb.GenerateNewCas(e.HLC()),
+		// kv_engine stores a counter's value as JSON.
+		Datatype: uint8(memd.DatatypeFlagJSON),
+		Expiry:   e.parseExpiry(opts.Expiry),
+		Cas:      mockdb.GenerateNewCas(e.HLC()),
 	}
 
 	newDoc, err := e.updateAfterRead(
@@ -538,9 +540,9 @@ func (e *Engine) counter(opts CounterOptions, isIncr bool) (*CounterResult, erro
 			}
 
 			// The expiry of the request applies only when the counter is
-			// created. kv_engine keeps the expiry of an existing counter.
+			// created; kv_engine keeps the expiry and flags of an existing
+			// counter.
 			idoc.Value = []byte(fmt.Sprintf("%d", val))
-			idoc.Flags = doc.Flags
 			idoc.Datatype = doc.Datatype
 			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
@@ -625,6 +627,7 @@ func (e *Engine) adjoin(opts StoreOptions, isAppend bool) (*StoreResult, error) 
 			} else {
 				idoc.Value = append(doc.Value, idoc.Value...)
 			}
+			idoc.Datatype = SetDatatypeJSONFromValue(idoc.Datatype, idoc.Value)
 
 			idoc.LockExpiry = doc.LockExpiry
 			idoc.Cas = doc.Cas
@@ -978,31 +981,25 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			IsDeleted:    opts.CreateAsDeleted,
 		}
 
-		// We need to dynamically decide what the root of the document
-		// needs to look like based on the operations that exist.
+		// kv_engine creates a document from a JSON template whose root it
+		// takes from the path of the first sub-document spec, xattr or not
+		// (subdocument_context.cc@v7.0.5); one created deleted gets none.
 		xattrUpdateOnly := true
+		rootChosen := opts.CreateAsDeleted
 		for _, op := range opts.Ops {
 			if !op.IsXattrPath {
 				if opts.CreateAsDeleted {
 					return nil, ErrInvalidArgument
 				}
 				xattrUpdateOnly = false
-				trimmedPath := strings.TrimSpace(op.Path)
-				if trimmedPath == "" {
-					switch op.Op {
-					case memd.SubDocOpArrayPushFirst:
-						fallthrough
-					case memd.SubDocOpArrayPushLast:
-						fallthrough
-					case memd.SubDocOpArrayAddUnique:
-						mdoc.Value = []byte("[]")
-					}
-				} else if trimmedPath[0] == '[' {
-					mdoc.Value = []byte("[]")
-				} else {
-					mdoc.Value = []byte("{}")
-				}
 			}
+			if !rootChosen && subdocOpIsSubJSON(op) {
+				rootChosen = true
+				mdoc.Value = subdocRootTemplate(op)
+			}
+		}
+		if mdoc.Value != nil {
+			mdoc.Datatype = uint8(memd.DatatypeFlagJSON)
 		}
 
 		doc, err := e.db.Get(0, mdoc.VbID, mdoc.CollectionID, mdoc.Key)
@@ -1043,8 +1040,15 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 			if doc == nil {
 				doc = mdoc
 			} else if doc.IsDeleted && !opts.AccessDeleted {
+				// A deleted document the request cannot see is replaced by a
+				// new one, from the template, without its xattrs or flags.
 				doc.IsDeleted = false
-				doc.Expiry = time.Time{} // If a doc is resurrected we also need to reset expiry
+				doc.Expiry = time.Time{}
+				doc.Value = mdoc.Value
+				doc.Datatype = mdoc.Datatype
+				doc.Flags = 0
+				doc.Xattrs = make(map[string][]byte)
+				doc.XattrOrder = nil
 			}
 		}
 
@@ -1127,13 +1131,16 @@ func (e *Engine) MultiMutate(opts MultiMutateOptions) (*MultiMutateResult, error
 						idoc.Expiry = mdoc.Expiry
 					}
 					idoc.Value = doc.Value
+					idoc.Flags = doc.Flags
 					idoc.Xattrs = doc.Xattrs
+					idoc.XattrOrder = doc.XattrOrder
 					idoc.IsDeleted = doc.IsDeleted
 				}
 
 				idoc.LockExpiry = newMetaDoc.LockExpiry
 				idoc.Cas = newMetaDoc.Cas
-				idoc.Datatype = uint8(memd.DatatypeFlagJSON)
+				// The body specs left the datatype of the body they ran on.
+				idoc.Datatype = doc.Datatype
 				return idoc, nil
 			})
 		if err == ErrCasMismatch {

@@ -38,6 +38,10 @@ type Document struct {
 	// reads before it stores can tell where kv_engine refuses it.
 	SyncWriteInProgress bool
 
+	// XattrOrder lists the keys of Xattrs in the order kv_engine's xattr
+	// blob holds them. SetXattr and RemoveXattr keep it.
+	XattrOrder []string
+
 	// SyncWrite, when set on a document handed to a mutation, makes the
 	// mutation a durable write, tracked from the moment it gets its sequence
 	// number. It is not stored with the document.
@@ -123,6 +127,7 @@ func copyDocument(src *Document) *Document {
 	for key, value := range src.Xattrs {
 		dst.Xattrs[key] = append([]byte{}, value...)
 	}
+	dst.XattrOrder = append([]string{}, src.XattrOrder...)
 
 	return &dst
 }
@@ -744,4 +749,43 @@ func (s *Vbucket) Flush() {
 		},
 	}
 	s.maxSeqNo = 0
+}
+
+// SetXattr stores an xattr as kv_engine's xattr::Blob::set
+// (xattr/blob.cc@v7.0.5) does: a value of the same size replaces the old one
+// in place, and any other value is appended after the others.
+func (d *Document) SetXattr(key string, value []byte) {
+	if old, ok := d.Xattrs[key]; ok && len(old) == len(value) {
+		d.Xattrs[key] = value
+		return
+	}
+	d.RemoveXattr(key)
+	if d.Xattrs == nil {
+		d.Xattrs = make(map[string][]byte)
+	}
+	d.Xattrs[key] = value
+	d.XattrOrder = append(d.XattrOrder, key)
+}
+
+// RemoveXattr removes an xattr.
+func (d *Document) RemoveXattr(key string) {
+	delete(d.Xattrs, key)
+	for i, k := range d.XattrOrder {
+		if k == key {
+			d.XattrOrder = append(d.XattrOrder[:i:i], d.XattrOrder[i+1:]...)
+			return
+		}
+	}
+}
+
+// XattrKeys returns the keys of the xattrs in the order kv_engine's xattr
+// blob holds them.
+func (d *Document) XattrKeys() []string {
+	keys := make([]string, 0, len(d.Xattrs))
+	for _, key := range d.XattrOrder {
+		if _, ok := d.Xattrs[key]; ok {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }

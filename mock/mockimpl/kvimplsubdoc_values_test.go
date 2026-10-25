@@ -212,7 +212,7 @@ func TestSubdocCounterRejectsInvalidDelta(t *testing.T) {
 		Extras:  make([]byte, 8),
 	})
 
-	for _, delta := range []string{"0", "-0", "01", "+1", "1.5", "1e3", "9223372036854775808", "\"1\""} {
+	for _, delta := range []string{"0", "-0", "01", "+1", "1.5", "1e3", "9223372036854775808", "-9223372036854775808", "\"1\""} {
 		resp := c.Do(&memd.Packet{
 			Command: memd.CmdSubDocMultiMutation,
 			Vbucket: c.vbID,

@@ -48,7 +48,7 @@ func TestFramesValidatedByKvEngineID(t *testing.T) {
 		{name: "invalid durability level before a valid one", send: set, frames: []byte{0x11, 0x00, 0x11, 0x01}, status: memd.StatusDurabilityInvalidLevel, context: "Content represents an invalid requirement specification"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication, memd.FeaturePreserveExpiry)
+			c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication, memd.FeaturePreserveExpiry, memd.FeatureJSON)
 			test.send(c, 1, test.frames)
 			resp := readResponse(t, c)
 			if resp.Opaque != 1 || resp.Status != test.status {

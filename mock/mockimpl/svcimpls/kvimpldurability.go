@@ -45,10 +45,11 @@ type requestHeader struct {
 	datatypes memd.DatatypeFlag
 }
 
-// durableCommandHeaders are the header requirements of the durable commands
-// whose headers are checked before their frames. Each requires a key. The
-// sub-document mutations check their extras after the frames.
-var durableCommandHeaders = map[memd.CmdCode]requestHeader{
+// checkedCommandHeaders are the header requirements of the commands whose
+// headers are checked before their frames: the durable commands and
+// SUBDOC_MULTI_LOOKUP. Each requires a key. The sub-document commands check
+// their extras after the frames.
+var checkedCommandHeaders = map[memd.CmdCode]requestHeader{
 	memd.CmdSet:       {extras: 8, datatypes: memd.DatatypeFlagJSON | memd.DatatypeFlagCompressed},
 	memd.CmdReplace:   {extras: 8, datatypes: memd.DatatypeFlagJSON | memd.DatatypeFlagCompressed},
 	memd.CmdAdd:       {extras: 8, noCas: true, datatypes: memd.DatatypeFlagJSON | memd.DatatypeFlagCompressed},
@@ -70,20 +71,21 @@ var durableCommandHeaders = map[memd.CmdCode]requestHeader{
 	memd.CmdSubDocArrayAddUnique:       {anyExtras: true},
 	memd.CmdSubDocCounter:              {anyExtras: true},
 	memd.CmdSubDocMultiMutation:        {anyExtras: true},
+	memd.CmdSubDocMultiLookup:          {anyExtras: true},
 	memd.CmdSubDocReplaceBodyWithXattr: {anyExtras: true},
 }
 
 // knownDatatypes are the datatype bits kv_engine defines.
 const knownDatatypes = memd.DatatypeFlagJSON | memd.DatatypeFlagCompressed | memd.DatatypeFlagXattrs
 
-// checkHeader checks the header of a request to a durable command as
-// verify_header does before the frames are parsed, and returns the status and
-// error context kv_engine sends when it refuses it, or success. The maximum key
-// length, the datatypes the connection enabled, a compressed value and the
-// xattr blob are not checked. A key is empty on the wire only when the
-// connection does not encode collections into it.
+// checkHeader checks the header of a request to a command of
+// checkedCommandHeaders as verify_header does before the frames are parsed,
+// and returns the status and error context kv_engine sends when it refuses
+// it, or success. The datatypes the connection enabled, a compressed value
+// and the xattr blob are not checked. The key is checked as sent, with any
+// collection ID memd decoded from it.
 func checkHeader(source mock.KvClient, pak *memd.Packet) (memd.StatusCode, string) {
-	header, ok := durableCommandHeaders[pak.Command]
+	header, ok := checkedCommandHeaders[pak.Command]
 	if !ok {
 		return memd.StatusSuccess, ""
 	}
@@ -97,9 +99,16 @@ func checkHeader(source mock.KvClient, pak *memd.Packet) (memd.StatusCode, strin
 		}
 		return memd.StatusInvalidArgs, fmt.Sprintf("Request must include extras of length %d", header.extras)
 	}
-	collectionsEncoded := source.HasFeature(memd.FeatureCollections) && memd.IsCommandCollectionEncoded(pak.Command)
-	if len(pak.Key) == 0 && !collectionsEncoded {
+	keyLen := wireKeyLength(pak)
+	if keyLen == 0 {
 		return memd.StatusInvalidArgs, "Request must include key"
+	}
+	maxKeyLen := keyMaxLength
+	if source.HasFeature(memd.FeatureCollections) {
+		maxKeyLen = maxCollectionsKeyLen
+	}
+	if keyLen > maxKeyLen {
+		return memd.StatusInvalidArgs, fmt.Sprintf("Key length exceeds %d", maxKeyLen)
 	}
 	if header.noValue && len(pak.Value) > 0 {
 		return memd.StatusInvalidArgs, "Request must not include value"

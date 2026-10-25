@@ -1384,7 +1384,7 @@ func TestPeerDisconnectEndsDurableWait(t *testing.T) {
 func TestReservedDurabilityTimeoutIsRefused(t *testing.T) {
 	for _, timeout := range []time.Duration{0, 0xffff * time.Millisecond} {
 		t.Run(timeout.String(), func(t *testing.T) {
-			c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication)
+			c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication, memd.FeatureJSON)
 
 			resp := c.Do(&memd.Packet{
 				Command:                memd.CmdSet,
@@ -1415,7 +1415,7 @@ func TestReservedDurabilityTimeoutIsRefused(t *testing.T) {
 // kv_engine constructs the timeout of a durability frame before it validates
 // the level, so a frame with both invalid is refused for its timeout.
 func TestInvalidTimeoutPrecedesInvalidLevel(t *testing.T) {
-	c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication)
+	c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication, memd.FeatureJSON)
 
 	// A durability frame (id 1) of 3 bytes: level None and timeout 0.
 	writeRawRequest(t, c, memd.CmdSet, 1, []byte{0x13, 0x00, 0x00, 0x00}, make([]byte, 8), []byte("doc"), []byte(`{}`))
@@ -1453,7 +1453,7 @@ func TestUndefinedDurabilityLevelIsRefused(t *testing.T) {
 }
 
 func TestDurabilityOnUnsupportedCommandIsInvalid(t *testing.T) {
-	c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication)
+	c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication, memd.FeatureJSON)
 	c.mustSucceed(&memd.Packet{
 		Command: memd.CmdSet,
 		Vbucket: c.vbID,
@@ -1546,7 +1546,7 @@ func TestMalformedFramesAreInvalid(t *testing.T) {
 		{"barrier frame with data", []byte{0x01, 0x00}, "Barrier should not contain value"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication)
+			c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication, memd.FeatureJSON)
 
 			writeRawRequest(t, c, memd.CmdSet, 1, tc.frames, make([]byte, 8), []byte("doc"), []byte(`{}`))
 			resp := readResponse(t, c)
@@ -1566,7 +1566,7 @@ func TestMalformedFramesAreInvalid(t *testing.T) {
 // kv_engine answers an unknown command, and checks the request header, before
 // it parses the frames.
 func TestHeaderChecksPrecedeFrameChecks(t *testing.T) {
-	c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication)
+	c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication, memd.FeatureJSON)
 	invalidLevel := &memd.DurabilityLevelFrame{DurabilityLevel: memd.DurabilityLevel(4)}
 
 	resp := c.Do(&memd.Packet{Command: memd.CmdCode(0xee), Vbucket: c.vbID, DurabilityLevelFrame: invalidLevel})
@@ -1609,7 +1609,7 @@ func TestHeaderFieldsCheckedBeforeFrames(t *testing.T) {
 		{"SUBDOC_MULTI_MUTATION with JSON", memd.Packet{Command: memd.CmdSubDocMultiMutation, Key: []byte("doc"), Datatype: uint8(memd.DatatypeFlagJSON)}, "Request datatype invalid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication)
+			c := newTestKvConn(t, memd.FeatureAltRequests, memd.FeatureSyncReplication, memd.FeatureJSON)
 
 			pak := tc.pak
 			pak.Vbucket = c.vbID

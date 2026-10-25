@@ -282,6 +282,21 @@ func (c *kvClient) HasFeature(feature memd.HelloFeature) bool {
 	return false
 }
 
+// enabledDatatypes returns the datatype bits the client enabled with HELLO.
+func (c *kvClient) enabledDatatypes() uint8 {
+	var datatypes memd.DatatypeFlag
+	if c.HasFeature(memd.FeatureJSON) {
+		datatypes |= memd.DatatypeFlagJSON
+	}
+	if c.HasFeature(memd.FeatureSnappy) {
+		datatypes |= memd.DatatypeFlagCompressed
+	}
+	if c.HasFeature(memd.FeatureXattr) {
+		datatypes |= memd.DatatypeFlagXattrs
+	}
+	return uint8(datatypes)
+}
+
 // Source returns the KvService which owns this client.
 func (c *kvClient) Source() mock.KvService {
 	return c.service
@@ -306,6 +321,11 @@ func (c *kvClient) setMemdClient(cli *servers.MemdClient) {
 func (c *kvClient) WritePacket(pak *memd.Packet) error {
 	if c.memdClient() == nil {
 		return errKvClientLost
+	}
+	// kv_engine sends a response only the datatype bits the client enabled
+	// with HELLO (Connection::getEnabledDatatypes).
+	if pak.Magic == memd.CmdMagicRes {
+		pak.Datatype &= c.enabledDatatypes()
 	}
 	if !c.service.clusterNode.cluster.handleKvPacketOut(c, pak) {
 		return nil
