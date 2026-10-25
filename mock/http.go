@@ -12,6 +12,7 @@ import (
 type HTTPRequest struct {
 	IsTLS   bool
 	Method  string
+	Target  string // the request target as sent
 	URL     *url.URL
 	Header  http.Header
 	Body    io.Reader

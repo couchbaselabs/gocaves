@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockmr"
 )
 
 func (x *mgmtImpl) handleGetAllDesignDocuments(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*/ddocs")
+	pathParts := mgmtPathParts(req, "/pools/default/buckets/*/ddocs")
 	bucketName := pathParts[0]
 
 	if !source.CheckAuthenticated(mockauth.PermissionViewsManage, bucketName, "", "", req) {

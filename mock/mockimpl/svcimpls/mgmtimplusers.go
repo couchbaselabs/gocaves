@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
-	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
 )
@@ -19,7 +19,7 @@ func (x *mgmtImpl) handleUpsertUser(source mock.MgmtService, req *mock.HTTPReque
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
-	pathParts := pathparse.ParseParts(req.URL.Path, "/settings/rbac/users/*/*")
+	pathParts := mgmtPathParts(req, "/settings/rbac/users/*/*")
 	if len(pathParts) != 2 {
 		return &mock.HTTPResponse{
 			StatusCode: 400,
@@ -63,7 +63,7 @@ func (x *mgmtImpl) handleGetUser(source mock.MgmtService, req *mock.HTTPRequest)
 		}
 	}
 
-	pathParts := pathparse.ParseParts(req.URL.Path, "/settings/rbac/users/*/*")
+	pathParts := mgmtPathParts(req, "/settings/rbac/users/*/*")
 	if len(pathParts) != 2 {
 		return &mock.HTTPResponse{
 			StatusCode: 400,
@@ -103,7 +103,7 @@ func (x *mgmtImpl) handleGetAllUsers(source mock.MgmtService, req *mock.HTTPRequ
 		}
 	}
 
-	pathParts := pathparse.ParseParts(req.URL.Path, "/settings/rbac/users/*")
+	pathParts := mgmtPathParts(req, "/settings/rbac/users/*")
 	if len(pathParts) != 1 {
 		return &mock.HTTPResponse{
 			StatusCode: 400,
@@ -139,7 +139,7 @@ func (x *mgmtImpl) handleDropUser(source mock.MgmtService, req *mock.HTTPRequest
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
-	pathParts := pathparse.ParseParts(req.URL.Path, "/settings/rbac/users/*/*")
+	pathParts := mgmtPathParts(req, "/settings/rbac/users/*/*")
 	if len(pathParts) != 2 {
 		return &mock.HTTPResponse{
 			StatusCode: 400,
@@ -148,6 +148,15 @@ func (x *mgmtImpl) handleDropUser(source mock.MgmtService, req *mock.HTTPRequest
 	}
 	// domainName := pathParts[0]	// TODO(chvck): something with domains
 	username := pathParts[1]
+
+	if source.Node().Cluster().Users().GetUser(username) == nil {
+		// menelaus_util:reply_json of the message.
+		return &mock.HTTPResponse{
+			StatusCode: 404,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       bytes.NewReader([]byte(`"User was not found."`)),
+		}
+	}
 
 	if err := source.Node().Cluster().Users().DropUser(username); err != nil {
 		log.Printf("USER: %v", err)

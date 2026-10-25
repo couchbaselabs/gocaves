@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
 )
@@ -30,7 +29,7 @@ func (x *mgmtImpl) handleGetPoolConfig(source mock.MgmtService, req *mock.HTTPRe
 }
 
 func (x *mgmtImpl) handleGetBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*")
+	pathParts := mgmtPathParts(req, "/pools/default/buckets/*")
 	bucketName := pathParts[0]
 	if !source.CheckAuthenticated(mockauth.PermissionSettings, bucketName, "", "", req) {
 		return &mock.HTTPResponse{
@@ -55,7 +54,7 @@ func (x *mgmtImpl) handleGetBucketConfig(source mock.MgmtService, req *mock.HTTP
 }
 
 func (x *mgmtImpl) handleGetTerseBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/b/*")
+	pathParts := mgmtPathParts(req, "/pools/default/b/*")
 	bucketName := pathParts[0]
 	if !source.CheckAuthenticated(mockauth.PermissionSettings, bucketName, "", "", req) {
 		return &mock.HTTPResponse{
@@ -88,7 +87,7 @@ func (c *configHandler) OnNewConfig(cfg uint) {
 }
 
 func (x *mgmtImpl) handleGetTerseBucketStreamingConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/bs/*")
+	pathParts := mgmtPathParts(req, "/pools/default/bs/*")
 	bucketName := pathParts[0]
 	if !source.CheckAuthenticated(mockauth.PermissionSettings, bucketName, "", "", req) {
 		return &mock.HTTPResponse{
@@ -172,7 +171,7 @@ func (x *mgmtImpl) handleGetAllBucketConfigs(source mock.MgmtService, req *mock.
 }
 
 func (x *mgmtImpl) handleBucketFlush(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*/controller/doFlush")
+	pathParts := mgmtPathParts(req, "/pools/default/buckets/*/controller/doFlush")
 	bucketName := pathParts[0]
 
 	if !source.CheckAuthenticated(mockauth.PermissionBucketManage, bucketName, "", "", req) {
@@ -297,7 +296,7 @@ func (x *mgmtImpl) handleAddBucketConfig(source mock.MgmtService, req *mock.HTTP
 }
 
 func (x *mgmtImpl) handleUpdateBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*")
+	pathParts := mgmtPathParts(req, "/pools/default/buckets/*")
 	bucketName := pathParts[0]
 
 	if !source.CheckAuthenticated(mockauth.PermissionClusterManage, "", "", "", req) {
@@ -344,7 +343,7 @@ func (x *mgmtImpl) handleUpdateBucketConfig(source mock.MgmtService, req *mock.H
 }
 
 func (x *mgmtImpl) handleDropBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*")
+	pathParts := mgmtPathParts(req, "/pools/default/buckets/*")
 	bucketName := pathParts[0]
 
 	if !source.CheckAuthenticated(mockauth.PermissionClusterManage, "", "", "", req) {
@@ -354,6 +353,9 @@ func (x *mgmtImpl) handleDropBucketConfig(source mock.MgmtService, req *mock.HTT
 		}
 	}
 
+	// A collections update holds the lock while it changes the bucket.
+	x.collectionsLock.Lock()
+	defer x.collectionsLock.Unlock()
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
 		return &mock.HTTPResponse{

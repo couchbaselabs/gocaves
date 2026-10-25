@@ -27,6 +27,8 @@ type HTTPServer struct {
 	handlers   HTTPServerHandlers
 	server     *http.Server
 	tlsConfig  *tls.Config
+
+	mochiwebTargets bool
 }
 
 // NewHTTPServiceOptions enables the specification of default options for a new http server.
@@ -34,14 +36,20 @@ type NewHTTPServiceOptions struct {
 	Name      string
 	Handlers  HTTPServerHandlers
 	TLSConfig *tls.Config
+
+	// MochiwebTargets keeps a "%" that starts no escape in a request
+	// target, as ns_server's mochiweb does, instead of refusing the
+	// request.
+	MochiwebTargets bool
 }
 
 // NewHTTPServer instantiates a new instance of the memd server.
 func NewHTTPServer(opts NewHTTPServiceOptions) (*HTTPServer, error) {
 	svc := &HTTPServer{
-		name:      opts.Name,
-		handlers:  opts.Handlers,
-		tlsConfig: opts.TLSConfig,
+		name:            opts.Name,
+		handlers:        opts.Handlers,
+		tlsConfig:       opts.TLSConfig,
+		mochiwebTargets: opts.MochiwebTargets,
 	}
 
 	err := svc.start()
@@ -71,7 +79,7 @@ func (s *HTTPServer) start() error {
 
 	var lsnr net.Listener
 	var err error
-	if s.tlsConfig != nil {
+	if s.tlsConfig != nil && !s.mochiwebTargets {
 		lsnr, err = tls.Listen("tcp", listenAddr, s.tlsConfig)
 	} else {
 		lsnr, err = net.Listen("tcp", listenAddr)
@@ -89,10 +97,23 @@ func (s *HTTPServer) start() error {
 	tcpAddr := addr.(*net.TCPAddr)
 	s.listenPort = tcpAddr.Port
 	s.localAddr = addr.String()
+	if s.mochiwebTargets {
+		lsnr = mochiwebTargetListener{Listener: lsnr, tlsConfig: s.tlsConfig}
+	}
 	s.listener = lsnr
 
 	srv := &http.Server{
-		Handler: http.HandlerFunc(s.handleHTTP),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w, answered := prepareMochiwebRequest(w, req)
+			if answered {
+				return
+			}
+			s.handleHTTP(w, req)
+		}),
+		ConnContext: mochiwebTargetConnContext,
+	}
+	if s.mochiwebTargets {
+		readMochiwebHeads(srv)
 	}
 	s.server = srv
 
@@ -141,6 +162,7 @@ func (s *HTTPServer) handleHTTP(w http.ResponseWriter, req *http.Request) {
 	resp := s.handlers.NewRequestHandler(&mock.HTTPRequest{
 		IsTLS:   s.tlsConfig != nil,
 		Method:  req.Method,
+		Target:  req.RequestURI,
 		URL:     req.URL,
 		Header:  req.Header,
 		Body:    req.Body,

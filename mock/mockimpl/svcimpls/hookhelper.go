@@ -38,9 +38,9 @@ func (h *hookHelper) RegisterKvHandler(cmd memd.CmdCode, handler func(source moc
 
 // RegisterMgmtReq registers a hook for a mgmt request.
 func (h *hookHelper) RegisterMgmtHandler(method, path string, handler func(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse) {
-	parser := pathparse.NewParser(path)
+	tpl := splitPath(path)
 	h.MgmtHooks.Add(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
-		if req.Method == method && parser.Match(req.URL.Path) {
+		if _, ok := matchPathTokens(tpl, mgmtPathTokens(req)); req.Method == method && ok {
 			return handler(source, req)
 		}
 		return next()

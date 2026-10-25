@@ -26,6 +26,7 @@ func newMgmtService(parent *clusterNodeInst, opts newMgmtServiceOptions) (*mgmtS
 		Handlers: servers.HTTPServerHandlers{
 			NewRequestHandler: svc.handleNewRequest,
 		},
+		MochiwebTargets: true,
 	})
 	if err != nil {
 		return nil, err
@@ -38,7 +39,8 @@ func newMgmtService(parent *clusterNodeInst, opts newMgmtServiceOptions) (*mgmtS
 			Handlers: servers.HTTPServerHandlers{
 				NewRequestHandler: svc.handleNewRequest,
 			},
-			TLSConfig: parent.cluster.tlsConfig,
+			TLSConfig:       parent.cluster.tlsConfig,
+			MochiwebTargets: true,
 		})
 		if err != nil {
 			return nil, err

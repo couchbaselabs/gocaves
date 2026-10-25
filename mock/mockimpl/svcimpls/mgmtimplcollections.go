@@ -4,13 +4,71 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
 	"github.com/couchbaselabs/gocaves/mock/mockauth"
 )
+
+// collectionsGlobalError answers as menelaus_web_collections:reply_global_error.
+func collectionsGlobalError(statusCode int, msg string) *mock.HTTPResponse {
+	return &mock.HTTPResponse{
+		StatusCode: statusCode,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       bytes.NewReader([]byte(`{"errors":{"_":` + erlJSONString(msg) + `}}`)),
+	}
+}
+
+func collectionsTextResponse(statusCode int, msg string) *mock.HTTPResponse {
+	return &mock.HTTPResponse{
+		StatusCode: statusCode,
+		Header:     http.Header{"Content-Type": {"text/plain"}},
+		Body:       bytes.NewReader([]byte(msg)),
+	}
+}
+
+// collectionsNotFoundResponse answers a request for a missing bucket as
+// menelaus_util:reply_not_found does.
+func collectionsNotFoundResponse() *mock.HTTPResponse {
+	return collectionsTextResponse(404, "Requested resource not found.\r\n")
+}
+
+func scopeNotFoundResponse(scope string) *mock.HTTPResponse {
+	return collectionsGlobalError(404, erlFormat("Scope with name ~p is not found", scope))
+}
+
+// ns_server's MAX_SCOPES_SUPPORTED and MAX_COLLECTIONS_SUPPORTED, which
+// collections:check_cluster_limits compares with the counts of every bucket.
+const (
+	maxScopesSupported      = 1200
+	maxCollectionsSupported = 1200
+)
+
+// clusterCollectionCounts returns the number of scopes and collections in
+// all buckets, without the _default scope and collection, which ns_server's
+// num_scopes and num_collections counters leave out.
+func clusterCollectionCounts(cluster mock.Cluster) (int, int) {
+	numScopes, numCollections := 0, 0
+	for _, bucket := range cluster.GetAllBuckets() {
+		if bucket.BucketType() == mock.BucketTypeMemcached {
+			continue
+		}
+		_, scopes := bucket.CollectionManifest().GetManifest()
+		for _, scope := range scopes {
+			if scope.UID != 0 {
+				numScopes++
+			}
+			for _, col := range scope.Collections {
+				if col.UID != 0 {
+					numCollections++
+				}
+			}
+		}
+	}
+	return numScopes, numCollections
+}
 
 func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	if !source.CheckAuthenticated(mockauth.PermissionClusterRead, "", "", "", req) {
@@ -19,7 +77,7 @@ func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTT
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*/scopes/*/collections")
+	pathParts := mgmtPathParts(req, "/pools/default/buckets/*/scopes/*/collections")
 	if len(pathParts) != 2 {
 		return &mock.HTTPResponse{
 			StatusCode: 400,
@@ -34,12 +92,16 @@ func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTT
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
+	// The bucket is looked up under the lock, so it is not dropped while
+	// the update runs.
+	x.collectionsLock.Lock()
+	defer x.collectionsLock.Unlock()
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte("Requested resource not found.")),
-		}
+		return collectionsNotFoundResponse()
+	}
+	if bucket.BucketType() == mock.BucketTypeMemcached {
+		return collectionsTextResponse(400, "Not allowed on this type of bucket")
 	}
 
 	name := req.Form.Get("name")
@@ -71,23 +133,25 @@ func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTT
 	}
 	manifest := bucket.CollectionManifest()
 
+	_, _, err := manifest.GetByName(scope, name)
+	switch err {
+	case nil:
+		return collectionsGlobalError(400,
+			erlFormat("Collection with name ~p in scope ~p already exists", name, scope))
+	case mock.ErrScopeNotFound:
+		return scopeNotFoundResponse(scope)
+	}
+	if _, numCollections := clusterCollectionCounts(source.Node().Cluster()); numCollections >= maxCollectionsSupported {
+		return collectionsGlobalError(400, "Maximum number of collections has been reached")
+	}
+
 	uid, err := manifest.AddCollection(scope, name, uint32(maxTTL))
 	switch err {
 	case mock.ErrCollectionExists:
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body: bytes.NewReader([]byte(
-				fmt.Sprintf(`{"errors":{"_": "Collection with name \"%s\" in scope \"%s\" already exists"}`,
-					name,
-					scope,
-				))),
-		}
+		return collectionsGlobalError(400,
+			erlFormat("Collection with name ~p in scope ~p already exists", name, scope))
 	case mock.ErrScopeNotFound:
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body: bytes.NewReader([]byte(
-				fmt.Sprintf(`{"errors":{"_": "Unknown error {error,{scope_not_found,\"%s\"}}"}`, scope))),
-		}
+		return scopeNotFoundResponse(scope)
 	}
 
 	return &mock.HTTPResponse{
@@ -103,7 +167,7 @@ func (x *mgmtImpl) handleCreateScope(source mock.MgmtService, req *mock.HTTPRequ
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*/scopes")
+	pathParts := mgmtPathParts(req, "/pools/default/buckets/*/scopes")
 	if len(pathParts) != 1 {
 		return &mock.HTTPResponse{
 			StatusCode: 400,
@@ -117,12 +181,16 @@ func (x *mgmtImpl) handleCreateScope(source mock.MgmtService, req *mock.HTTPRequ
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
+	// The bucket is looked up under the lock, so it is not dropped while
+	// the update runs.
+	x.collectionsLock.Lock()
+	defer x.collectionsLock.Unlock()
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte("Requested resource not found.")),
-		}
+		return collectionsNotFoundResponse()
+	}
+	if bucket.BucketType() == mock.BucketTypeMemcached {
+		return collectionsTextResponse(400, "Not allowed on this type of bucket")
 	}
 
 	name := req.Form.Get("name")
@@ -142,14 +210,17 @@ func (x *mgmtImpl) handleCreateScope(source mock.MgmtService, req *mock.HTTPRequ
 
 	manifest := bucket.CollectionManifest()
 
+	if _, _, err := manifest.GetByName(name, ""); err != mock.ErrScopeNotFound {
+		return collectionsGlobalError(400, erlFormat("Scope with name ~p already exists", name))
+	}
+	if numScopes, _ := clusterCollectionCounts(source.Node().Cluster()); numScopes >= maxScopesSupported {
+		return collectionsGlobalError(400, "Maximum number of scopes has been reached")
+	}
+
 	uid, err := manifest.AddScope(name)
 	switch err {
 	case mock.ErrScopeExists:
-		return &mock.HTTPResponse{
-			StatusCode: 400,
-			Body: bytes.NewReader([]byte(
-				fmt.Sprintf(`{"errors":{"_": "Scope with name \"%s\" already exists"}`, name))),
-		}
+		return collectionsGlobalError(400, erlFormat("Scope with name ~p already exists", name))
 	}
 
 	return &mock.HTTPResponse{
@@ -165,7 +236,7 @@ func (x *mgmtImpl) handleDropCollection(source mock.MgmtService, req *mock.HTTPR
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*/scopes/*/collections/*")
+	pathParts := mgmtPathParts(req, "/pools/default/buckets/*/scopes/*/collections/*")
 	if len(pathParts) != 3 {
 		return &mock.HTTPResponse{
 			StatusCode: 400,
@@ -181,32 +252,26 @@ func (x *mgmtImpl) handleDropCollection(source mock.MgmtService, req *mock.HTTPR
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
+	// The bucket is looked up under the lock, so it is not dropped while
+	// the update runs.
+	x.collectionsLock.Lock()
+	defer x.collectionsLock.Unlock()
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte("Requested resource not found.")),
-		}
+		return collectionsNotFoundResponse()
+	}
+	if bucket.BucketType() == mock.BucketTypeMemcached {
+		return collectionsTextResponse(400, "Not allowed on this type of bucket")
 	}
 
 	manifest := bucket.CollectionManifest()
 	uid, err := manifest.DropCollection(scope, collection)
 	switch err {
 	case mock.ErrCollectionNotFound:
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body: bytes.NewReader([]byte(
-				fmt.Sprintf(`{"errors":{"_":"Collection with name "%s" in scope "%s" is not found"}}`,
-					collection,
-					scope,
-				))),
-		}
+		return collectionsGlobalError(404,
+			erlFormat("Collection with name ~p in scope ~p is not found", collection, scope))
 	case mock.ErrScopeNotFound:
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body: bytes.NewReader([]byte(
-				fmt.Sprintf(`{"errors":{"_":"Scope with name "%s" is not found"}`, scope))),
-		}
+		return scopeNotFoundResponse(scope)
 	}
 
 	return &mock.HTTPResponse{
@@ -222,7 +287,7 @@ func (x *mgmtImpl) handleDropScope(source mock.MgmtService, req *mock.HTTPReques
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*/scopes/*")
+	pathParts := mgmtPathParts(req, "/pools/default/buckets/*/scopes/*")
 	if len(pathParts) != 2 {
 		return &mock.HTTPResponse{
 			StatusCode: 400,
@@ -237,23 +302,27 @@ func (x *mgmtImpl) handleDropScope(source mock.MgmtService, req *mock.HTTPReques
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
+	// The bucket is looked up under the lock, so it is not dropped while
+	// the update runs.
+	x.collectionsLock.Lock()
+	defer x.collectionsLock.Unlock()
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte("Requested resource not found.")),
-		}
+		return collectionsNotFoundResponse()
+	}
+	if bucket.BucketType() == mock.BucketTypeMemcached {
+		return collectionsTextResponse(400, "Not allowed on this type of bucket")
+	}
+
+	if scope == "_default" {
+		return collectionsGlobalError(400, "Deleting _default scope is not allowed")
 	}
 
 	manifest := bucket.CollectionManifest()
 	uid, err := manifest.DropScope(scope)
 	switch err {
 	case mock.ErrScopeNotFound:
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body: bytes.NewReader([]byte(
-				fmt.Sprintf(`{"errors":{"_":"Scope with name "%s" is not found"}`, scope))),
-		}
+		return scopeNotFoundResponse(scope)
 	}
 
 	return &mock.HTTPResponse{
@@ -269,7 +338,7 @@ func (x *mgmtImpl) handleGetAllScopes(source mock.MgmtService, req *mock.HTTPReq
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
-	pathParts := pathparse.ParseParts(req.URL.Path, "/pools/default/buckets/*/scopes")
+	pathParts := mgmtPathParts(req, "/pools/default/buckets/*/scopes")
 	if len(pathParts) != 1 {
 		return &mock.HTTPResponse{
 			StatusCode: 400,
@@ -285,10 +354,7 @@ func (x *mgmtImpl) handleGetAllScopes(source mock.MgmtService, req *mock.HTTPReq
 	}
 	bucket := source.Node().Cluster().GetBucket(bucketName)
 	if bucket == nil {
-		return &mock.HTTPResponse{
-			StatusCode: 404,
-			Body:       bytes.NewReader([]byte("Requested resource not found.")),
-		}
+		return collectionsNotFoundResponse()
 	}
 
 	manifest := bucket.CollectionManifest()
