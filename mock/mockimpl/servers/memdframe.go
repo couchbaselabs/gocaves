@@ -34,6 +34,41 @@ func IsInvalidFrameEncoding(frame memd.UnsupportedFrame) bool {
 	return len(frame.Data) == len(invalidFrameEncoding) && &frame.Data[0] == &invalidFrameEncoding[0]
 }
 
+// DecodeCollectionID decodes the collection id at the front of a key as
+// kv_engine's unsigned_leb128<uint32_t>::decode does: at most five bytes,
+// the last without the continuation bit, with the bits past 32 dropped. It
+// returns the id and the bytes it takes, or false when it finds no stop
+// byte.
+func DecodeCollectionID(key []byte) (uint32, int, bool) {
+	var id uint32
+	for n := 0; n < min(len(key), 5); n++ {
+		id |= uint32(key[n]&0x7f) << (7 * n)
+		if key[n]&0x80 == 0 {
+			return id, n + 1, true
+		}
+	}
+	return 0, 0, false
+}
+
+// CanonicalCollectionID reports whether an encoding of n bytes of id is the
+// shortest, as unsigned_leb128<uint32_t>::is_canonical requires.
+func CanonicalCollectionID(id uint32, n int) bool {
+	return n == 1 || uint64(id) >= uint64(1)<<(7*(n-1))
+}
+
+// decodeCollectionKey splits the collection id from the key of a request. A
+// key without a stop byte is all collection id, of the default collection,
+// so the bytes of the id stay between the extras and the key, as memd lays
+// them out.
+func decodeCollectionKey(pak *memd.Packet) {
+	id, n, ok := DecodeCollectionID(pak.Key)
+	if !ok {
+		n = len(pak.Key)
+	}
+	pak.CollectionID = id
+	pak.Key = pak.Key[n:]
+}
+
 // packetStream lets a memd.Conn decode a packet the reader has already read
 // and checked, and write to the connection. pending holds the packet only
 // while it is decoded.
@@ -148,7 +183,9 @@ func (c *MemdClient) readPacket() (*memd.Packet, int, error) {
 	// buffer.
 	c.stream.pending = io.MultiReader(bytes.NewReader(header), bytes.NewReader(frames[:validLen]), io.LimitReader(c.conn, int64(bodyLen-framesLen)))
 	defer func() { c.stream.pending = nil }()
-	pak, _, err := c.mconn.ReadPacket()
+	// The reader decodes the collection id of a key itself, as memd refuses
+	// encodings kv_engine reads.
+	pak, _, err := c.rconn.ReadPacket()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -160,6 +197,14 @@ func (c *MemdClient) readPacket() (*memd.Packet, int, error) {
 	pak.UnsupportedFrames = parsed
 	if validLen < framesLen {
 		pak.UnsupportedFrames = append(pak.UnsupportedFrames, InvalidFrameEncoding)
+	}
+	if c.mconn.IsFeatureEnabled(memd.FeatureCollections) {
+		if pak.Command == memd.CmdObserve {
+			return nil, 0, errors.New("the observe operation is not supported with collections enabled")
+		}
+		if len(pak.Key) > 0 && memd.IsCommandCollectionEncoded(pak.Command) {
+			decodeCollectionKey(pak)
+		}
 	}
 	return pak, headerSize + bodyLen, nil
 }

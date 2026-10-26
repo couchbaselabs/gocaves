@@ -1,7 +1,6 @@
 package svcimpls
 
 import (
-	"bytes"
 	"encoding/json"
 	"log"
 	"time"
@@ -20,11 +19,19 @@ func (x *kvImplFrames) Register(h *hookHelper) {
 	h.KvInHooks.Add(func(source mock.KvClient, pak *memd.Packet, start time.Time, next func()) {
 		// An unknown command is answered at the end of the hook chain.
 		status, context := h.validateRequest(source, pak)
-		if status == memd.StatusSuccess || status == memd.StatusUnknownCommand {
+		switch status {
+		case memd.StatusSuccess, memd.StatusUnknownCommand:
 			next()
-			return
+		case memd.StatusCollectionUnknown:
+			// get_scope_id reports no manifest uid for an unknown collection.
+			writePacketAsIs(source, unknownCollectionResponse(pak, status, 0), start)
+		case statusDisconnect:
+			if err := source.Close(); err != nil {
+				log.Printf("failed to disconnect %s: %s", source.RemoteAddr(), err)
+			}
+		default:
+			writeErrorContextReply(source, pak, status, context, start)
 		}
-		writeErrorContextReply(source, pak, status, context, start)
 	})
 }
 
@@ -46,7 +53,40 @@ func (h *hookHelper) validateRequest(source mock.KvClient, pak *memd.Packet) (me
 			return status, context
 		}
 	}
+	if status := lookUpScope(source, pak); status != memd.StatusSuccess {
+		return status, ""
+	}
 	return checkCommand(source, pak)
+}
+
+// statusDisconnect is the status validateRequest refuses a request with
+// whose validation throws in kv_engine, which closes the connection.
+const statusDisconnect = memd.StatusCode(0xffff)
+
+// lookUpScope looks up the scope of the collection of a request as the end
+// of verify_header does for a user with privileges on scopes or collections
+// of a bucket with collections, which every bucket of 7.0.5 has, before the
+// command's validator checks the key. A collection other than the default one
+// that names no collection is unknown_collection; default_engine knows the
+// default collection only. Building the CollectionID
+// of a reserved id, 2 to 7, or of a key without a stop byte throws, and
+// kv_engine closes the connection.
+func lookUpScope(source mock.KvClient, pak *memd.Packet) memd.StatusCode {
+	bucket := source.SelectedBucket()
+	if bucket == nil || !source.HasFeature(memd.FeatureCollections) || !memd.IsCommandCollectionEncoded(pak.Command) ||
+		!kvPrivileges(source, bucket).HasScopePrivileges() {
+		return memd.StatusSuccess
+	}
+	switch id := pak.CollectionID; {
+	case !keyHasStopByte(pak), id >= 2 && id <= 7:
+		return statusDisconnect
+	case id == 0:
+		return memd.StatusSuccess
+	}
+	if scope, _ := bucket.CollectionManifest().GetByID(pak.CollectionID); scope == "" {
+		return memd.StatusCollectionUnknown
+	}
+	return memd.StatusSuccess
 }
 
 // checkCommand applies the checks a command's validator in
@@ -95,6 +135,19 @@ func checkCommand(source mock.KvClient, pak *memd.Packet) (memd.StatusCode, stri
 		if len(pak.Value) != 8 {
 			return memd.StatusInvalidArgs, "Request value must be of length 8"
 		}
+	case memd.CmdGet, memd.CmdGetReplica, memd.CmdSet, memd.CmdAdd, memd.CmdReplace, memd.CmdAppend,
+		memd.CmdPrepend, memd.CmdDelete, memd.CmdIncrement, memd.CmdDecrement, memd.CmdTouch, memd.CmdGAT,
+		memd.CmdUnlockKey:
+		// get_validator, set_replace_validator, add_validator and the others
+		// check the key after verify_header.
+		if context := checkDocumentKey(source, pak); context != "" {
+			return memd.StatusInvalidArgs, context
+		}
+	case memd.CmdSelectBucket:
+		// select_bucket_validator: MAX_BUCKET_NAME_LENGTH
+		if len(pak.Key) > 100 {
+			return memd.StatusInvalidArgs, "Request key length exceeds maximum"
+		}
 	case memd.CmdCollectionsGetManifest:
 		// collections_get_manifest_validator
 		if pak.Vbucket != 0 {
@@ -119,17 +172,24 @@ func hasFrames(pak *memd.Packet) bool {
 }
 
 // writeErrorContextReply answers a request with status and the error context
-// body kv_engine sends with it. kv_engine sends no body for a refusal without
-// a context.
+// body kv_engine sends with it, as its request validators do, without
+// remapping the status.
 func writeErrorContextReply(source mock.KvClient, pak *memd.Packet, status memd.StatusCode, context string, start time.Time) {
+	writePacketAsIs(source, errorContextResponse(pak, status, context), start)
+}
+
+// errorContextResponse is the response to a request with status and the
+// error context body kv_engine sends with it. kv_engine sends no body for a
+// refusal without a context, and does not escape "<", ">" and "&" in one.
+func errorContextResponse(pak *memd.Packet, status memd.StatusCode, context string) *memd.Packet {
+	resp := &memd.Packet{
+		Magic:   memd.CmdMagicRes,
+		Command: pak.Command,
+		Opaque:  pak.Opaque,
+		Status:  status,
+	}
 	if context == "" {
-		writePacketToSource(source, &memd.Packet{
-			Magic:   memd.CmdMagicRes,
-			Command: pak.Command,
-			Opaque:  pak.Opaque,
-			Status:  status,
-		}, start)
-		return
+		return resp
 	}
 	var body struct {
 		Error struct {
@@ -137,22 +197,7 @@ func writeErrorContextReply(source mock.KvClient, pak *memd.Packet, status memd.
 		} `json:"error"`
 	}
 	body.Error.Context = context
-	// kv_engine does not escape '<', '>' and '&' in the context.
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	var value []byte
-	if err := enc.Encode(body); err != nil {
-		log.Printf("failed to encode error context: %s", err)
-	} else {
-		value = bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
-	}
-	writePacketToSource(source, &memd.Packet{
-		Magic:    memd.CmdMagicRes,
-		Command:  pak.Command,
-		Opaque:   pak.Opaque,
-		Status:   status,
-		Datatype: uint8(memd.DatatypeFlagJSON),
-		Value:    value,
-	}, start)
+	resp.Datatype = uint8(memd.DatatypeFlagJSON)
+	resp.Value = marshalJSON(body)
+	return resp
 }

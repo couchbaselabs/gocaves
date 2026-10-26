@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 )
 
 func (x *mgmtImpl) handleGetAllDesignDocuments(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	pathParts := mgmtPathParts(req, "/pools/default/buckets/*/ddocs")
 	bucketName := pathParts[0]
 
-	if !source.CheckAuthenticated(mockauth.PermissionViewsManage, bucketName, "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),

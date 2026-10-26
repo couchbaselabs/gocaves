@@ -135,6 +135,7 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 		ViewHooks:      &cluster.viewHooks,
 	})
 	cluster.kvInHooks.Add(inflateHook)
+	cluster.auth.SetResources(mock.ClusterResources{Cluster: cluster})
 
 	return cluster, nil
 }
@@ -233,27 +234,26 @@ func (c *clusterInst) ChangeBuckets(fn func()) {
 
 // DeleteBucket will remove a bucket from a cluster.
 func (c *clusterInst) DeleteBucket(name string) error {
-	c.bucketsLock.Lock()
-	getIdx := func() (int, error) {
-		for i, bucket := range c.buckets {
+	// ns_orchestrator deletes a bucket after
+	// menelaus_users:cleanup_bucket_roles/1.
+	var err error
+	c.auth.DropRolesOn(name, "", "", func() bool {
+		c.bucketsLock.Lock()
+		defer c.bucketsLock.Unlock()
+		for idx, bucket := range c.buckets {
 			if bucket.Name() == name {
-				return i, nil
+				copy(c.buckets[idx:], c.buckets[idx+1:])
+				c.buckets[len(c.buckets)-1] = nil // or the zero value of T
+				c.buckets = c.buckets[:len(c.buckets)-1]
+				return true
 			}
 		}
-
-		return 0, errors.New("bucket not found")
-	}
-
-	idx, err := getIdx()
+		err = errors.New("bucket not found")
+		return false
+	})
 	if err != nil {
-		c.bucketsLock.Unlock()
 		return err
 	}
-
-	copy(c.buckets[idx:], c.buckets[idx+1:])
-	c.buckets[len(c.buckets)-1] = nil // or the zero value of T
-	c.buckets = c.buckets[:len(c.buckets)-1]
-	c.bucketsLock.Unlock()
 
 	c.updateConfig()
 

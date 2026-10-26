@@ -8,11 +8,10 @@ import (
 	"net/http"
 
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 )
 
 func (x *mgmtImpl) handleGetPoolConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	if !source.CheckAuthenticated(mockauth.PermissionSettings, "", "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -30,7 +29,7 @@ func (x *mgmtImpl) handleGetPoolConfig(source mock.MgmtService, req *mock.HTTPRe
 func (x *mgmtImpl) handleGetBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	pathParts := mgmtPathParts(req, "/pools/default/buckets/*")
 	bucketName := pathParts[0]
-	if !source.CheckAuthenticated(mockauth.PermissionSettings, bucketName, "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -52,7 +51,7 @@ func (x *mgmtImpl) handleGetBucketConfig(source mock.MgmtService, req *mock.HTTP
 func (x *mgmtImpl) handleGetTerseBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	pathParts := mgmtPathParts(req, "/pools/default/b/*")
 	bucketName := pathParts[0]
-	if !source.CheckAuthenticated(mockauth.PermissionSettings, bucketName, "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -82,7 +81,7 @@ func (c *configHandler) OnNewConfig(cfg uint) {
 func (x *mgmtImpl) handleGetTerseBucketStreamingConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
 	pathParts := mgmtPathParts(req, "/pools/default/bs/*")
 	bucketName := pathParts[0]
-	if !source.CheckAuthenticated(mockauth.PermissionSettings, bucketName, "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -133,21 +132,16 @@ func (x *mgmtImpl) handleGetTerseBucketStreamingConfig(source mock.MgmtService, 
 }
 
 func (x *mgmtImpl) handleGetAllBucketConfigs(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	if !source.CheckAuthenticated(mockauth.PermissionSettings, "", "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
 		}
 	}
 
-	buckets := source.Node().Cluster().GetAllBuckets()
-	configs := make([][]byte, len(buckets))
-	for i, bucket := range buckets {
-		if !source.CheckAuthenticated(mockauth.PermissionSettings, bucket.Name(), "", "", req) {
-			continue
-		}
-
-		configs[i] = GenBucketConfig(bucket, source.Node())
+	var configs [][]byte
+	for _, bucket := range readableBuckets(source.Node().Cluster(), req) {
+		configs = append(configs, GenBucketConfig(bucket, source.Node()))
 	}
 
 	configArr := []byte("[")
@@ -164,7 +158,7 @@ func (x *mgmtImpl) handleBucketFlush(source mock.MgmtService, req *mock.HTTPRequ
 	pathParts := mgmtPathParts(req, "/pools/default/buckets/*/controller/doFlush")
 	bucketName := pathParts[0]
 
-	if !source.CheckAuthenticated(mockauth.PermissionBucketManage, bucketName, "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -188,7 +182,7 @@ func (x *mgmtImpl) handleBucketFlush(source mock.MgmtService, req *mock.HTTPRequ
 }
 
 func (x *mgmtImpl) handleAddBucketConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	if !source.CheckAuthenticated(mockauth.PermissionClusterManage, "", "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -265,7 +259,7 @@ func (x *mgmtImpl) handleUpdateBucketConfig(source mock.MgmtService, req *mock.H
 	pathParts := mgmtPathParts(req, "/pools/default/buckets/*")
 	bucketName := pathParts[0]
 
-	if !source.CheckAuthenticated(mockauth.PermissionClusterManage, "", "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -322,7 +316,7 @@ func (x *mgmtImpl) handleDropBucketConfig(source mock.MgmtService, req *mock.HTT
 	pathParts := mgmtPathParts(req, "/pools/default/buckets/*")
 	bucketName := pathParts[0]
 
-	if !source.CheckAuthenticated(mockauth.PermissionClusterManage, "", "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -356,7 +350,7 @@ func (x *mgmtImpl) handleGetNodeServices(source mock.MgmtService, req *mock.HTTP
 }
 
 func (x *mgmtImpl) handleGetAllPoolsConfig(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	if !source.CheckAuthenticated(mockauth.PermissionSettings, "", "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),

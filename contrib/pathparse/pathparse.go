@@ -21,6 +21,9 @@ func NewParser(parseTpl string) *Parser {
 	rgxPath = strings.ReplaceAll(rgxPath, "{{--ANY-PATH--}}", "(.*)")
 	rgxPath = strings.ReplaceAll(rgxPath, "{{--DIRECTORY--}}", "([^\\/]*)")
 
+	if !strings.HasPrefix(rgxPath, "^") {
+		rgxPath = "^" + rgxPath
+	}
 	if !strings.HasSuffix(rgxPath, "$") {
 		rgxPath = rgxPath + "$"
 	}

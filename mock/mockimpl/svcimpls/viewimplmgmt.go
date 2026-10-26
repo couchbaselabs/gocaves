@@ -7,7 +7,6 @@ import (
 
 	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockmr"
 )
 
@@ -49,7 +48,7 @@ func (x *viewImplMgmt) handleUpsertDesignDocument(source mock.ViewService, req *
 	bucketName := pathParts[0]
 	ddocName := pathParts[1]
 
-	if !source.CheckAuthenticated(mockauth.PermissionViewsManage, bucketName, "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -105,7 +104,7 @@ func (x *viewImplMgmt) handleGetDesignDocument(source mock.ViewService, req *moc
 	bucketName := pathParts[0]
 	ddocName := pathParts[1]
 
-	if !source.CheckAuthenticated(mockauth.PermissionViewsManage, bucketName, "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -151,7 +150,7 @@ func (x *viewImplMgmt) handleDropDesignDocument(source mock.ViewService, req *mo
 	bucketName := pathParts[0]
 	ddocName := pathParts[1]
 
-	if !source.CheckAuthenticated(mockauth.PermissionViewsManage, bucketName, "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),

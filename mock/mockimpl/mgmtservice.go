@@ -2,7 +2,6 @@ package mockimpl
 
 import (
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
 )
 
@@ -93,8 +92,7 @@ func (s *mgmtService) Close() error {
 	return errOut
 }
 
-// CheckAuthenticated verifies that the currently authenticated user has the specified permissions.
-func (s *mgmtService) CheckAuthenticated(permission mockauth.Permission, bucket, scope, collection string,
-	req *mock.HTTPRequest) bool {
-	return checkHTTPAuthenticated(permission, bucket, scope, collection, req, s.Node().Cluster().Users())
+// CheckAuthenticated reports whether the request carries the credentials of a user.
+func (s *mgmtService) CheckAuthenticated(req *mock.HTTPRequest) bool {
+	return checkHTTPAuthenticated(req, s.Node().Cluster().Users())
 }

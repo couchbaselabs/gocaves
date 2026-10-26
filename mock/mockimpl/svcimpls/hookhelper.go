@@ -36,11 +36,19 @@ func (h *hookHelper) RegisterKvHandler(cmd memd.CmdCode, handler func(source moc
 	})
 }
 
-// RegisterMgmtReq registers a hook for a mgmt request.
+// RegisterMgmtReq registers a hook for a mgmt request, which requires the
+// permission mgmtPermissions gives its route.
 func (h *hookHelper) RegisterMgmtHandler(method, path string, handler func(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse) {
+	permission, ok := mgmtPermissions[method+" "+path]
+	if !ok {
+		panic("no permission for management route " + method + " " + path)
+	}
 	tpl := splitPath(path)
 	h.MgmtHooks.Add(func(source mock.MgmtService, req *mock.HTTPRequest, next func() *mock.HTTPResponse) *mock.HTTPResponse {
-		if _, ok := matchPathTokens(tpl, mgmtPathTokens(req)); req.Method == method && ok {
+		if parts, ok := matchPathTokens(tpl, mgmtPathTokens(req)); req.Method == method && ok {
+			if resp := checkMgmtPermission(source, req, permission, parts); resp != nil {
+				return resp
+			}
 			return handler(source, req)
 		}
 		return next()

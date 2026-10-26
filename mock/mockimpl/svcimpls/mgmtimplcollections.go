@@ -70,7 +70,7 @@ func clusterCollectionCounts(cluster mock.Cluster) (int, int) {
 }
 
 func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	if !source.CheckAuthenticated(mockauth.PermissionClusterRead, "", "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -85,7 +85,7 @@ func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTT
 	}
 	bucketName := pathParts[0]
 	scope := pathParts[1]
-	if !source.CheckAuthenticated(mockauth.PermissionBucketManage, bucketName, scope, "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -146,7 +146,7 @@ func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTT
 }
 
 func (x *mgmtImpl) handleCreateScope(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	if !source.CheckAuthenticated(mockauth.PermissionClusterRead, "", "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -160,7 +160,7 @@ func (x *mgmtImpl) handleCreateScope(source mock.MgmtService, req *mock.HTTPRequ
 		}
 	}
 	bucketName := pathParts[0]
-	if !source.CheckAuthenticated(mockauth.PermissionBucketManage, bucketName, "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -213,7 +213,7 @@ func (x *mgmtImpl) handleCreateScope(source mock.MgmtService, req *mock.HTTPRequ
 }
 
 func (x *mgmtImpl) handleDropCollection(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	if !source.CheckAuthenticated(mockauth.PermissionClusterRead, "", "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -229,7 +229,7 @@ func (x *mgmtImpl) handleDropCollection(source mock.MgmtService, req *mock.HTTPR
 	bucketName := pathParts[0]
 	scope := pathParts[1]
 	collection := pathParts[2]
-	if !source.CheckAuthenticated(mockauth.PermissionBucketManage, bucketName, scope, collection, req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -248,7 +248,12 @@ func (x *mgmtImpl) handleDropCollection(source mock.MgmtService, req *mock.HTTPR
 	}
 
 	manifest := bucket.CollectionManifest()
-	uid, err := manifest.DropCollection(scope, collection)
+	var uid uint64
+	var err error
+	source.Node().Cluster().Users().DropRolesOn(bucketName, scope, collection, func() bool {
+		uid, err = manifest.DropCollection(scope, collection)
+		return err == nil
+	})
 	switch err {
 	case mock.ErrCollectionNotFound:
 		return collectionsGlobalError(404,
@@ -265,7 +270,7 @@ func (x *mgmtImpl) handleDropCollection(source mock.MgmtService, req *mock.HTTPR
 }
 
 func (x *mgmtImpl) handleDropScope(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	if !source.CheckAuthenticated(mockauth.PermissionClusterRead, "", "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -280,7 +285,7 @@ func (x *mgmtImpl) handleDropScope(source mock.MgmtService, req *mock.HTTPReques
 	}
 	bucketName := pathParts[0]
 	scope := pathParts[1]
-	if !source.CheckAuthenticated(mockauth.PermissionBucketManage, bucketName, scope, "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -303,7 +308,12 @@ func (x *mgmtImpl) handleDropScope(source mock.MgmtService, req *mock.HTTPReques
 	}
 
 	manifest := bucket.CollectionManifest()
-	uid, err := manifest.DropScope(scope)
+	var uid uint64
+	var err error
+	source.Node().Cluster().Users().DropRolesOn(bucketName, scope, "", func() bool {
+		uid, err = manifest.DropScope(scope)
+		return err == nil
+	})
 	switch err {
 	case mock.ErrScopeNotFound:
 		return scopeNotFoundResponse(scope)
@@ -317,7 +327,7 @@ func (x *mgmtImpl) handleDropScope(source mock.MgmtService, req *mock.HTTPReques
 }
 
 func (x *mgmtImpl) handleGetAllScopes(source mock.MgmtService, req *mock.HTTPRequest) *mock.HTTPResponse {
-	if !source.CheckAuthenticated(mockauth.PermissionClusterRead, "", "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -331,7 +341,7 @@ func (x *mgmtImpl) handleGetAllScopes(source mock.MgmtService, req *mock.HTTPReq
 		}
 	}
 	bucketName := pathParts[0]
-	if !source.CheckAuthenticated(mockauth.PermissionBucketManage, bucketName, "", "", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),
@@ -347,7 +357,31 @@ func (x *mgmtImpl) handleGetAllScopes(source mock.MgmtService, req *mock.HTTPReq
 	if bucket.BucketType() == mock.BucketTypeMemcached {
 		manifest = mock.NewCollectionManifest()
 	}
-	uid, scopes := manifest.GetManifest()
+	uid, allScopes := manifest.GetManifest()
+
+	// collections:manifest_json/3 lists what the user can read.
+	user := req.AuthenticatedUser(source.Node().Cluster().Users())
+	res := mock.ClusterResources{Cluster: source.Node().Cluster()}
+	readable := func(scope, collection mockauth.Param) bool {
+		return user != nil && user.IsAllowed(res, mockauth.RBACPermission{
+			Object:    []mockauth.Vertex{mockauth.CollectionVertex(mockauth.NameParam(bucketName), scope, collection), {Name: "collections"}},
+			Operation: "read",
+		})
+	}
+	var scopes []mock.CollectionManifestScope
+	for _, scope := range allScopes {
+		if !readable(mockauth.NameParam(scope.Name), mockauth.ParamAny) {
+			continue
+		}
+		var collections []mock.CollectionManifestCollection
+		for _, collection := range scope.Collections {
+			if readable(mockauth.NameParam(scope.Name), mockauth.NameParam(collection.Name)) {
+				collections = append(collections, collection)
+			}
+		}
+		scope.Collections = collections
+		scopes = append(scopes, scope)
+	}
 
 	jsonMani := buildJSONManifest(uid, scopes)
 

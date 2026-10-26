@@ -6,7 +6,6 @@ import (
 	tmock "github.com/stretchr/testify/mock"
 
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 )
 
 type fakeMgmtService struct {
@@ -18,7 +17,7 @@ func (m *fakeMgmtService) Hostname() string       { return "" }
 func (m *fakeMgmtService) ListenPort() int        { return 0 }
 func (m *fakeMgmtService) ListenPortTLS() int     { return 0 }
 func (m *fakeMgmtService) Close() error           { return nil }
-func (m *fakeMgmtService) CheckAuthenticated(permission mockauth.Permission, bucket, scope, collection string, request *mock.HTTPRequest) bool {
+func (m *fakeMgmtService) CheckAuthenticated(request *mock.HTTPRequest) bool {
 	return true
 }
 

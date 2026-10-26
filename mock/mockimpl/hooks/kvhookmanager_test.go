@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
-
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/contrib/scramserver"
 	"github.com/couchbaselabs/gocaves/mock"
@@ -25,6 +23,8 @@ func (c *fakeKvClient) Source() mock.KvService                    { return nil }
 func (c *fakeKvClient) ScramServer() *scramserver.ScramServer     { return nil }
 func (c *fakeKvClient) SetAuthenticatedUserName(userName string)  {}
 func (c *fakeKvClient) AuthenticatedUserName() string             { return "" }
+func (c *fakeKvClient) RestartAuthentication()                    {}
+func (c *fakeKvClient) IsAuthenticated() bool                     { return false }
 func (c *fakeKvClient) SetSelectedBucketName(bucketName string)   {}
 func (c *fakeKvClient) SelectedBucketName() string                { return "" }
 func (c *fakeKvClient) SelectedBucket() mock.Bucket               { return nil }
@@ -34,10 +34,6 @@ func (c *fakeKvClient) WritePacket(pak *memd.Packet) error        { return nil }
 func (c *fakeKvClient) Closed() bool                              { return false }
 func (c *fakeKvClient) RunDetached(fn func())                     { fn() }
 func (c *fakeKvClient) Close() error                              { return nil }
-func (c *fakeKvClient) CheckAuthenticated(permission mockauth.Permission, collectionID uint32) bool {
-	return true
-}
-
 func TestKvHooksBasic(t *testing.T) {
 	hookInvokes := make([]int, 0)
 

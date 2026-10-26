@@ -31,6 +31,32 @@ type scramServer struct {
 
 var b64 = base64.StdEncoding
 
+// ErrAuthFailed is the error of a final client message that has a proof but
+// does not authenticate the client, which cbsasl refuses as wrong
+// credentials rather than as a malformed message.
+var ErrAuthFailed = errors.New("scram authentication failed")
+
+// hasProof reports whether a final client message is a list of attributes
+// with a proof, as cbsasl's decodeAttributeList and step accept it: each
+// attribute a key of one character, "=" and a value up to the next comma,
+// and no key twice.
+func hasProof(in []byte) bool {
+	seen := make(map[byte]bool)
+	for pos := 0; pos < len(in); {
+		if bytes.IndexByte(in[pos:], '=') != 1 || seen[in[pos]] {
+			return false
+		}
+		seen[in[pos]] = true
+		pos += 2
+		comma := bytes.IndexByte(in[pos:], ',')
+		if comma < 0 {
+			break
+		}
+		pos += comma + 1
+	}
+	return seen['p']
+}
+
 const iterCount = 4096
 
 // newScramServer creates a new ScramServer
@@ -197,16 +223,19 @@ func (s *scramServer) Start(in []byte) (string, error) {
 // Step1 performs the first "step".
 func (s *scramServer) Step1(in []byte) error {
 	s.out.Reset()
+	if !hasProof(in) {
+		return fmt.Errorf("client sent a malformed SCRAM-SHA-1 final message: %q", in)
+	}
 	fields := bytes.Split(in, []byte(","))
 	if len(fields) != 3 {
-		return fmt.Errorf("expected 3 fields in first SCRAM-SHA-1 client message, got %d: %q", len(fields), in)
+		return fmt.Errorf("%w: expected 3 fields in first SCRAM-SHA-1 client message, got %d: %q", ErrAuthFailed, len(fields), in)
 	}
 	// We ignore fields[0]
 	if !bytes.HasPrefix(fields[1], []byte("r=")) || len(fields[1]) < 6 {
-		return fmt.Errorf("client sent an invalid SCRAM-SHA-1 nonce: %q", fields[3])
+		return fmt.Errorf("%w: client sent an invalid SCRAM-SHA-1 nonce: %q", ErrAuthFailed, fields[1])
 	}
 	if !bytes.HasPrefix(fields[2], []byte("p=")) || len(fields[2]) < 6 {
-		return fmt.Errorf("client sent an invalid SCRAM-SHA-1 proof: %q", fields[3])
+		return fmt.Errorf("%w: client sent an invalid SCRAM-SHA-1 proof: %q", ErrAuthFailed, fields[2])
 	}
 
 	rcvdN := fields[1][2:]
@@ -214,7 +243,7 @@ func (s *scramServer) Step1(in []byte) error {
 	n.Write(s.clientNonce)
 	n.Write(s.n)
 	if !bytes.Equal(rcvdN, n.Bytes()) {
-		return fmt.Errorf("client sent an invalid nonce: %s != %s", rcvdN, n.Bytes())
+		return fmt.Errorf("%w: client sent an invalid nonce: %s != %s", ErrAuthFailed, rcvdN, n.Bytes())
 	}
 	idx := bytes.Index(in, []byte(",p="))
 	s.clientFinalMsgWithoutProof = in[:idx]
@@ -226,7 +255,7 @@ func (s *scramServer) Step1(in []byte) error {
 	}
 
 	if !bytes.Equal(rvdClientProof, ourClientProof) {
-		return fmt.Errorf("client proof did not match our proof: %q != %q", rvdClientProof, ourClientProof)
+		return fmt.Errorf("%w: client proof did not match our proof: %q != %q", ErrAuthFailed, rvdClientProof, ourClientProof)
 	}
 
 	srvSig, err := s.serverSignature()
@@ -317,6 +346,16 @@ func (s *ScramServer) Step(in []byte) ([]byte, error) {
 	}
 
 	return s.srv.Out(), nil
+}
+
+// Started reports whether a SCRAM exchange has started and not completed.
+func (s *ScramServer) Started() bool {
+	return s.srv != nil
+}
+
+// Finish ends a SCRAM exchange.
+func (s *ScramServer) Finish() {
+	s.srv = nil
 }
 
 // Username returns the password which was produced by SCRAM.

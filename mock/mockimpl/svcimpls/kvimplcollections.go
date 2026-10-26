@@ -21,16 +21,21 @@ const memcachedBucketManifest = `{"uid" : "0",
         "collections" : [{"name":"_default","uid":"0"}]}]}`
 
 func (x *kvImplCrud) handleManifestRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
-	if x.makeProc(source, pak, mockauth.PermissionBucketManage, start) == nil {
+	// kv_engine requires no privilege, and leaves out what the user cannot see.
+	bucket := source.SelectedBucket()
+	if bucket == nil {
+		x.writeStatusReply(source, pak, memd.StatusNoBucket, start)
 		return
 	}
-	bucket := source.SelectedBucket()
 
 	value := []byte(memcachedBucketManifest)
 	if bucket.BucketType() != mock.BucketTypeMemcached {
 		uid, scopes := bucket.CollectionManifest().GetManifest()
 		var err error
-		value, err = json.Marshal(buildKvJSONManifest(uid, kvEngineScopeOrder(scopes)))
+		// Manifest::toJson walks its scope map and leaves out what the user
+		// cannot see.
+		scopes = visibleScopes(kvPrivileges(source, bucket), kvEngineScopeOrder(scopes))
+		value, err = json.Marshal(buildKvJSONManifest(uid, scopes))
 		if err != nil {
 			x.writeProcErr(source, pak, err, start)
 			return
@@ -184,10 +189,13 @@ var libstdcxxPrimes = []uint64{
 }
 
 func (x *kvImplCrud) handleGetCollectionIDRequest(source mock.KvClient, pak *memd.Packet, start time.Time) {
-	if x.makeProc(source, pak, mockauth.PermissionBucketManage, start) == nil {
+	// kv_engine requires no privilege, and answers a collection the user
+	// cannot see as unknown.
+	bucket := source.SelectedBucket()
+	if bucket == nil {
+		x.writeStatusReply(source, pak, memd.StatusNoBucket, start)
 		return
 	}
-	bucket := source.SelectedBucket()
 
 	path := pak.Key
 	if len(path) == 0 {
@@ -226,6 +234,10 @@ func (x *kvImplCrud) handleGetCollectionIDRequest(source mock.KvClient, pak *mem
 		x.writeUnknownCollectionReply(source, pak, x.translateProcErr(err), uid, start)
 		return
 	}
+	if privileges := kvPrivileges(source, bucket); privileges == nil || !privileges.CanRead(scope, collection) {
+		x.writeUnknownCollectionReply(source, pak, memd.StatusCollectionUnknown, uid, start)
+		return
+	}
 
 	x.writeCollectionID(source, pak, uid, cid, start)
 }
@@ -256,6 +268,40 @@ func (x *kvImplCrud) writeCollectionID(source mock.KvClient, pak *memd.Packet, u
 		Status:  memd.StatusSuccess,
 		Extras:  extrasBuf,
 	}, start)
+}
+
+// kvPrivileges returns the privileges of the connection's user on bucket, or
+// nil when it has none.
+func kvPrivileges(source mock.KvClient, bucket mock.Bucket) *mockauth.Privileges {
+	cluster := source.Source().Node().Cluster()
+	user := cluster.Users().GetUser(source.AuthenticatedUserName())
+	if user == nil {
+		return nil
+	}
+	return user.BucketPrivileges(mock.ClusterResources{Cluster: cluster}, bucket.Name())
+}
+
+// visibleScopes filters scopes as kv_engine's get_collection_manifest does: a
+// collection is listed if the user can see it, and a scope if the user can see
+// it or a collection in it.
+func visibleScopes(privileges *mockauth.Privileges, scopes []mock.CollectionManifestScope) []mock.CollectionManifestScope {
+	if privileges == nil {
+		return nil
+	}
+	var visible []mock.CollectionManifestScope
+	for _, scope := range scopes {
+		var collections []mock.CollectionManifestCollection
+		for _, collection := range scope.Collections {
+			if privileges.CanRead(scope.Name, collection.Name) {
+				collections = append(collections, collection)
+			}
+		}
+		if len(collections) > 0 || privileges.CanRead(scope.Name, "") {
+			scope.Collections = collections
+			visible = append(visible, scope)
+		}
+	}
+	return visible
 }
 
 // validScopeOrCollectionName reports whether kv_engine's Manifest::validName

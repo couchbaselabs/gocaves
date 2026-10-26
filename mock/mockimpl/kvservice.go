@@ -11,7 +11,6 @@ import (
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/contrib/scramserver"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
 )
 
@@ -23,6 +22,7 @@ type kvClient struct {
 	lock                  sync.Mutex
 	client                *servers.MemdClient
 	authenticatedUserName string
+	authenticated         bool
 	selectedBucketName    string
 	features              []memd.HelloFeature
 
@@ -211,11 +211,27 @@ func (c *kvClient) ScramServer() *scramserver.ScramServer {
 	return scramServer
 }
 
-// SetAuthenticatedUserName sets the name of the user who is authenticated.
+// SetAuthenticatedUserName sets the name of the user who is authenticated,
+// and marks the client authenticated.
 func (c *kvClient) SetAuthenticatedUserName(userName string) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.authenticatedUserName = userName
+	c.authenticated = true
+}
+
+// RestartAuthentication marks the client not authenticated.
+func (c *kvClient) RestartAuthentication() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.authenticated = false
+}
+
+// IsAuthenticated reports whether the client is authenticated.
+func (c *kvClient) IsAuthenticated() bool {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.authenticated
 }
 
 // AuthenticatedUserName gets the name of the user who is authenticated.
@@ -223,26 +239,6 @@ func (c *kvClient) AuthenticatedUserName() string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return c.authenticatedUserName
-}
-
-// CheckAuthenticated verifies that the currently authenticated user has the specified permissions.
-func (c *kvClient) CheckAuthenticated(permission mockauth.Permission, collectionID uint32) bool {
-	user := c.service.Node().Cluster().Users().GetUser(c.AuthenticatedUserName())
-	if user == nil {
-		return false
-	}
-
-	b := c.SelectedBucket()
-	var bucket, scope, col string
-	if b != nil {
-		scope, col = b.CollectionManifest().GetByID(collectionID)
-		bucket = b.Name()
-	}
-	if !user.HasPermission(permission, bucket, scope, col) {
-		return false
-	}
-
-	return true
 }
 
 // SetSelectedBucketName sets the currently selected bucket's name.
@@ -585,7 +581,7 @@ var reorderableCommands = map[memd.CmdCode]bool{
 // that case.
 func (s *kvService) allowMemdPacketSize(cli *servers.MemdClient, size int) bool {
 	kvCli := s.getKvClient(cli)
-	if size <= maxUnauthenticatedPacketSize || kvCli.AuthenticatedUserName() != "" {
+	if size <= maxUnauthenticatedPacketSize || kvCli.IsAuthenticated() {
 		return true
 	}
 	// The reader cannot see the connection close while it waits, so the wait
@@ -593,7 +589,7 @@ func (s *kvService) allowMemdPacketSize(cli *servers.MemdClient, size int) bool 
 	if !kvCli.requests.waitIdle(unauthenticatedWaitLimit) {
 		return false
 	}
-	return kvCli.AuthenticatedUserName() != ""
+	return kvCli.IsAuthenticated()
 }
 
 func (s *kvService) handleMemdPacket(cli *servers.MemdClient, pak *memd.Packet, size int) {

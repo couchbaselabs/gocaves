@@ -23,4 +23,8 @@ func TestPathParser(t *testing.T) {
 	if x.Match("/test/0/lolneg/1/nope/haha/we/win/2/3/yay") {
 		t.Fatalf("failed to fail match")
 	}
+
+	if x.Match("/x/test/0/lol/1/nope/haha/we/win/3/4/yay") {
+		t.Fatalf("matched a path with a prefix")
+	}
 }

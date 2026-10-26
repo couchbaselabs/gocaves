@@ -10,7 +10,6 @@ import (
 
 	"github.com/couchbaselabs/gocaves/contrib/pathparse"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockmr"
 )
 
@@ -50,7 +49,7 @@ func (x *viewImplQuery) handleQuery(source mock.ViewService, req *mock.HTTPReque
 	options := req.URL.Query()
 
 	// views only operate on default views.
-	if !source.CheckAuthenticated(mockauth.PermissionViewsManage, bucketName, "_default", "_default", req) {
+	if !source.CheckAuthenticated(req) {
 		return &mock.HTTPResponse{
 			StatusCode: 401,
 			Body:       bytes.NewReader([]byte{}),

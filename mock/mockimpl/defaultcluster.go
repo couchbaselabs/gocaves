@@ -2,7 +2,6 @@ package mockimpl
 
 import (
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 )
 
 // NewDefaultCluster returns a new cluster configured with some defaults.
@@ -37,14 +36,7 @@ func NewDefaultCluster() (mock.Cluster, error) {
 		return nil, err
 	}
 
-	err = cluster.Users().UpsertUser(mockauth.UpsertUserOptions{
-		Username: "Administrator",
-		Password: "password",
-		Roles:    []string{"admin"},
-	})
-	if err != nil {
-		return nil, err
-	}
+	cluster.Users().SetAdmin("Administrator", "password")
 
 	return cluster, nil
 }

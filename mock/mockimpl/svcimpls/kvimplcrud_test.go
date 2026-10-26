@@ -9,7 +9,6 @@ import (
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/contrib/scramserver"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockdb"
 	"github.com/couchbaselabs/gocaves/mock/mocktime"
 )
@@ -33,22 +32,25 @@ type emptyClusterService struct{ mock.KvService }
 
 func (emptyClusterService) Node() mock.ClusterNode { return emptyClusterNode{} }
 
-func (c *replyClient) LocalAddr() net.Addr                                 { return nil }
-func (c *replyClient) RemoteAddr() net.Addr                                { return nil }
-func (c *replyClient) IsTLS() bool                                         { return false }
-func (c *replyClient) Source() mock.KvService                              { return emptyClusterService{} }
-func (c *replyClient) ScramServer() *scramserver.ScramServer               { return nil }
-func (c *replyClient) SetAuthenticatedUserName(userName string)            {}
-func (c *replyClient) AuthenticatedUserName() string                       { return "" }
-func (c *replyClient) CheckAuthenticated(mockauth.Permission, uint32) bool { return true }
-func (c *replyClient) SetSelectedBucketName(bucketName string)             {}
-func (c *replyClient) SelectedBucketName() string                          { return "" }
-func (c *replyClient) SelectedBucket() mock.Bucket                         { return nil }
-func (c *replyClient) SetFeatures(features []memd.HelloFeature)            {}
-func (c *replyClient) HasFeature(feature memd.HelloFeature) bool           { return false }
-func (c *replyClient) Closed() bool                                        { return false }
-func (c *replyClient) RunDetached(fn func())                               { fn() }
-func (c *replyClient) Close() error                                        { return nil }
+func (c *replyClient) LocalAddr() net.Addr                      { return nil }
+func (c *replyClient) RemoteAddr() net.Addr                     { return nil }
+func (c *replyClient) IsTLS() bool                              { return false }
+func (c *replyClient) Source() mock.KvService                   { return emptyClusterService{} }
+func (c *replyClient) ScramServer() *scramserver.ScramServer    { return nil }
+func (c *replyClient) SetAuthenticatedUserName(userName string) {}
+func (c *replyClient) AuthenticatedUserName() string            { return "" }
+func (c *replyClient) RestartAuthentication()                   {}
+func (c *replyClient) IsAuthenticated() bool                    { return false }
+func (c *replyClient) SetSelectedBucketName(bucketName string)  {}
+func (c *replyClient) SelectedBucketName() string               { return "" }
+func (c *replyClient) SelectedBucket() mock.Bucket              { return nil }
+func (c *replyClient) SetFeatures(features []memd.HelloFeature) {}
+func (c *replyClient) HasFeature(feature memd.HelloFeature) bool {
+	return feature == memd.FeatureXerror
+}
+func (c *replyClient) Closed() bool          { return false }
+func (c *replyClient) RunDetached(fn func()) { fn() }
+func (c *replyClient) Close() error          { return nil }
 func (c *replyClient) WritePacket(pak *memd.Packet) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()

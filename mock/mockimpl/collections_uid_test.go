@@ -267,23 +267,32 @@ func TestCollectionsKvGetCollectionID(t *testing.T) {
 	}
 }
 
-// TestCollectionsKvReservedIDsUnknown checks that ids 1 to 7, which
-// ns_server never assigns, are unknown collections.
-func TestCollectionsKvReservedIDsUnknown(t *testing.T) {
+// TestCollectionsKvReservedIDs checks GET of ids 1 to 7, which ns_server
+// never assigns, against Couchbase Server 7.0.5: kv_engine's
+// is_document_key_valid refuses them as invalid, and an id past them that
+// names no collection is unknown.
+func TestCollectionsKvReservedIDs(t *testing.T) {
 	c := newTestKvConn(t, memd.FeatureCollections)
 	addTestCollections(t, c.cluster.GetBucket("default").CollectionManifest(), 12)
 
-	const unknown = `{"error":{"context":"Unknown scope or collection in operation"},"manifest_uid":"d"}`
-	for _, cid := range []uint32{1, 7, 0x14} {
+	for _, tt := range []struct {
+		cid    uint32
+		status memd.StatusCode
+		body   string
+	}{
+		{1, memd.StatusInvalidArgs, `{"error":{"context":"Invalid collection-id:1"}}`},
+		{7, memd.StatusInvalidArgs, `{"error":{"context":"Invalid collection-id:7"}}`},
+		{0x14, memd.StatusCollectionUnknown, `{"error":{"context":"Unknown scope or collection in operation"},"manifest_uid":"d"}`},
+	} {
 		resp := c.Do(&memd.Packet{
 			Command:      memd.CmdGet,
 			Vbucket:      c.vbID,
-			CollectionID: cid,
+			CollectionID: tt.cid,
 			Key:          []byte("doc"),
 		})
-		if resp.Status != memd.StatusCollectionUnknown || string(resp.Value) != unknown {
+		if resp.Status != tt.status || string(resp.Value) != tt.body {
 			t.Fatalf("collection 0x%x: expected status 0x%02x with %s, got 0x%02x with %s",
-				cid, uint16(memd.StatusCollectionUnknown), unknown, uint16(resp.Status), resp.Value)
+				tt.cid, uint16(tt.status), tt.body, uint16(resp.Status), resp.Value)
 		}
 	}
 }

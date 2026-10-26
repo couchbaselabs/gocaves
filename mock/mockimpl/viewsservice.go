@@ -1,8 +1,9 @@
 package mockimpl
 
 import (
+	"strings"
+
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
 )
 
@@ -76,6 +77,18 @@ func (s *viewService) ListenPortTLS() int {
 }
 
 func (s *viewService) handleNewRequest(req *mock.HTTPRequest) *mock.HTTPResponse {
+	// couch_httpd splits a path into tokens without empty ones.
+	var tokens []string
+	for _, token := range strings.Split(req.URL.Path, "/") {
+		if token != "" {
+			tokens = append(tokens, token)
+		}
+	}
+	req.URL.Path = "/" + strings.Join(tokens, "/")
+	req.URL.RawPath = ""
+	if resp := checkViewPermission(s.clusterNode.cluster, req); resp != nil {
+		return resp
+	}
 	return s.clusterNode.cluster.handleViewRequest(s, req)
 }
 
@@ -91,8 +104,7 @@ func (s *viewService) Close() error {
 	return errOut
 }
 
-// CheckAuthenticated verifies that the currently authenticated user has the specified permissions.
-func (s *viewService) CheckAuthenticated(permission mockauth.Permission, bucket, scope, collection string,
-	req *mock.HTTPRequest) bool {
-	return checkHTTPAuthenticated(permission, bucket, scope, collection, req, s.Node().Cluster().Users())
+// CheckAuthenticated reports whether the request carries the credentials of a user.
+func (s *viewService) CheckAuthenticated(req *mock.HTTPRequest) bool {
+	return checkHTTPAuthenticated(req, s.Node().Cluster().Users())
 }

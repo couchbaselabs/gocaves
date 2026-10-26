@@ -42,7 +42,11 @@ func newTestKvConn(t *testing.T, features ...memd.HelloFeature) *testKvConn {
 // connectTestKv opens a test connection to the first node of cluster, which
 // must have a "default" bucket and the Administrator user that
 // NewDefaultCluster creates.
+//
+// The connection negotiates XERROR, as SDKs do, so that kv_engine sends it
+// every status rather than disconnecting it for some.
 func connectTestKv(t *testing.T, cluster mock.Cluster, features ...memd.HelloFeature) *testKvConn {
+	features = append([]memd.HelloFeature{memd.FeatureXerror}, features...)
 	node := cluster.Nodes()[0]
 	netConn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", node.KvService().ListenPort()))
 	if err != nil {

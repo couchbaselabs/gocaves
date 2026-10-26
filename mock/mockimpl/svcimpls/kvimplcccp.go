@@ -3,7 +3,6 @@ package svcimpls
 import (
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/mock"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 	"time"
 )
 
@@ -15,16 +14,15 @@ func (x *kvImplCccp) Register(h *hookHelper) {
 }
 
 func (x *kvImplCccp) handleGetClusterConfigReq(source mock.KvClient, pak *memd.Packet, start time.Time) {
-	if !source.CheckAuthenticated(mockauth.PermissionSettings, pak.CollectionID) {
-		// TODO(chvck): CheckAuthenticated needs to change, this could be actually be auth or access error depending on the user
-		// access levels.
-		writePacketToSource(source, &memd.Packet{
-			Magic:   memd.CmdMagicRes,
-			Command: memd.CmdGetClusterConfig,
-			Opaque:  pak.Opaque,
-			Status:  memd.StatusAuthError,
-		}, start)
-		return
+	// kv_engine's get_cluster_config requires, without a bucket, the global
+	// SystemSettings privilege, which ns_server derives from {[pools], read}.
+	if source.SelectedBucket() == nil {
+		cluster := source.Source().Node().Cluster()
+		user := cluster.Users().GetUser(source.AuthenticatedUserName())
+		if user == nil || !user.GlobalPrivileges(mock.ClusterResources{Cluster: cluster})["SystemSettings"] {
+			writeAccessError(source, pak, "SystemSettings", start)
+			return
+		}
 	}
 
 	selectedBucket := source.SelectedBucket()

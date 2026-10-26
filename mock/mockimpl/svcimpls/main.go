@@ -43,6 +43,7 @@ func Register(opts RegisterOptions) func(source mock.KvClient, pak *memd.Packet)
 	(&viewImplMgmt{}).Register(h)
 	(&viewImplQuery{}).Register(h)
 	(&mgmtImpl{}).Register(h)
+	(&mgmtImplRBAC{}).Register(h)
 
 	// Hooks run in reverse order of registration, and frame validation must
 	// run before any command handler.

@@ -7,6 +7,7 @@ import (
 
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/mock"
+	"github.com/couchbaselabs/gocaves/mock/mockimpl/servers"
 )
 
 const (
@@ -77,10 +78,10 @@ const (
 	maxCollectionsLogicalKeyLen = 246
 )
 
-// keyCollectionID returns the bytes of the collection ID memd decoded from
-// the front of pak's key, or nil if it decoded none. memd decodes a request
-// from one buffer and slices the key past the ID, so the ID lies between the
-// extras and pak.Key.
+// keyCollectionID returns the bytes of the collection ID the reader decoded
+// from the front of pak's key, or nil if it decoded none. The reader decodes
+// a request from one buffer and slices the key past the ID, so the ID lies
+// between the extras and pak.Key; a key without a stop byte is all ID.
 func keyCollectionID(pak *memd.Packet) []byte {
 	rest := pak.Extras[len(pak.Extras):cap(pak.Extras)]
 	idLen := len(rest) - len(pak.Key) - len(pak.Value)
@@ -95,10 +96,20 @@ func wireKeyLength(pak *memd.Packet) int {
 	return len(keyCollectionID(pak)) + len(pak.Key)
 }
 
+// keyHasStopByte reports whether the collection ID of pak's key, if it has
+// one, ends with a stop byte.
+func keyHasStopByte(pak *memd.Packet) bool {
+	id := keyCollectionID(pak)
+	_, _, ok := servers.DecodeCollectionID(id)
+	return len(id) == 0 || ok
+}
+
 // checkDocumentKey returns the error context kv_engine's
 // is_document_key_valid (daemon/mcbp_validators.cc@v7.0.5) refuses the key
-// of pak with, or "" if it accepts it. memd has already refused a collection
-// ID without a stop byte.
+// of pak with, or "" if it accepts it: two bytes at least, a collection ID
+// with a stop byte in its canonical encoding, a logical key, a collection ID
+// that is not reserved, and a logical key of at most 250 bytes in the default
+// collection and 246 in any other.
 func checkDocumentKey(source mock.KvClient, pak *memd.Packet) string {
 	if !source.HasFeature(memd.FeatureCollections) {
 		return ""
@@ -106,7 +117,11 @@ func checkDocumentKey(source mock.KvClient, pak *memd.Packet) string {
 	if wireKeyLength(pak) <= 1 {
 		return "Key length must be >= 2"
 	}
-	if id := keyCollectionID(pak); len(id) > 1 && id[len(id)-1] == 0 {
+	id, n, ok := servers.DecodeCollectionID(keyCollectionID(pak))
+	switch {
+	case !ok:
+		return "No stop-byte found"
+	case !servers.CanonicalCollectionID(id, n):
 		return "Key contains non-canonical leb128"
 	}
 	if len(pak.Key) == 0 {

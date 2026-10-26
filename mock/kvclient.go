@@ -5,7 +5,6 @@ import (
 
 	"github.com/couchbase/gocbcore/v10/memd"
 	"github.com/couchbaselabs/gocaves/contrib/scramserver"
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
 )
 
 // KvClient represents all the state about a connected kv client.
@@ -25,14 +24,21 @@ type KvClient interface {
 	// ScramServer returns a SCRAM server object specific to this user.
 	ScramServer() *scramserver.ScramServer
 
-	// SetAuthenticatedUserName sets the name of the user who is authenticated.
+	// SetAuthenticatedUserName sets the name of the user who is authenticated,
+	// and marks the client authenticated.
 	SetAuthenticatedUserName(userName string)
 
-	// AuthenticatedUserName gets the name of the user who is authenticated.
+	// AuthenticatedUserName gets the name of the user who is authenticated,
+	// or was until a restart of the authentication.
 	AuthenticatedUserName() string
 
-	// CheckAuthenticated verifies that the currently authenticated user has the specified permissions.
-	CheckAuthenticated(permission mockauth.Permission, collectionID uint32) bool
+	// RestartAuthentication marks the client not authenticated, as
+	// kv_engine's Connection::restartAuthentication does on a SASL_AUTH. The
+	// privileges the user has on its bucket stay.
+	RestartAuthentication()
+
+	// IsAuthenticated reports whether the client is authenticated.
+	IsAuthenticated() bool
 
 	// SetSelectedBucketName sets the currently selected bucket's name.
 	SetSelectedBucketName(bucketName string)

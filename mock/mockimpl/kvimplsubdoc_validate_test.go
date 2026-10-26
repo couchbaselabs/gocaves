@@ -402,10 +402,14 @@ func TestSubdocXattrOnAnyBucket(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = netConn.Close() })
 	noBucket := &testKvConn{t: t, cluster: c.cluster, netConn: netConn, conn: memd.NewConn(netConn)}
-	hello := make([]byte, 2)
+	// Without XERROR kv_engine closes the connection instead of answering
+	// no_bucket.
+	hello := make([]byte, 4)
 	binary.BigEndian.PutUint16(hello, uint16(memd.FeatureXattr))
+	binary.BigEndian.PutUint16(hello[2:], uint16(memd.FeatureXerror))
 	noBucket.mustSucceed(&memd.Packet{Command: memd.CmdHello, Value: hello})
 	noBucket.conn.EnableFeature(memd.FeatureXattr)
+	noBucket.conn.EnableFeature(memd.FeatureXerror)
 	noBucket.mustSucceed(&memd.Packet{Command: memd.CmdSASLAuth, Key: []byte("PLAIN"), Value: []byte("\x00Administrator\x00password")})
 	for _, test := range []struct {
 		name   string

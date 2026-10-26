@@ -1,9 +1,6 @@
 package mock
 
-import (
-	"github.com/couchbaselabs/gocaves/mock/mockauth"
-	"github.com/couchbaselabs/gocaves/mock/mockmr"
-)
+import "github.com/couchbaselabs/gocaves/mock/mockmr"
 
 // ViewService represents a views service running somewhere in the cluster.
 type ViewService interface {
@@ -22,8 +19,8 @@ type ViewService interface {
 	// Close will shut down this service once it is no longer needed.
 	Close() error
 
-	// CheckAuthenticated verifies that the currently authenticated user has the specified permissions.
-	CheckAuthenticated(permission mockauth.Permission, bucket, scope, collection string, request *HTTPRequest) bool
+	// CheckAuthenticated reports whether the request carries the credentials of a user.
+	CheckAuthenticated(request *HTTPRequest) bool
 }
 
 // ViewIndexManager represents information about the view indexes of a bucket.

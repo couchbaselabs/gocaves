@@ -14,10 +14,12 @@ import (
 
 // MemdClient represents a connected memd client.
 type MemdClient struct {
-	parent   *MemdServer
-	conn     net.Conn
-	stream   *packetStream
-	mconn    *memd.Conn
+	parent *MemdServer
+	conn   net.Conn
+	stream *packetStream
+	mconn  *memd.Conn
+	// rconn decodes requests, without the features mconn has.
+	rconn    *memd.Conn
 	ctxStore ctxstore.Store
 
 	closeWaitCh chan struct{}
@@ -45,6 +47,7 @@ func newMemdClient(parent *MemdServer, conn net.Conn) *MemdClient {
 		conn:        conn,
 		stream:      stream,
 		mconn:       memd.NewConn(stream),
+		rconn:       memd.NewConn(stream),
 		closeWaitCh: make(chan struct{}),
 	}
 }
