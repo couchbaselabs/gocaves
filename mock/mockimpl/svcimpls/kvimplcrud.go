@@ -85,7 +85,7 @@ func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet, permission
 	if source.HasFeature(memd.FeatureCollections) && memd.IsCommandCollectionEncoded(pak.Command) {
 		manifest := selectedBucket.CollectionManifest()
 		if scopeName, _ := manifest.GetByID(pak.CollectionID); scopeName == "" {
-			x.writeUnknownCollectionReply(source, pak, manifest, start)
+			x.writeUnknownCollectionReply(source, pak, memd.StatusCollectionUnknown, manifest.UID(), start)
 			return nil
 		}
 	}
@@ -106,16 +106,15 @@ func (x *kvImplCrud) makeProc(source mock.KvClient, pak *memd.Packet, permission
 }
 
 // writeUnknownCollectionReply replies with the error body kv_engine sends for
-// an unknown collection, including the current manifest UID.
-func (x *kvImplCrud) writeUnknownCollectionReply(source mock.KvClient, pak *memd.Packet, manifest *mock.CollectionManifest, start time.Time) {
-	manifestUID := manifest.UID()
+// an unknown scope or collection, including the current manifest UID.
+func (x *kvImplCrud) writeUnknownCollectionReply(source mock.KvClient, pak *memd.Packet, status memd.StatusCode, manifestUID uint64, start time.Time) {
 	value := fmt.Sprintf(`{"error":{"context":"Unknown scope or collection in operation"},"manifest_uid":"%x"}`, manifestUID)
 
 	writePacketToSource(source, &memd.Packet{
 		Magic:    memd.CmdMagicRes,
 		Command:  pak.Command,
 		Opaque:   pak.Opaque,
-		Status:   memd.StatusCollectionUnknown,
+		Status:   status,
 		Datatype: uint8(memd.DatatypeFlagJSON),
 		Value:    []byte(value),
 	}, start)

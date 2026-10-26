@@ -2,6 +2,7 @@ package mock
 
 import (
 	"errors"
+	"sort"
 	"sync"
 )
 
@@ -11,6 +12,9 @@ type CollectionManifest struct {
 	Scopes      map[uint32]*collectionManifestScopeEntry
 	Collections map[uint32]*collectionManifestCollectionEntry
 	lock        sync.Mutex
+
+	nextScopeUID      uint32
+	nextCollectionUID uint32
 }
 
 // NewCollectionManifest creates a new collection manifest.
@@ -29,6 +33,9 @@ func NewCollectionManifest() *CollectionManifest {
 				Name: "_default",
 			},
 		},
+		// ns_server's collections:default_manifest/0 reserves the ids up to 7.
+		nextScopeUID:      8,
+		nextCollectionUID: 8,
 	}
 }
 
@@ -103,11 +110,13 @@ func (m *CollectionManifest) GetByName(scope, collection string) (uint64, uint32
 				}
 			}
 
-			return 0, 0, ErrCollectionNotFound
+			// The manifest uid goes with an error too, for kv_engine's
+			// unknown collection error context.
+			return rev, 0, ErrCollectionNotFound
 		}
 	}
 
-	return 0, 0, ErrScopeNotFound
+	return rev, 0, ErrScopeNotFound
 }
 
 // AddCollection adds a new collection to the manifest.
@@ -123,7 +132,8 @@ func (m *CollectionManifest) AddCollection(scope, collection string, maxTTL uint
 			}
 
 			m.Rev++
-			uid := uint32(len(m.Collections))
+			uid := m.nextCollectionUID
+			m.nextCollectionUID++
 			newEntry := &collectionManifestCollectionEntry{
 				Name:     collection,
 				UID:      uid,
@@ -150,7 +160,8 @@ func (m *CollectionManifest) AddScope(scope string) (uint64, error) {
 	}
 
 	m.Rev++
-	uid := uint32(len(m.Scopes))
+	uid := m.nextScopeUID
+	m.nextScopeUID++
 	newEntry := &collectionManifestScopeEntry{
 		Name: scope,
 		UID:  uid,
@@ -212,10 +223,10 @@ func (m *CollectionManifest) UID() uint64 {
 // GetManifest gets the current manifest represented as a list of scopes, including collections, and the manifest uid.
 func (m *CollectionManifest) GetManifest() (uint64, []CollectionManifestScope) {
 	m.lock.Lock()
+	defer m.lock.Unlock()
 	scopes := m.Scopes
 	collections := m.Collections
 	uid := m.Rev
-	m.lock.Unlock()
 
 	collectionsByScope := make(map[uint32][]CollectionManifestCollection)
 	for _, col := range collections {
@@ -243,6 +254,14 @@ func (m *CollectionManifest) GetManifest() (uint64, []CollectionManifestScope) {
 			scope.Collections = append(scope.Collections, cols...)
 			retScopes = append(retScopes, scope)
 		}
+	}
+
+	// ns_server lists scopes and collections newest first, as add_scope and
+	// add_collection put each at the head of its list, and ids only grow.
+	sort.Slice(retScopes, func(i, j int) bool { return retScopes[i].UID > retScopes[j].UID })
+	for _, scope := range retScopes {
+		cols := scope.Collections
+		sort.Slice(cols, func(i, j int) bool { return cols[i].UID > cols[j].UID })
 	}
 
 	return uid, retScopes

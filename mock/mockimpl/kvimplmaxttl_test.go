@@ -2,7 +2,6 @@ package mockimpl
 
 import (
 	"encoding/binary"
-	"fmt"
 	"testing"
 	"time"
 
@@ -21,13 +20,6 @@ func TestMaxTTLLimitsExpiry(t *testing.T) {
 	manifest := bucket.CollectionManifest()
 	if _, err := manifest.AddScope("app"); err != nil {
 		t.Fatalf("failed to add scope: %v", err)
-	}
-	// kv_engine refuses the collection ids below 8, which this manifest
-	// gives the first collections it adds.
-	for i := 0; i < 7; i++ {
-		if _, err := manifest.AddCollection("app", fmt.Sprintf("unused%d", i), 0); err != nil {
-			t.Fatalf("failed to add collection: %v", err)
-		}
 	}
 	for _, col := range []struct {
 		name   string

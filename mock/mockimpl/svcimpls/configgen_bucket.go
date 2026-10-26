@@ -18,7 +18,7 @@ func GenBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	config["bucketType"] = b.BucketType().Name()
 
 	if b.BucketType() != mock.BucketTypeMemcached {
-		config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().UID())
+		config["collectionsManifestUid"] = fmt.Sprintf("%x", b.CollectionManifest().UID())
 	}
 	if b.BucketType() == mock.BucketTypeCouchbase {
 		config["ddocs"] = ddocsConfig(b)
@@ -175,7 +175,7 @@ func GenTerseBucketConfig(b mock.Bucket, reqNode mock.ClusterNode) []byte {
 	config["uuid"] = b.ID()
 
 	if b.BucketType() != mock.BucketTypeMemcached {
-		config["collectionsManifestUid"] = fmt.Sprintf("%d", b.CollectionManifest().UID())
+		config["collectionsManifestUid"] = fmt.Sprintf("%x", b.CollectionManifest().UID())
 	}
 
 	config["uri"] = fmt.Sprintf("/pools/default/buckets/%s?bucket_uuid=%s", b.Name(), b.ID())

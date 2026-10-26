@@ -95,6 +95,19 @@ func checkCommand(source mock.KvClient, pak *memd.Packet) (memd.StatusCode, stri
 		if len(pak.Value) != 8 {
 			return memd.StatusInvalidArgs, "Request value must be of length 8"
 		}
+	case memd.CmdCollectionsGetManifest:
+		// collections_get_manifest_validator
+		if pak.Vbucket != 0 {
+			return memd.StatusInvalidArgs, "Request vbucket id must be 0"
+		}
+	case memd.CmdCollectionsGetID:
+		// collections_get_id_validator
+		if len(pak.Key) != 0 && len(pak.Value) != 0 {
+			return memd.StatusInvalidArgs, "Cannot set both key and value"
+		}
+		if pak.Vbucket != 0 {
+			return memd.StatusInvalidArgs, "Request vbucket id must be 0"
+		}
 	}
 	return memd.StatusSuccess, ""
 }

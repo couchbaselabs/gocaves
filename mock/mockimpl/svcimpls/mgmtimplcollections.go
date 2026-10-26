@@ -140,7 +140,8 @@ func (x *mgmtImpl) handleCreateCollection(source mock.MgmtService, req *mock.HTT
 
 	return &mock.HTTPResponse{
 		StatusCode: 200,
-		Body:       bytes.NewReader([]byte(fmt.Sprintf(`{"uid": "%d"}`, uid))),
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       bytes.NewReader([]byte(fmt.Sprintf(`{"uid":"%x"}`, uid))),
 	}
 }
 
@@ -206,7 +207,8 @@ func (x *mgmtImpl) handleCreateScope(source mock.MgmtService, req *mock.HTTPRequ
 
 	return &mock.HTTPResponse{
 		StatusCode: 200,
-		Body:       bytes.NewReader([]byte(fmt.Sprintf(`{"uid": "%d"}`, uid))),
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       bytes.NewReader([]byte(fmt.Sprintf(`{"uid":"%x"}`, uid))),
 	}
 }
 
@@ -257,7 +259,8 @@ func (x *mgmtImpl) handleDropCollection(source mock.MgmtService, req *mock.HTTPR
 
 	return &mock.HTTPResponse{
 		StatusCode: 200,
-		Body:       bytes.NewReader([]byte(fmt.Sprintf(`{"uid": "%d"}`, uid))),
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       bytes.NewReader([]byte(fmt.Sprintf(`{"uid":"%x"}`, uid))),
 	}
 }
 
@@ -308,7 +311,8 @@ func (x *mgmtImpl) handleDropScope(source mock.MgmtService, req *mock.HTTPReques
 
 	return &mock.HTTPResponse{
 		StatusCode: 200,
-		Body:       bytes.NewReader([]byte(fmt.Sprintf(`{"uid": "%d"}`, uid))),
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       bytes.NewReader([]byte(fmt.Sprintf(`{"uid":"%x"}`, uid))),
 	}
 }
 
@@ -339,6 +343,10 @@ func (x *mgmtImpl) handleGetAllScopes(source mock.MgmtService, req *mock.HTTPReq
 	}
 
 	manifest := bucket.CollectionManifest()
+	// A memcached bucket has no manifest, and ns_server answers its default.
+	if bucket.BucketType() == mock.BucketTypeMemcached {
+		manifest = mock.NewCollectionManifest()
+	}
 	uid, scopes := manifest.GetManifest()
 
 	jsonMani := buildJSONManifest(uid, scopes)
@@ -353,27 +361,30 @@ func (x *mgmtImpl) handleGetAllScopes(source mock.MgmtService, req *mock.HTTPReq
 
 	return &mock.HTTPResponse{
 		StatusCode: 200,
+		Header:     http.Header{"Content-Type": {"application/json"}},
 		Body:       bytes.NewReader(b),
 	}
 }
 
+// buildJSONManifest builds the manifest of ns_server's jsonify_manifest with
+// defaults, which gives every collection a maxTTL.
 func buildJSONManifest(uid uint64, scopes []mock.CollectionManifestScope) jsonManifest {
 	jsonMani := jsonManifest{
-		UID:    strconv.Itoa(int(uid)),
+		UID:    strconv.FormatUint(uid, 16),
 		Scopes: make([]jsonScope, len(scopes)),
 	}
 
 	for i, scop := range scopes {
 		jsonScop := jsonScope{
-			UID:         strconv.Itoa(int(scop.UID)),
 			Name:        scop.Name,
+			UID:         strconv.FormatUint(uint64(scop.UID), 16),
 			Collections: make([]jsonCollection, len(scop.Collections)),
 		}
 
 		for j, col := range scop.Collections {
 			jsonScop.Collections[j] = jsonCollection{
-				UID:    strconv.Itoa(int(col.UID)),
 				Name:   col.Name,
+				UID:    strconv.FormatUint(uint64(col.UID), 16),
 				MaxTTL: col.MaxTTL,
 			}
 		}
@@ -389,13 +400,13 @@ type jsonManifest struct {
 }
 
 type jsonScope struct {
-	UID         string           `json:"uid"`
 	Name        string           `json:"name"`
+	UID         string           `json:"uid"`
 	Collections []jsonCollection `json:"collections"`
 }
 
 type jsonCollection struct {
-	UID    string `json:"uid"`
 	Name   string `json:"name"`
-	MaxTTL uint32 `json:"maxTTL,omitempty"`
+	UID    string `json:"uid"`
+	MaxTTL uint32 `json:"maxTTL"`
 }
