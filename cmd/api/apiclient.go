@@ -108,7 +108,7 @@ func (c *Client) start() error {
 			pkt, err := c.readPacket()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					break
+					continue
 				}
 
 				log.Printf("failed to read request: %s", err)
@@ -125,7 +125,7 @@ func (c *Client) start() error {
 			err = c.writePacket(resCmd)
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					break
+					continue
 				}
 
 				log.Printf("failed to write response: %s", err)
